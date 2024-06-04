@@ -584,10 +584,10 @@ int pnf_nr_message_pump(pnf_t* pnf)
 }
 
 
-extern void pnf_handle_dl_tti_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7);
-extern void pnf_handle_ul_tti_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7);
-extern void pnf_handle_ul_dci_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7);
-extern void pnf_handle_tx_data_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7);
+extern void pnf_handle_dl_tti_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7, bool isNFAPI);
+extern void pnf_handle_ul_tti_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7, bool isNFAPI);
+extern void pnf_handle_ul_dci_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7, bool isNFAPI);
+extern void pnf_handle_tx_data_request(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7, bool isNFAPI);
 extern void pnf_nr_handle_dl_node_sync(void *pRecvMsg, int recvMsgLen, pnf_p7_t *pnf_p7, uint32_t rx_hr_time);
 extern void pnf_handle_p7_vendor_extension(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, uint16_t message_id);
 
@@ -618,16 +618,16 @@ void pnf_nr_dispatch_p7_message(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
       pnf_nr_handle_dl_node_sync(pRecvMsg, recvMsgLen, pnf_p7, rx_hr_time);
     break;
     case NFAPI_NR_PHY_MSG_TYPE_DL_TTI_REQUEST:
-      pnf_handle_dl_tti_request(pRecvMsg, recvMsgLen, pnf_p7);
+      pnf_handle_dl_tti_request(pRecvMsg, recvMsgLen, pnf_p7, true);
     break;
     case NFAPI_NR_PHY_MSG_TYPE_UL_TTI_REQUEST:
-      pnf_handle_ul_tti_request(pRecvMsg, recvMsgLen, pnf_p7);
+      pnf_handle_ul_tti_request(pRecvMsg, recvMsgLen, pnf_p7, true);
     break;
     case NFAPI_NR_PHY_MSG_TYPE_UL_DCI_REQUEST:
-      pnf_handle_ul_dci_request(pRecvMsg, recvMsgLen, pnf_p7);
+      pnf_handle_ul_dci_request(pRecvMsg, recvMsgLen, pnf_p7, true);
     break;
     case NFAPI_NR_PHY_MSG_TYPE_TX_DATA_REQUEST:
-      pnf_handle_tx_data_request(pRecvMsg, recvMsgLen, pnf_p7);
+      pnf_handle_tx_data_request(pRecvMsg, recvMsgLen, pnf_p7, true);
     break;
     default: {
       if (header.message_id >= NFAPI_VENDOR_EXT_MSG_MIN && header.message_id <= NFAPI_VENDOR_EXT_MSG_MAX) {
