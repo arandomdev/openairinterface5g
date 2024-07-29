@@ -40,6 +40,7 @@
 #include "common/utils/nr/nr_common.h"
 #include "executables/softmodem-common.h"
 #include "SCHED_NR/sched_nr.h"
+#include "common/utils/LATSEQ/latseq.h"
 
 // #define DEBUG_DLSCH
 // #define DEBUG_DLSCH_MAPPING
@@ -626,10 +627,12 @@ static int do_one_dlsch(unsigned char *input_ptr, PHY_VARS_gNB *gNB, NR_gNB_DLSC
     }
 #endif
 
+    LATSEQ_P("D phy.scrambled--phy.modulated", "::fm%u.sl%u.codeword%u.rnti%u", dlsch->harq_process->frame, slot, codeWord, rel15->rnti);
     stop_meas(dlsch_scrambling_stats);
     /// Modulation
     start_meas(dlsch_modulation_stats);
     nr_modulation(scrambled_output, encoded_length, Qm, (int16_t *)mod_symbs[codeWord]);
+    LATSEQ_P("D phy.modulated--phy.resourcemapped", "::fm%u.sl%u.codeword%u.qm%u.rnti%u", dlsch->harq_process->frame, slot, codeWord, Qm, rel15->rnti);
     VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_gNB_PDSCH_MODULATION, 0);
     stop_meas(dlsch_modulation_stats);
 #ifdef DEBUG_DLSCH
@@ -754,6 +757,7 @@ static int do_one_dlsch(unsigned char *input_ptr, PHY_VARS_gNB *gNB, NR_gNB_DLSC
                              mod_dmrs + dmrs_idx);
     } // layer loop
     re_beginning_of_symbol += layer_sz;
+    LATSEQ_P("D phy.resourcemapped--phy.antennamapped", "::fm%u.sl%u.rnti%u", dlsch->harq_process->frame, slot, rel15->rnti);
     stop_meas(&gNB->dlsch_resource_mapping_stats);
 
     for (int ant = 0; ant < frame_parms->nb_antennas_tx; ant++) {
@@ -762,6 +766,7 @@ static int do_one_dlsch(unsigned char *input_ptr, PHY_VARS_gNB *gNB, NR_gNB_DLSC
     }
   }
 
+  LATSEQ_P("D phy.antennamapped--phy.rotated", "::fm%u.sl%u.nbant%u.rnti%u", dlsch->harq_process->frame, slot, frame_parms->nb_antennas_tx, rel15->rnti);
   stop_meas(&gNB->dlsch_precoding_stats);
   /* output and its parts for each dlsch should be aligned on 64 bytes
    * should remain a multiple of 64 with enough offset to fit each dlsch
@@ -844,6 +849,7 @@ void nr_generate_pdsch(processingData_L1tx_t *msgTx, int frame, int slot)
       == -1) {
     return;
   }
+  LATSEQ_P("D phy.ldpc--phy.scrambled", "::fm%u.sl%u", frame, slot);
   stop_meas(dlsch_encoding_stats);
 
   unsigned char *output_ptr = output;

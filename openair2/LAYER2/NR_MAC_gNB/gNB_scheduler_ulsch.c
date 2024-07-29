@@ -36,6 +36,7 @@
 #include <openair2/UTIL/OPT/opt.h>
 #include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "LAYER2/RLC/rlc.h"
+#include "common/utils/LATSEQ/latseq.h"
 
 //#define SRS_IND_DEBUG
 
@@ -400,6 +401,7 @@ static int nr_process_mac_pdu(instance_t module_idP,
               module_idP,
               mac_len);
         UE->mac_stats.ul.lc_bytes[lcid] += mac_len;
+        LATSEQ_P("U mac.demuxed--rlc.decoded", "::fm%u.sl%u.hqpid%u.MRbuf%u.rnti%u.macsdusize%u", frameP, slot, harq_pid, pduP+mac_subheader_len, UE->rnti, mac_len);
 
         mac_rlc_data_ind(module_idP,
                          UE->rnti,
