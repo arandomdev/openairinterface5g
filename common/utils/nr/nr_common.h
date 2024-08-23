@@ -318,4 +318,11 @@ static const char *const duplex_mode_txt[] = {"FDD", "TDD"};
 #define min(a,b) cmin(a,b)
 #endif
 
+void InitSinLUT(void);
+
+// fast calculation of e^{i*2*pi*phase}
+// ret.r == cosinus << 14
+// ret.i == sinus << 14
+c16_t get_sin_cos(double phase);
+
 #endif

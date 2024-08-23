@@ -1470,3 +1470,49 @@ frequency_range_t get_freq_range_from_band(uint16_t band)
 {
   return band <= 256 ? FR1 : FR2;
 }
+
+#define ResolSinCos 128
+// look-up table for the sine (cosine) function
+static uint16_t LUTSin[ResolSinCos + 1];
+
+void InitSinLUT(void)
+{
+  for (int i = 0; i < (ResolSinCos + 1); i++) {
+    LUTSin[i] = round(sin((M_PI * i) / (2 * ResolSinCos)) * (1 << 14)); // Format: Q14
+  }
+}
+
+// fast calculation of e^{i*2*pi*phase}
+// ret.r == cosinus << 14
+// ret.i == sinus << 14
+c16_t get_sin_cos(double phase)
+{
+  int index;
+  if (phase < 0) {
+    index = (int)(-phase * 4 * ResolSinCos + 0.5) % (4 * ResolSinCos);
+    index = 4 * ResolSinCos - index;
+  } else {
+    index = (int)(phase * 4 * ResolSinCos + 0.5) % (4 * ResolSinCos);
+  }
+
+  c16_t ret;
+  if (index < 2 * ResolSinCos) { // check for 1st and 2nd Quadrant
+    if (index < ResolSinCos) { // 1st Quadrant
+      ret.r = LUTSin[ResolSinCos - index];
+      ret.i = LUTSin[index];
+    } else { // 2nd Quadrant
+      ret.r = -LUTSin[index - ResolSinCos];
+      ret.i = LUTSin[2 * ResolSinCos - index];
+    }
+  } else { // 3rd and 4th Quadrant
+    if (index < 3 * ResolSinCos) { // 3rd Quadrant
+      ret.r = -LUTSin[3 * ResolSinCos - index];
+      ret.i = -LUTSin[index - 2 * ResolSinCos];
+    } else { // 4th Quadrant
+      ret.r = LUTSin[index - 3 * ResolSinCos];
+      ret.i = -LUTSin[4 * ResolSinCos - index];
+    }
+  }
+
+  return ret;
+}
