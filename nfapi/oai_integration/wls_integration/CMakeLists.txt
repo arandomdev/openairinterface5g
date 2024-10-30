@@ -2,6 +2,7 @@ if (OAI_WLS)
     message(STATUS "Building with support for WLS")
     add_library(wls_integration_lib
             wls_pnf.c
+            wls_vnf.c
             wls_common.c
     )
 
