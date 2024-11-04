@@ -1239,6 +1239,42 @@ const nr_a3_event_t *get_a3_configuration(int pci)
   return NULL;
 }
 
+static NR_MeasObjectToAddMod_t *get_MeasObject(const struct NR_MeasTiming__frequencyAndTiming *ft,
+                                               int band,
+                                               NR_ARFCN_ValueNR_t ssbFrequency,
+                                               NR_MeasObjectId_t measObjectId)
+{
+  const NR_SSB_MTC_t *ssb_mtc = &ft->ssb_MeasurementTimingConfiguration;
+  NR_MeasObjectToAddMod_t *mo = calloc_or_fail(1, sizeof(*mo));
+  mo->measObjectId = measObjectId;
+  mo->measObject.present = NR_MeasObjectToAddMod__measObject_PR_measObjectNR;
+  NR_MeasObjectNR_t *monr = calloc_or_fail(1, sizeof(*monr));
+  asn1cCallocOne(monr->ssbFrequency, ssbFrequency);
+  asn1cCallocOne(monr->ssbSubcarrierSpacing, ft->ssbSubcarrierSpacing);
+  monr->referenceSignalConfig.ssb_ConfigMobility = calloc_or_fail(1, sizeof(*monr->referenceSignalConfig.ssb_ConfigMobility));
+  monr->referenceSignalConfig.ssb_ConfigMobility->deriveSSB_IndexFromCell = true;
+  monr->absThreshSS_BlocksConsolidation = calloc_or_fail(1, sizeof(*monr->absThreshSS_BlocksConsolidation));
+  asn1cCallocOne(monr->absThreshSS_BlocksConsolidation->thresholdRSRP, 36);
+  asn1cCallocOne(monr->nrofSS_BlocksToAverage, 8);
+  monr->smtc1 = calloc_or_fail(1, sizeof(*monr->smtc1));
+  monr->smtc1->periodicityAndOffset = ssb_mtc->periodicityAndOffset;
+  monr->smtc1->duration = ssb_mtc->duration;
+  monr->quantityConfigIndex = 1;
+  monr->ext1 = calloc_or_fail(1, sizeof(*monr->ext1));
+  asn1cCallocOne(monr->ext1->freqBandIndicatorNR, band);
+  mo->measObject.choice.measObjectNR = monr;
+  return mo;
+}
+
+NR_MeasIdToAddMod_t *get_MeasId(NR_MeasId_t measId, NR_ReportConfigId_t reportConfigId, NR_MeasObjectId_t measObjectId)
+{
+  NR_MeasIdToAddMod_t *measid = calloc_or_fail(1, sizeof(NR_MeasIdToAddMod_t));
+  measid->measId = measId;
+  measid->reportConfigId = reportConfigId;
+  measid->measObjectId = measObjectId;
+  return measid;
+}
+
 NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
                                 int band,
                                 int scs,
@@ -1259,10 +1295,10 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
     return NULL;
   }
 
-  NR_MeasConfig_t *mc = calloc(1, sizeof(*mc));
-  mc->measObjectToAddModList = calloc(1, sizeof(*mc->measObjectToAddModList));
-  mc->reportConfigToAddModList = calloc(1, sizeof(*mc->reportConfigToAddModList));
-  mc->measIdToAddModList = calloc(1, sizeof(*mc->measIdToAddModList));
+  NR_MeasConfig_t *mc = calloc_or_fail(1, sizeof(*mc));
+  mc->measObjectToAddModList = calloc_or_fail(1, sizeof(*mc->measObjectToAddModList));
+  mc->reportConfigToAddModList = calloc_or_fail(1, sizeof(*mc->reportConfigToAddModList));
+  mc->measIdToAddModList = calloc_or_fail(1, sizeof(*mc->measIdToAddModList));
 
   if (measurementConfiguration->per_event) {
     NR_ReportConfigToAddMod_t *rc_PER = prepare_periodic_event_report(measurementConfiguration->per_event);
@@ -1285,8 +1321,6 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
     for (uint8_t neighbourIdx = 0; neighbourIdx < neighbourConfiguration->size; neighbourIdx++) {
       const nr_neighbour_gnb_configuration_t *neighbourCell =
           (const nr_neighbour_gnb_configuration_t *)seq_arr_at(neighbourConfiguration, neighbourIdx);
-      if (!neighbourCell->isIntraFrequencyNeighbour)
-        continue;
 
       const nr_a3_event_t *a3Event = get_a3_configuration(neighbourCell->physicalCellId);
       if (!a3Event || is_default_a3_added)
@@ -1302,65 +1336,57 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
 
   DevAssert(mt != NULL && mt->frequencyAndTiming != NULL);
   const struct NR_MeasTiming__frequencyAndTiming *ft = mt->frequencyAndTiming;
-  const NR_SSB_MTC_t *ssb_mtc = &ft->ssb_MeasurementTimingConfiguration;
 
   // Measurement Objects: Specifies what is to be measured. For NR and inter-RAT E-UTRA measurements, this may include
   // cell-specific offsets, blacklisted cells to be ignored and whitelisted cells to consider for measurements.
-  NR_MeasObjectToAddMod_t *mo1 = calloc(1, sizeof(*mo1));
-  mo1->measObjectId = 1;
-  mo1->measObject.present = NR_MeasObjectToAddMod__measObject_PR_measObjectNR;
-  NR_MeasObjectNR_t *monr1 = calloc(1, sizeof(*monr1));
-  asn1cCallocOne(monr1->ssbFrequency, ft->carrierFreq);
-  asn1cCallocOne(monr1->ssbSubcarrierSpacing, ft->ssbSubcarrierSpacing);
-  monr1->referenceSignalConfig.ssb_ConfigMobility = calloc(1, sizeof(*monr1->referenceSignalConfig.ssb_ConfigMobility));
-  monr1->referenceSignalConfig.ssb_ConfigMobility->deriveSSB_IndexFromCell = true;
-  monr1->absThreshSS_BlocksConsolidation = calloc(1, sizeof(*monr1->absThreshSS_BlocksConsolidation));
-  asn1cCallocOne(monr1->absThreshSS_BlocksConsolidation->thresholdRSRP, 36);
-  asn1cCallocOne(monr1->nrofSS_BlocksToAverage, 8);
-  monr1->smtc1 = calloc(1, sizeof(*monr1->smtc1));
-  monr1->smtc1->periodicityAndOffset = ssb_mtc->periodicityAndOffset;
-  monr1->smtc1->duration = ssb_mtc->duration;
-  monr1->quantityConfigIndex = 1;
-  monr1->ext1 = calloc(1, sizeof(*monr1->ext1));
-  asn1cCallocOne(monr1->ext1->freqBandIndicatorNR, band);
-
+  NR_MeasObjectToAddMod_t *mo1 = get_MeasObject(ft, band, ft->carrierFreq, 1);
   if (neighbourConfiguration && measurementConfiguration->a3_event_list) {
     for (uint8_t nCell = 0; nCell < neighbourConfiguration->size; nCell++) {
-      const nr_neighbour_gnb_configuration_t *neighbourCell =
-          (const nr_neighbour_gnb_configuration_t *)seq_arr_at(neighbourConfiguration, nCell);
-      if (!neighbourCell->isIntraFrequencyNeighbour)
-        continue;
-
-      if (monr1->cellsToAddModList == NULL) {
-        monr1->cellsToAddModList = calloc(1, sizeof(*monr1->cellsToAddModList));
-      }
-
-      NR_CellsToAddMod_t *cell = calloc(1, sizeof(*cell));
+      const nr_neighbour_gnb_configuration_t *neighbourCell = seq_arr_at(neighbourConfiguration, nCell);
+      NR_MeasObjectNR_t *monr1 = mo1->measObject.choice.measObjectNR;
+      monr1->cellsToAddModList = calloc_or_fail(1, sizeof(*monr1->cellsToAddModList));
+      NR_CellsToAddMod_t *cell = calloc_or_fail(1, sizeof(*cell));
       cell->physCellId = neighbourCell->physicalCellId;
       ASN_SEQUENCE_ADD(&monr1->cellsToAddModList->list, cell);
     }
   }
-
-  mo1->measObject.choice.measObjectNR = monr1;
   asn1cSeqAdd(&mc->measObjectToAddModList->list, mo1);
 
   // Preparation of measId
-  for (uint8_t reportIdx = 0; reportIdx < mc->reportConfigToAddModList->list.count; reportIdx++) {
+  uint8_t reportIdx = 0;
+  for (; reportIdx < mc->reportConfigToAddModList->list.count; reportIdx++) {
     const NR_ReportConfigId_t reportId = mc->reportConfigToAddModList->list.array[reportIdx]->reportConfigId;
-    NR_MeasIdToAddMod_t *measid = calloc(1, sizeof(NR_MeasIdToAddMod_t));
-    measid->measId = reportIdx + 1;
-    measid->reportConfigId = reportId;
-    measid->measObjectId = 1;
+    NR_MeasIdToAddMod_t *measid = get_MeasId(reportIdx + 1, reportId, 1);
     asn1cSeqAdd(&mc->measIdToAddModList->list, measid);
   }
 
-  mc->quantityConfig = calloc(1, sizeof(*mc->quantityConfig));
-  mc->quantityConfig->quantityConfigNR_List = calloc(1, sizeof(*mc->quantityConfig->quantityConfigNR_List));
-  NR_QuantityConfigNR_t *qcnr = calloc(1, sizeof(*qcnr));
+  if (neighbourConfiguration) {
+    // Preparation of measId for neighbour cells for periodic report
+    if (measurementConfiguration->per_event) {
+      for (uint8_t neighbourIdx = 0; neighbourIdx < neighbourConfiguration->size; neighbourIdx++) {
+        const nr_neighbour_gnb_configuration_t *neighbourCell = seq_arr_at(neighbourConfiguration, neighbourIdx);
+        NR_MeasObjectToAddMod_t *mo_neighbour = get_MeasObject(ft, band, neighbourCell->absoluteFrequencySSB, neighbourIdx + 2);
+        NR_MeasObjectNR_t *monr = mo_neighbour->measObject.choice.measObjectNR;
+        monr->cellsToAddModList = calloc_or_fail(1, sizeof(*monr->cellsToAddModList));
+        NR_CellsToAddMod_t *cell = calloc_or_fail(1, sizeof(*cell));
+        cell->physCellId = neighbourCell->physicalCellId;
+        ASN_SEQUENCE_ADD(&monr->cellsToAddModList->list, cell);
+        asn1cSeqAdd(&mc->measObjectToAddModList->list, mo_neighbour);
+        const NR_ReportConfigId_t reportId = mc->reportConfigToAddModList->list.array[0]->reportConfigId;
+        NR_MeasIdToAddMod_t *measid = get_MeasId(reportIdx + 1, reportId, neighbourIdx + 2);
+        asn1cSeqAdd(&mc->measIdToAddModList->list, measid);
+        reportIdx++;
+      }
+    }
+  }
+
+  mc->quantityConfig = calloc_or_fail(1, sizeof(*mc->quantityConfig));
+  mc->quantityConfig->quantityConfigNR_List = calloc_or_fail(1, sizeof(*mc->quantityConfig->quantityConfigNR_List));
+  NR_QuantityConfigNR_t *qcnr = calloc_or_fail(1, sizeof(*qcnr));
   asn1cCallocOne(qcnr->quantityConfigCell.ssb_FilterConfig.filterCoefficientRSRP, NR_FilterCoefficient_fc6);
   asn1cCallocOne(qcnr->quantityConfigCell.csi_RS_FilterConfig.filterCoefficientRSRP, NR_FilterCoefficient_fc6);
   asn1cSeqAdd(&mc->quantityConfig->quantityConfigNR_List->list, qcnr);
-
+  
   return mc;
 }
 
@@ -1442,5 +1468,19 @@ int do_NR_HandoverPreparationInformation(const uint8_t *uecap_buf, int uecap_buf
   AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
 
   ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
+  return (enc_rval.encoded + 7) / 8;
+}
+
+int do_NR_MeasConfig(const NR_MeasConfig_t *measconfig, uint8_t *buf, int buf_size)
+{
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_MeasConfig, NULL, measconfig, buf, buf_size);
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
+  return (enc_rval.encoded + 7) / 8;
+}
+
+int do_NR_MeasurementTimingConfiguration(const NR_MeasurementTimingConfiguration_t *mtc, uint8_t *buf, int buf_size)
+{
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_MeasurementTimingConfiguration, NULL, mtc, buf, buf_size);
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
   return (enc_rval.encoded + 7) / 8;
 }
