@@ -453,6 +453,36 @@ static NR_UE_NR_Capability_t *get_ue_nr_cap_from_ho_prep_info(uint8_t *buf, uint
   return cap;
 }
 
+static NR_MeasConfig_t *get_nr_meas_config(uint8_t *buf, uint32_t len)
+{
+  if (buf == NULL || len == 0)
+    return NULL;
+
+  NR_MeasConfig_t *meas_config = NULL;
+  asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_MeasConfig, (void **)&meas_config, buf, len, 0, 0);
+  if (dec_rval.code != RC_OK) {
+    LOG_E(NR_MAC, "cannot decode NR MeasConfig, ignoring\n");
+    ASN_STRUCT_FREE(asn_DEF_NR_MeasConfig, meas_config);
+    return NULL;
+  }
+  return meas_config;
+}
+
+static NR_MeasurementTimingConfiguration_t *get_nr_mtc(uint8_t *buf, uint32_t len)
+{
+  if (buf == NULL || len == 0)
+    return NULL;
+
+  NR_MeasurementTimingConfiguration_t *mtc = NULL;
+  asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_MeasurementTimingConfiguration, (void **)&mtc, buf, len, 0, 0);
+  if (dec_rval.code != RC_OK) {
+    LOG_E(NR_MAC, "cannot decode NR MeasurementTimingConfiguration, ignoring\n");
+    ASN_STRUCT_FREE(asn_DEF_NR_MeasurementTimingConfiguration, mtc);
+    return NULL;
+  }
+  return mtc;
+}
+
 NR_CellGroupConfig_t *clone_CellGroupConfig(const NR_CellGroupConfig_t *orig)
 {
   uint8_t buf[16636];
@@ -568,6 +598,8 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
   bool ue_id_provided = resp.gNB_DU_ue_id > 0 && resp.gNB_DU_ue_id < 0xffff;
 
   NR_UE_NR_Capability_t *ue_cap = NULL;
+  NR_MeasConfig_t *ue_meas_config = NULL;
+  NR_MeasurementTimingConfiguration_t *mtc = NULL;
   if (req->cu_to_du_rrc_information != NULL) {
     const cu_to_du_rrc_information_t *cu2du = req->cu_to_du_rrc_information;
     AssertFatal(cu2du->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
@@ -576,7 +608,8 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
     } else if (cu2du->uE_CapabilityRAT_ContainerList != NULL) {
       ue_cap = get_ue_nr_cap(req->gNB_DU_ue_id, cu2du->uE_CapabilityRAT_ContainerList, cu2du->uE_CapabilityRAT_ContainerList_length);
     }
-    AssertFatal(cu2du->measConfig == NULL, "MeasConfig not handled\n");
+    ue_meas_config = get_nr_meas_config(cu2du->measConfig, cu2du->measConfig_length);
+    mtc = get_nr_mtc(cu2du->measurementTimingConfiguration, cu2du->measurementTimingConfiguration_length);
   }
 
   NR_SCHED_LOCK(&mac->sched_lock);
@@ -629,14 +662,30 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
     }
   }
 
-  resp.du_to_cu_rrc_information = calloc(1, sizeof(du_to_cu_rrc_information_t));
-  AssertFatal(resp.du_to_cu_rrc_information != NULL, "out of memory\n");
-  resp.du_to_cu_rrc_information->cellGroupConfig = calloc(1,1024);
-  AssertFatal(resp.du_to_cu_rrc_information->cellGroupConfig != NULL, "out of memory\n");
+  resp.du_to_cu_rrc_information = calloc_or_fail(1, sizeof(du_to_cu_rrc_information_t));
+  resp.du_to_cu_rrc_information->cellGroupConfig = calloc_or_fail(1,1024);
   asn_enc_rval_t enc_rval =
       uper_encode_to_buffer(&asn_DEF_NR_CellGroupConfig, NULL, new_CellGroup, resp.du_to_cu_rrc_information->cellGroupConfig, 1024);
   AssertFatal(enc_rval.encoded > 0, "Could not encode CellGroup, failed element %s\n", enc_rval.failed_type->name);
   resp.du_to_cu_rrc_information->cellGroupConfig_length = (enc_rval.encoded + 7) >> 3;
+
+  UE->meas_config = ue_meas_config;
+  if (mtc) {
+    const NR_MeasTimingList_t *mtlist = mtc->criticalExtensions.choice.c1->choice.measTimingConf->measTiming;
+    const NR_MeasTiming_t *mt = mtlist->list.array[0];
+    DevAssert(mt != NULL && mt->frequencyAndTiming != NULL);
+    const struct NR_MeasTiming__frequencyAndTiming *ft = mt->frequencyAndTiming;
+    const NR_SSB_MTC_t *ssb_mtc = &ft->ssb_MeasurementTimingConfiguration;
+    UE->meas_config->measGapConfig = get_gap_config_from_smtc(ssb_mtc);
+    resp.du_to_cu_rrc_information->measGapConfig = calloc_or_fail(1, 1024);
+    asn_enc_rval_t enc_rval_mgc = uper_encode_to_buffer(&asn_DEF_NR_MeasGapConfig,
+                                                        NULL,
+                                                        UE->meas_config->measGapConfig,
+                                                        resp.du_to_cu_rrc_information->measGapConfig,
+                                                        1024);
+    AssertFatal(enc_rval_mgc.encoded > 0, "Could not encode CellGroup, failed element %s\n", enc_rval_mgc.failed_type->name);
+    resp.du_to_cu_rrc_information->measGapConfig_length = (enc_rval_mgc.encoded + 7) >> 3;
+  }
 
   nr_mac_prepare_cellgroup_update(mac, UE, new_CellGroup);
 
@@ -665,12 +714,12 @@ void ue_context_modification_request(const f1ap_ue_context_modif_req_t *req)
   };
 
   NR_UE_NR_Capability_t *ue_cap = NULL;
+  NR_MeasConfig_t *ue_meas_config = NULL;
   if (req->cu_to_du_rrc_information != NULL) {
-    AssertFatal(req->cu_to_du_rrc_information->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
-    ue_cap = get_ue_nr_cap(req->gNB_DU_ue_id,
-                           req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList,
-                           req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList_length);
-    AssertFatal(req->cu_to_du_rrc_information->measConfig == NULL, "MeasConfig not handled\n");
+    const cu_to_du_rrc_information_t *cu2du = req->cu_to_du_rrc_information;
+    AssertFatal(cu2du->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
+    ue_cap = get_ue_nr_cap(req->gNB_DU_ue_id, cu2du->uE_CapabilityRAT_ContainerList, cu2du->uE_CapabilityRAT_ContainerList_length);
+    ue_meas_config = get_nr_meas_config(cu2du->measConfig, cu2du->measConfig_length);
   }
 
   NR_SCHED_LOCK(&mac->sched_lock);
@@ -679,6 +728,11 @@ void ue_context_modification_request(const f1ap_ue_context_modif_req_t *req)
     LOG_E(NR_MAC, "could not find UE with RNTI %04x\n", req->gNB_DU_ue_id);
     NR_SCHED_UNLOCK(&mac->sched_lock);
     return;
+  }
+
+  if (ue_meas_config) {
+    ASN_STRUCT_FREE(asn_DEF_NR_MeasConfig, UE->meas_config);
+    UE->meas_config = ue_meas_config;
   }
 
   NR_CellGroupConfig_t *new_CellGroup = clone_CellGroupConfig(UE->CellGroup);

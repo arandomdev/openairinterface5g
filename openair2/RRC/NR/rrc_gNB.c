@@ -476,6 +476,23 @@ static void rrc_gNB_process_RRCSetupComplete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE
   rrc_gNB_send_NGAP_NAS_FIRST_REQ(rrc, UE, rrcSetupComplete);
 }
 
+static NR_MeasConfig_t *nr_rrc_get_measconfig(const gNB_RRC_INST *rrc, const gNB_RRC_UE_t *UE)
+{
+  nr_rrc_du_container_t *du = get_du_for_ue((gNB_RRC_INST *)rrc, UE->rrc_ue_id);
+  DevAssert(du != NULL);
+  f1ap_served_cell_info_t *cell_info = &du->setup_req->cell[0].info;
+  if (du->mtc == NULL)
+    return NULL;
+
+  int scs = get_ssb_scs(cell_info);
+  int band = get_dl_band(cell_info);
+  const NR_MeasTimingList_t *mtlist = du->mtc->criticalExtensions.choice.c1->choice.measTimingConf->measTiming;
+  const NR_MeasTiming_t *mt = mtlist->list.array[0];
+  const neighbour_cell_configuration_t *neighbour_config = get_neighbour_config(cell_info->nr_cellid);
+  seq_arr_t *neighbour_cells = neighbour_config ? neighbour_config->neighbour_cells : NULL;
+  return get_MeasConfig(mt, band, scs, &rrc->measurementConfiguration, neighbour_cells);
+}
+
 static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
                                              gNB_RRC_UE_t *UE,
                                              uint8_t xid,
@@ -484,29 +501,6 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
                                              int max_len,
                                              bool reestablish)
 {
-  NR_CellGroupConfig_t *cellGroupConfig = UE->masterCellGroup;
-  nr_rrc_du_container_t *du = get_du_for_ue(rrc, UE->rrc_ue_id);
-  DevAssert(du != NULL);
-  f1ap_served_cell_info_t *cell_info = &du->setup_req->cell[0].info;
-  NR_MeasConfig_t *measconfig = NULL;
-  if (du->mtc != NULL) {
-    int scs = get_ssb_scs(cell_info);
-    int band = get_dl_band(cell_info);
-    const NR_MeasTimingList_t *mtlist = du->mtc->criticalExtensions.choice.c1->choice.measTimingConf->measTiming;
-    const NR_MeasTiming_t *mt = mtlist->list.array[0];
-    const neighbour_cell_configuration_t *neighbour_config = get_neighbour_config(cell_info->nr_cellid);
-    seq_arr_t *neighbour_cells = NULL;
-    if (neighbour_config)
-      neighbour_cells = neighbour_config->neighbour_cells;
-
-    measconfig = get_MeasConfig(mt, band, scs, &rrc->measurementConfiguration, neighbour_cells);
-  }
-
-  if (UE->measConfig)
-    free_MeasConfig(UE->measConfig);
-
-  UE->measConfig = measconfig;
-
   NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish);
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(UE, reestablish);
 
@@ -518,9 +512,9 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
                                    DRBs,
                                    UE->DRB_ReleaseList,
                                    NULL,
-                                   measconfig,
+                                   UE->measConfig,
                                    nas_messages,
-                                   cellGroupConfig);
+                                   UE->masterCellGroup);
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buf, size, "[MSG] RRC Reconfiguration\n");
   freeSRBlist(SRBs);
   freeDRBlist(DRBs);
@@ -1077,6 +1071,7 @@ static void rrc_handle_RRCSetupRequest(gNB_RRC_INST *rrc,
   UE->establishment_cause = rrcSetupRequest->establishmentCause;
   UE->nr_cellid = msg->nr_cellid;
   UE->masterCellGroup = cellGroupConfig;
+  UE->measConfig = nr_rrc_get_measconfig(rrc, UE);
   activate_srb(UE, 1);
   rrc_gNB_generate_RRCSetup(0, msg->crnti, ue_context_p, msg->du2cu_rrc_container, msg->du2cu_rrc_container_length);
 }
@@ -1982,6 +1977,17 @@ static void rrc_CU_process_ue_context_setup_response(MessageDef *msg_p, instance
                                                  resp->du_to_cu_rrc_information->cellGroupConfig_length);
   AssertFatal(dec_rval.code == RC_OK && dec_rval.consumed > 0, "Cell group config decode error\n");
 
+  if (resp->du_to_cu_rrc_information->measGapConfig && resp->du_to_cu_rrc_information->measGapConfig_length > 0) {
+    NR_MeasGapConfig_t *measGapConfig = NULL;
+    asn_dec_rval_t dec_rval_mgc = uper_decode_complete(NULL,
+                                                       &asn_DEF_NR_MeasGapConfig,
+                                                       (void **)&measGapConfig,
+                                                       (uint8_t *)resp->du_to_cu_rrc_information->measGapConfig,
+                                                       resp->du_to_cu_rrc_information->measGapConfig_length);
+    AssertFatal(dec_rval_mgc.code == RC_OK && dec_rval_mgc.consumed > 0, "measGapConfig decode error\n");
+    UE->measConfig->measGapConfig = measGapConfig;
+  }
+
   if (UE->masterCellGroup) {
     ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->masterCellGroup);
     LOG_I(RRC, "UE %04x replacing existing CellGroupConfig with new one received from DU\n", UE->rnti);
@@ -2855,6 +2861,23 @@ void rrc_gNB_generate_UeContextSetupRequest(const gNB_RRC_INST *rrc,
     cu2du_p = &cu2du;
     cu2du.uE_CapabilityRAT_ContainerList = ue_p->ue_cap_buffer.buf;
     cu2du.uE_CapabilityRAT_ContainerList_length = ue_p->ue_cap_buffer.len;
+  }
+
+  uint8_t buf[NR_RRC_BUF_SIZE];
+  if (ue_p->measConfig) {
+    int size = do_NR_MeasConfig(ue_p->measConfig, buf, NR_RRC_BUF_SIZE);
+    cu2du_p = &cu2du;
+    cu2du.measConfig = buf;
+    cu2du.measConfig_length = size;
+  }
+
+  nr_rrc_du_container_t *du = get_du_for_ue((gNB_RRC_INST *)rrc, ue_p->rrc_ue_id);
+  uint8_t buf_mtc[NR_RRC_BUF_SIZE];
+  if (du->mtc) {
+    int size = do_NR_MeasurementTimingConfiguration(du->mtc, buf_mtc, NR_RRC_BUF_SIZE);
+    cu2du_p = &cu2du;
+    cu2du.measurementTimingConfiguration = buf_mtc;
+    cu2du.measurementTimingConfiguration_length = size;
   }
 
   int nb_srb = 1;
