@@ -3016,6 +3016,104 @@ void nr_csirs_scheduling(int Mod_idP, frame_t frame, slot_t slot, nfapi_nr_dl_tt
   }
 }
 
+/** @brief return Measurement Gap Repetition Period from ASN.1 config */
+static int get_mgrp(long mgrp)
+{
+  switch (mgrp) {
+    case NR_GapConfig__mgrp_ms20:
+      return 20;
+    case NR_GapConfig__mgrp_ms40:
+      return 40;
+    case NR_GapConfig__mgrp_ms80:
+      return 80;
+    case NR_GapConfig__mgrp_ms160:
+      return 160;
+    default:
+      LOG_E(NR_MAC, "Invalid MGRP %ld\n", mgrp);
+      return -1;
+  }
+}
+
+/** @brief Return Measurement Gap Length from ASN.1 config */
+static float get_mgl(long mgl)
+{
+  switch (mgl) {
+    case NR_GapConfig__mgl_ms1dot5:
+      return 1.5;
+    case NR_GapConfig__mgl_ms3:
+      return 3.0;
+    case NR_GapConfig__mgl_ms3dot5:
+      return 3.5;
+    case NR_GapConfig__mgl_ms4:
+      return 4;
+    case NR_GapConfig__mgl_ms5dot5:
+      return 5.5;
+    case NR_GapConfig__mgl_ms6:
+      return 6;
+    default:
+      LOG_E(NR_MAC, "Invalid MGL %ld\n", mgl);
+      return -1;
+  }
+}
+
+static const NR_GapConfig_t *get_gap_config(const NR_MeasGapConfig_t *mgc)
+{
+  if (mgc->gapFR2 && mgc->gapFR2->present == NR_SetupRelease_GapConfig_PR_setup)
+    return mgc->gapFR2->choice.setup;
+
+  // FR1 case
+  if (!mgc->ext1)
+    return NULL;
+
+  const NR_SetupRelease_GapConfig_t *gapUE = mgc->ext1->gapUE;
+  if (gapUE && gapUE->present == NR_SetupRelease_GapConfig_PR_setup)
+    return gapUE->choice.setup;
+
+  const NR_SetupRelease_GapConfig_t *gapFR1 = mgc->ext1->gapFR1;
+  if (gapFR1 && gapFR1->present == NR_SetupRelease_GapConfig_PR_setup)
+    return gapFR1->choice.setup;
+
+  return NULL;
+}
+
+void nr_measgap_scheduling(gNB_MAC_INST *nr_mac, frame_t frame, sub_frame_t slot)
+{
+  NR_SCHED_ENSURE_LOCKED(&nr_mac->sched_lock);
+
+  NR_UEs_t *UE_info = &nr_mac->UE_info;
+  UE_iterator (UE_info->list, UE) {
+    if (!UE->meas_config || !UE->meas_config->measGapConfig)
+      continue;
+
+    const NR_GapConfig_t *gap_config = get_gap_config(UE->meas_config->measGapConfig);
+    if (!gap_config)
+      continue;
+
+    int mgrp = get_mgrp(gap_config->mgrp);
+    int gapOffset = gap_config->gapOffset;
+
+    // TS 38 331 - Section 5.5.2.9 Measurement gap configuration
+    if (!(((frame % (mgrp / 10)) == (gapOffset / 10)) && (slot == gapOffset % 10)))
+      continue;
+
+    int scs = UE->current_DL_BWP.scs;
+    float mgl = get_mgl(gap_config->mgl);
+    int mgl_slots = ((int)(10 * mgl) << scs) / 10;
+    NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+    if (nr_timer_is_active(&sched_ctrl->transm_interrupt) == false) {
+      nr_mac_interrupt_ue_transmission(nr_mac, UE, FOLLOW_ACTIVE, mgl_slots);
+    } else {
+      // If the timer is already running, for example because of a RRCReconfiguration, we cannot change the action, otherwise the
+      // associated procedures will not be executed. So, we determine the additional time needed to reach the end of the measurement
+      // gap, and extend the timer.
+      uint32_t remaining_time = nr_timer_remaining_time(&sched_ctrl->transm_interrupt);
+      if (remaining_time < mgl_slots) {
+        nr_mac_interrupt_ue_transmission(nr_mac, UE, UE->interrupt_action, mgl_slots);
+      }
+    }
+  }
+}
+
 static void nr_mac_clean_cellgroup(NR_CellGroupConfig_t *cell_group)
 {
   DevAssert(cell_group != NULL);
@@ -3168,7 +3266,7 @@ void nr_mac_update_timers(module_id_t module_id, frame_t frame, slot_t slot)
       nr_timer_stop(&sched_ctrl->transm_interrupt);
       if (UE->interrupt_action == FOLLOW_OUTOFSYNC)
         nr_mac_trigger_ul_failure(sched_ctrl, UE->current_DL_BWP.scs);
-      else
+      else if (UE->interrupt_action != FOLLOW_ACTIVE)
         nr_mac_apply_cellgroup(mac, UE, frame, slot);
     }
   }
