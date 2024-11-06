@@ -88,7 +88,6 @@ static void ue_context_setup_request_f1ap(sctp_assoc_t assoc_id, const f1ap_ue_c
     f1ap_msg->cu_to_du_rrc_information = calloc(1, sizeof(*f1ap_msg->cu_to_du_rrc_information));
     AssertFatal(f1ap_msg->cu_to_du_rrc_information != NULL, "out of memory\n");
     AssertFatal(req->cu_to_du_rrc_information->cG_ConfigInfo == NULL && req->cu_to_du_rrc_information->cG_ConfigInfo_length == 0, "cg_ConfigInfo not implemented\n");
-    AssertFatal(req->cu_to_du_rrc_information->measConfig == NULL && req->cu_to_du_rrc_information->measConfig_length == 0, "cg_ConfigInfo not implemented\n");
     const cu_to_du_rrc_information_t *du2cu_req = req->cu_to_du_rrc_information;
     if (req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList != NULL) {
       cu_to_du_rrc_information_t* du2cu_new = f1ap_msg->cu_to_du_rrc_information;
@@ -98,8 +97,20 @@ static void ue_context_setup_request_f1ap(sctp_assoc_t assoc_id, const f1ap_ue_c
       AssertFatal(du2cu_new->uE_CapabilityRAT_ContainerList != NULL, "out of memory\n");
       memcpy(du2cu_new->uE_CapabilityRAT_ContainerList, du2cu_req->uE_CapabilityRAT_ContainerList, du2cu_new->uE_CapabilityRAT_ContainerList_length);
     }
+    cu_to_du_rrc_information_t *du2cu_new = f1ap_msg->cu_to_du_rrc_information;
+    if (req->cu_to_du_rrc_information->measConfig != NULL) {
+      DevAssert(du2cu_req->measConfig_length > 0);
+      du2cu_new->measConfig_length = du2cu_req->measConfig_length;
+      du2cu_new->measConfig = malloc_or_fail(du2cu_new->measConfig_length);
+      memcpy(du2cu_new->measConfig, du2cu_req->measConfig, du2cu_new->measConfig_length);
+    }
+    if (req->cu_to_du_rrc_information->measurementTimingConfiguration != NULL) {
+      DevAssert(du2cu_req->measurementTimingConfiguration_length > 0);
+      du2cu_new->measurementTimingConfiguration_length = du2cu_req->measurementTimingConfiguration_length;
+      du2cu_new->measurementTimingConfiguration = malloc_or_fail(du2cu_new->measurementTimingConfiguration_length);
+      memcpy(du2cu_new->measurementTimingConfiguration, du2cu_req->measurementTimingConfiguration, du2cu_new->measurementTimingConfiguration_length);
+    }
     if (req->cu_to_du_rrc_information->handoverPreparationInfo != NULL) {
-      cu_to_du_rrc_information_t *du2cu_new = f1ap_msg->cu_to_du_rrc_information;
       DevAssert(du2cu_req->handoverPreparationInfo_length > 0);
       du2cu_new->handoverPreparationInfo_length = du2cu_req->handoverPreparationInfo_length;
       du2cu_new->handoverPreparationInfo = malloc_or_fail(du2cu_new->handoverPreparationInfo_length);
@@ -139,15 +150,22 @@ static void ue_context_modification_request_f1ap(sctp_assoc_t assoc_id, const f1
     f1ap_msg->cu_to_du_rrc_information = calloc(1, sizeof(*f1ap_msg->cu_to_du_rrc_information));
     AssertFatal(f1ap_msg->cu_to_du_rrc_information != NULL, "out of memory\n");
     AssertFatal(req->cu_to_du_rrc_information->cG_ConfigInfo == NULL && req->cu_to_du_rrc_information->cG_ConfigInfo_length == 0, "cg_ConfigInfo not implemented\n");
-    AssertFatal(req->cu_to_du_rrc_information->measConfig == NULL && req->cu_to_du_rrc_information->measConfig_length == 0, "cg_ConfigInfo not implemented\n");
+    const cu_to_du_rrc_information_t *du2cu_req = req->cu_to_du_rrc_information;
     if (req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList != NULL) {
-      const cu_to_du_rrc_information_t *du2cu_req = req->cu_to_du_rrc_information;
       cu_to_du_rrc_information_t* du2cu_new = f1ap_msg->cu_to_du_rrc_information;
       DevAssert(du2cu_req->uE_CapabilityRAT_ContainerList_length > 0);
       du2cu_new->uE_CapabilityRAT_ContainerList_length = du2cu_req->uE_CapabilityRAT_ContainerList_length;
       du2cu_new->uE_CapabilityRAT_ContainerList = malloc(du2cu_new->uE_CapabilityRAT_ContainerList_length);
       AssertFatal(du2cu_new->uE_CapabilityRAT_ContainerList != NULL, "out of memory\n");
       memcpy(du2cu_new->uE_CapabilityRAT_ContainerList, du2cu_req->uE_CapabilityRAT_ContainerList, du2cu_new->uE_CapabilityRAT_ContainerList_length);
+    }
+    if (req->cu_to_du_rrc_information->measConfig != NULL) {
+      cu_to_du_rrc_information_t *du2cu_new = f1ap_msg->cu_to_du_rrc_information;
+      DevAssert(du2cu_req->measConfig_length > 0);
+      du2cu_new->measConfig_length = du2cu_req->measConfig_length;
+      du2cu_new->measConfig = malloc_or_fail(du2cu_new->measConfig_length);
+      AssertFatal(du2cu_new->measConfig != NULL, "out of memory\n");
+      memcpy(du2cu_new->measConfig, du2cu_req->measConfig, du2cu_new->measConfig_length);
     }
   }
   AssertFatal(req->drbs_to_be_modified_length == 0, "drbs_to_be_modified not supported yet\n");

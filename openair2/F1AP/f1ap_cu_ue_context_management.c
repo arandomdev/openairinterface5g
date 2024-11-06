@@ -278,11 +278,18 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
     }
 
     /* optional */
+    /* iE_Extensions */
+    F1AP_ProtocolExtensionContainer_10696P60_t *p = NULL;
+    if (f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo_length > 0
+        || f1ap_ue_context_setup_req->cu_to_du_rrc_information->measurementTimingConfiguration_length) {
+      p = calloc(1, sizeof(*p));
+      ie6->value.choice.CUtoDURRCInformation.iE_Extensions = (struct F1AP_ProtocolExtensionContainer *)p;
+    }
+
+    /* optional */
     /* HandoverPreparationInformation */
     if (f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo_length > 0) {
       DevAssert(f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo != NULL);
-      F1AP_ProtocolExtensionContainer_10696P60_t *p = calloc(1, sizeof(*p));
-      ie6->value.choice.CUtoDURRCInformation.iE_Extensions = (struct F1AP_ProtocolExtensionContainer *)p;
       asn1cSequenceAdd(p->list, F1AP_CUtoDURRCInformation_ExtIEs_t, ie_ext);
       ie_ext->id = F1AP_ProtocolIE_ID_id_HandoverPreparationInformation;
       ie_ext->criticality = F1AP_Criticality_ignore;
@@ -290,6 +297,17 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
       OCTET_STRING_fromBuf(&ie_ext->extensionValue.choice.HandoverPreparationInformation,
                            (const char *)f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo,
                            f1ap_ue_context_setup_req->cu_to_du_rrc_information->handoverPreparationInfo_length);
+    }
+
+    if (f1ap_ue_context_setup_req->cu_to_du_rrc_information->measurementTimingConfiguration_length > 0) {
+      DevAssert(f1ap_ue_context_setup_req->cu_to_du_rrc_information->measurementTimingConfiguration != NULL);
+      asn1cSequenceAdd(p->list, F1AP_CUtoDURRCInformation_ExtIEs_t, ie_ext);
+      ie_ext->id = F1AP_ProtocolIE_ID_id_MeasurementTimingConfiguration;
+      ie_ext->criticality = F1AP_Criticality_ignore;
+      ie_ext->extensionValue.present = F1AP_CUtoDURRCInformation_ExtIEs__extensionValue_PR_MeasurementTimingConfiguration;
+      OCTET_STRING_fromBuf(&ie_ext->extensionValue.choice.MeasurementTimingConfiguration,
+                           (const char *)f1ap_ue_context_setup_req->cu_to_du_rrc_information->measurementTimingConfiguration,
+                           f1ap_ue_context_setup_req->cu_to_du_rrc_information->measurementTimingConfiguration_length);
     }
   }
 
@@ -637,10 +655,20 @@ int CU_handle_UE_CONTEXT_SETUP_RESPONSE(instance_t instance, sctp_assoc_t assoc_
     return -1;
   }
 
-  f1ap_ue_context_setup_resp->du_to_cu_rrc_information = (du_to_cu_rrc_information_t *)calloc(1,sizeof(du_to_cu_rrc_information_t));
-  f1ap_ue_context_setup_resp->du_to_cu_rrc_information->cellGroupConfig = (uint8_t *)calloc(1,ie->value.choice.DUtoCURRCInformation.cellGroupConfig.size);
+  f1ap_ue_context_setup_resp->du_to_cu_rrc_information = (du_to_cu_rrc_information_t *)calloc_or_fail(1,sizeof(du_to_cu_rrc_information_t));
+  f1ap_ue_context_setup_resp->du_to_cu_rrc_information->cellGroupConfig = (uint8_t *)calloc_or_fail(1,ie->value.choice.DUtoCURRCInformation.cellGroupConfig.size);
   memcpy(f1ap_ue_context_setup_resp->du_to_cu_rrc_information->cellGroupConfig, ie->value.choice.DUtoCURRCInformation.cellGroupConfig.buf, ie->value.choice.DUtoCURRCInformation.cellGroupConfig.size);
   f1ap_ue_context_setup_resp->du_to_cu_rrc_information->cellGroupConfig_length = ie->value.choice.DUtoCURRCInformation.cellGroupConfig.size;
+  if (ie->value.choice.DUtoCURRCInformation.measGapConfig && ie->value.choice.DUtoCURRCInformation.measGapConfig->size > 0) {
+    f1ap_ue_context_setup_resp->du_to_cu_rrc_information->measGapConfig =
+        (uint8_t *)calloc_or_fail(1, ie->value.choice.DUtoCURRCInformation.measGapConfig->size);
+    memcpy(f1ap_ue_context_setup_resp->du_to_cu_rrc_information->measGapConfig,
+           ie->value.choice.DUtoCURRCInformation.measGapConfig->buf,
+           ie->value.choice.DUtoCURRCInformation.measGapConfig->size);
+    f1ap_ue_context_setup_resp->du_to_cu_rrc_information->measGapConfig_length =
+        ie->value.choice.DUtoCURRCInformation.measGapConfig->size;
+  }
+
   // DRBs_Setup_List
   F1AP_FIND_PROTOCOLIE_BY_ID(F1AP_UEContextSetupResponseIEs_t, ie, container,
                              F1AP_ProtocolIE_ID_id_DRBs_Setup_List, false);
