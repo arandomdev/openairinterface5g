@@ -190,3 +190,12 @@ int8_t nr_mac_rrc_sl_mib_ind(const module_id_t module_id,
 {
   return 1;
 }
+
+void nr_mac_rrc_meas_ind_ue(module_id_t module_id,
+                            uint32_t gNB_index,
+                            uint16_t Nid_cell,
+                            uint8_t meas_type,
+                            uint8_t is_neighboring_cell,
+                            uint8_t rsrp_dBm)
+{
+}
