@@ -573,9 +573,6 @@ void processSlotTX(void *arg)
   c16_t *txp[fp->nb_antennas_tx];
   for (int i = 0; i < fp->nb_antennas_tx; i++) {
     txp[i] = UE->common_vars.txData[i] + fp->get_samples_slot_timestamp(proc->nr_slot_tx, fp, 0);
-    // We should not need to set it to 0
-    // but in mixed slots, in TDD continuous tx (should not exist), ... we don't know the parts to ignore
-    memset(txp[i], 0, fp->get_samples_per_slot(proc->nr_slot_tx, fp) * sizeof(**txp));
   }
 
   if (proc->tx_slot_type == NR_UPLINK_SLOT || proc->tx_slot_type == NR_MIXED_SLOT) {
@@ -625,6 +622,16 @@ void processSlotTX(void *arg)
 
       phy_procedures_nrUE_TX(UE, proc, &phy_data, txp);
     }
+  }  else {
+    // for UL slots and mixed slots, the above procedure makes DFT for all symbols of the slots
+    // from a txdataF buffer that have been set to 0
+    // so, the txdata buffer is filled for the entire slot, and emitted regardless the actual RF emission
+    if (get_softmodem_params()->continuous_tx || IS_SOFTMODEM_RFSIM ) 
+      for (int i = 0; i < fp->nb_antennas_tx; i++) {
+	// We should not need to set it to 0
+	// but in mixed slots, in TDD continuous tx (should not exist), ... we don't know the parts to ignore
+	memset(txp[i], 0, fp->get_samples_per_slot(proc->nr_slot_tx, fp) * sizeof(**txp));
+      }
   }
   RU_write(rxtxD, sl_tx_action, txp);
   dynamic_barrier_join(rxtxD->next_barrier);
