@@ -103,7 +103,7 @@ int LDPCencoder(uint8_t **input, uint8_t **output, encoder_implemparams_t *impp)
 
   AssertFatal(Zc > 0, "no valid Zc found for block length %d\n", block_length);
   if ((Zc&31) > 0) simd_size = 16;
-#if 0// def __AVX512F__
+#ifdef __AVX512F__
   else if ((BG==1) && Zc==384) simd_size =64;
 #endif
   else simd_size=32;
