@@ -38,7 +38,7 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
   uint8_t *fp;
   int j,k;
 #if 1 //def __WASAVX2__
-#ifdef __AVX512F__
+#ifdef __AVX512BW__
   __m512i tmp0,tmp1,tmp2,tmp3,tmp4,tmp5;
   __m512i *e0_512,*e1_512,*e2_512,*e3_512,*e4_512,*e5_512,*e6_512,*e7_512;
 
@@ -53,7 +53,7 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
   case 2:
     e0=e;
     e1=e0+EQm;
-#ifdef __AVX512F__
+#ifdef __AVX512BW__
     e0_512=(__m512i *)e0;
     e1_512=(__m512i *)e1;
     __m512i p8a = _mm512_set_epi8(95,31,94,30,93,29,92,28,91,27,90,26,89,25,88,24,87,23,86,22,85,21,84,20,83,19,82,18,81,17,80,16,79,15,78,14,77,13,76,12,75,11,74,10,73,9,72,8,71,7,70,6,69,5,68,4,67,3,66,2,65,1,64,0);
@@ -96,7 +96,7 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
     e1=e0+EQm;
     e2=e1+EQm;
     e3=e2+EQm;
-#ifdef __AVX512F__
+#ifdef __AVX512BW__
     e0_512=(__m512i *)e0;
     e1_512=(__m512i *)e1;
     e2_512=(__m512i *)e2;
@@ -169,7 +169,7 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
     e3=e2+EQm;
     e4=e3+EQm;
     e5=e4+EQm;
-#ifdef __AVX512F__
+#ifdef __AVX512BW__
     e0_512=(__m512i *)e0;
     e1_512=(__m512i *)e1;
     e2_512=(__m512i *)e2;
@@ -251,7 +251,7 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
     e6=e5+EQm;
     e7=e6+EQm;
 
-#ifdef __AVX512F__
+#ifdef __AVX512BW__
     e0_512=(__m512i *)e0;
     e1_512=(__m512i *)e1;
     e2_512=(__m512i *)e2;
