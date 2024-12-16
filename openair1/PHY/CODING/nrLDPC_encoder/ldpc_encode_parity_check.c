@@ -37,7 +37,7 @@
 #include "common/utils/LOG/log.h"
 
 
-#ifdef __AVX512F__
+#if 0 //def __AVX512F__
 #include "ldpc384_simd512_byte.c"
 #else
 #include "ldpc384_byte.c"
