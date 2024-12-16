@@ -72,6 +72,7 @@ typedef struct {
   uint8_t BG;
   /// Interleaver outputs
   unsigned char *output;
+  task_ans_t *ans;
 } encoder_implemparams_t;
 
 typedef int32_t(LDPC_initfunc_t)(void);
