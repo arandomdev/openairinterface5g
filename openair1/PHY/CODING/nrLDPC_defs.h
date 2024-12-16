@@ -58,6 +58,8 @@ typedef struct {
   time_stats_t *tprep;
   time_stats_t *tparity;
   time_stats_t *toutput;
+  time_stats_t *dlsch_rate_matching_stats;
+  time_stats_t *dlsch_interleaving_stats;
   /// Size in bits of the code segments
   uint32_t K;
   /// Number of lifting sizes to fit the payload
@@ -70,7 +72,6 @@ typedef struct {
   uint8_t BG;
   /// Interleaver outputs
   unsigned char *output;
-  task_ans_t *ans;
 } encoder_implemparams_t;
 
 typedef int32_t(LDPC_initfunc_t)(void);
