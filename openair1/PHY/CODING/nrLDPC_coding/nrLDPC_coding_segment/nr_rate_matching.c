@@ -77,12 +77,12 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
 #else
     e0_128=(simde__m128i *)e0;
     e1_128=(simde__m128i *)e1;
-    __m128i e0j,e1j;
+    simde__m128i e0j,e1j;
     for (k=0,j=0;j<EQm>>4;j++,k+=2) {
-      e0j=_mm_loadu_si128(e0_128+j);
-      e1j=_mm_loadu_si128(e1_128+j);
-      _mm_storeu_si128(f_128+k,simde_mm_unpacklo_epi8(e0j,e1j));
-      _mm_storeu_si128(f_128+k+1,simde_mm_unpackhi_epi8(e0j,e1j)); 
+      e0j=simde_mm_loadu_si128(e0_128+j);
+      e1j=simde_mm_loadu_si128(e1_128+j);
+      simde_mm_storeu_si128(f_128+k,simde_mm_unpacklo_epi8(e0j,e1j));
+      simde_mm_storeu_si128(f_128+k+1,simde_mm_unpackhi_epi8(e0j,e1j)); 
     }
     if ((j<<4) != EQm) {
       int k2=k<<4;
@@ -143,20 +143,20 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
     e1_128=(simde__m128i *)e1;
     e2_128=(simde__m128i *)e2;
     e3_128=(simde__m128i *)e3;
-    __m128i e2j,e3j;
+    simde__m128i e2j,e3j;
     for (k=0,j=0;j<EQm>>4;j++,k+=4) {
-      e0j    = _mm_loadu_si128(e0_128+j);	    
-      e1j    = _mm_loadu_si128(e1_128+j);	    
-      e2j    = _mm_loadu_si128(e2_128+j);	    
-      e3j    = _mm_loadu_si128(e3_128+j);	    
+      e0j    = simde_mm_loadu_si128(e0_128+j);	    
+      e1j    = simde_mm_loadu_si128(e1_128+j);	    
+      e2j    = simde_mm_loadu_si128(e2_128+j);	    
+      e3j    = simde_mm_loadu_si128(e3_128+j);	    
       tmp0   = simde_mm_unpacklo_epi8(e0j,e1j); // e0(i) e1(i) e0(i+1) e1(i+1) .... e0(i+7) e1(i+7)
       tmp1   = simde_mm_unpacklo_epi8(e2j,e3j); // e2(i) e3(i) e2(i+1) e3(i+1) .... e2(i+7) e3(i+7)
-      _mm_storeu_si128(f_128+k,simde_mm_unpacklo_epi16(tmp0,tmp1));   // e0(i) e1(i) e2(i) e3(i) ... e0(i+3) e1(i+3) e2(i+3) e3(i+3)
-      _mm_storeu_si128(f_128+k+1,simde_mm_unpackhi_epi16(tmp0,tmp1));   // e0(i+4) e1(i+4) e2(i+4) e3(i+4) ... e0(i+7) e1(i+7) e2(i+7) e3(i+7)
+      simde_mm_storeu_si128(f_128+k,simde_mm_unpacklo_epi16(tmp0,tmp1));   // e0(i) e1(i) e2(i) e3(i) ... e0(i+3) e1(i+3) e2(i+3) e3(i+3)
+      simde_mm_storeu_si128(f_128+k+1,simde_mm_unpackhi_epi16(tmp0,tmp1));   // e0(i+4) e1(i+4) e2(i+4) e3(i+4) ... e0(i+7) e1(i+7) e2(i+7) e3(i+7)
       tmp0   = simde_mm_unpackhi_epi8(e0j,e1j); // e0(i+8) e1(i+8) e0(i+9) e1(i+9) .... e0(i+15) e1(i+15)
       tmp1   = simde_mm_unpackhi_epi8(e2j,e3j); // e2(i+8) e3(i+9) e2(i+10) e3(i+10) .... e2(i+31) e3(i+31)
-      _mm_storeu_si128(f_128+k+2,simde_mm_unpacklo_epi16(tmp0,tmp1));
-      _mm_storeu_si128(f_128+k+3,simde_mm_unpackhi_epi16(tmp0,tmp1)); 
+      simde_mm_storeu_si128(f_128+k+2,simde_mm_unpacklo_epi16(tmp0,tmp1));
+      simde_mm_storeu_si128(f_128+k+3,simde_mm_unpackhi_epi16(tmp0,tmp1)); 
     }
     if ((j<<4) != EQm) {
       int k2=k<<4;
