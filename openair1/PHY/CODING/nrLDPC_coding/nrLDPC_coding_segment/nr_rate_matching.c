@@ -385,6 +385,8 @@ void nr_interleaving_ldpc(uint32_t E, uint8_t Qm, uint8_t *e, uint8_t *f)
          *fp++ = e3[j2];
          *fp++ = e4[j2];
          *fp++ = e5[j2];
+         *fp++ = e6[j2];
+         *fp++ = e7[j2];
       }
     }
 #endif
