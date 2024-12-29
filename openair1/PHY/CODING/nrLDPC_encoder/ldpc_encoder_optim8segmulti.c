@@ -167,7 +167,7 @@ int LDPCencoder(uint8_t **input, uint8_t **output, encoder_implemparams_t *impp)
   }
 #else
   for (int i=0; i<block_length>>5; i++) {
-    c256 = simde_mm256_and_si256(simde_mm256_cmpeq_epi8(simde_mm256_andnot_si256(simde_mm256_shuffle_epi8(simde_mm256_set1_epi32(((uint32_t*)input[macro_segment])[i]), shufmask),andmask),zero256),masks0[0]);
+    c256 = simde_mm256_and_si256(simde_mm256_cmpeq_epi8(simde_mm256_andnot_si256(simde_mm256_shuffle_epi8(simde_mm256_set1_epi32(((uint32_t*)input[macro_segment])[i]), shufmask),andmask),zero256),masks[0]);
     //for (j=1; j<n_segments; j++) {
     for (int j=macro_segment+1; j < macro_segment_end; j++) {    
       c256 = simde_mm256_or_si256(simde_mm256_and_si256(simde_mm256_cmpeq_epi8(simde_mm256_andnot_si256(simde_mm256_shuffle_epi8(simde_mm256_set1_epi32(((uint32_t*)input[j])[i]), shufmask),andmask),zero256),masks[j-macro_segment]),c256);
@@ -273,14 +273,14 @@ int LDPCencoder(uint8_t **input, uint8_t **output, encoder_implemparams_t *impp)
 
     for (int i=0;i<l1;i++)
       //for (j=0;j<n_segments;j++) ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(c256p[i],j),masks[0]);
-    	for (int j=macro_segment; j < macro_segment_end; j++) ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(c256p[i],j-macro_segment),masks2[0]);
+    	for (int j=macro_segment; j < macro_segment_end; j++) ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(c256p[i],j-macro_segment),masks[0]);
 
 
     //  if ((((nrows-no_punctured_columns) * Zc-removed_bit)&31)>0) l2++;
 
     for (int i1=0, i=l1;i1<l2;i1++,i++)
       //for (j=0;j<n_segments;j++) ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(d256p[i1],j),masks[0]);
-    	for (int j=macro_segment; j < macro_segment_end; j++)  ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(d256p[i1],j-macro_segment),masks2[0]);
+    	for (int j=macro_segment; j < macro_segment_end; j++)  ((simde__m256i *)output[j])[i] = simde_mm256_and_si256(simde_mm256_srai_epi16(d256p[i1],j-macro_segment),masks[0]);
   }
 #endif
   else {
