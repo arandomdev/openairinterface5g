@@ -71,7 +71,6 @@ int LDPCencoder(uint8_t **input, uint8_t **output, encoder_implemparams_t *impp)
   simde__m128i zero128   = simde_mm_setzero_si128();
   simde__m128i masks[8];
   register simde__m128i c128;
-  register simde__m256i c256;
   masks[0] = simde_mm_set1_epi8(0x1);
   masks[1] = simde_mm_set1_epi8(0x2);
   masks[2] = simde_mm_set1_epi8(0x4);
@@ -148,15 +147,6 @@ int LDPCencoder(uint8_t **input, uint8_t **output, encoder_implemparams_t *impp)
     }
   }
 #elif defined(__aarch64__)
-  simde__m256i masks2[8];
-  masks2[0] = simde_mm256_set1_epi8(0x1);
-  masks2[1] = simde_mm256_set1_epi8(0x2);
-  masks2[2] = simde_mm256_set1_epi8(0x4);
-  masks2[3] = simde_mm256_set1_epi8(0x8);
-  masks2[4] = simde_mm256_set1_epi8(0x10);
-  masks2[5] = simde_mm256_set1_epi8(0x20);
-  masks2[6] = simde_mm256_set1_epi8(0x40);
-  masks2[7] = simde_mm256_set1_epi8(0x80);
   for (int i=0; i<block_length>>4; i++) {
     c128 = simde_mm_and_si128(simde_mm_cmpeq_epi8(simde_mm_andnot_si128(simde_mm_shuffle_epi8(simde_mm_set1_epi16(((uint16_t*)input[macro_segment])[i]), shufmask),andmask),zero128),masks[0]);
     //for (j=1; j<n_segments; j++) {
