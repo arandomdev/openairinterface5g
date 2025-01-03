@@ -41,8 +41,8 @@
 
 #include <syscall.h>
 
-// #define DEBUG_LDPC_ENCODING
-// #define DEBUG_LDPC_ENCODING_FREE 1
+#define DEBUG_LDPC_ENCODING
+//#define DEBUG_LDPC_ENCODING_FREE 1
 
 typedef struct ldpc8blocks_args_s {
   nrLDPC_TB_encoding_parameters_t *nrLDPC_TB_encoding_parameters;
@@ -87,7 +87,7 @@ static void ldpc8blocks(void *p)
   }
 
 #ifdef DEBUG_LDPC_ENCODING
-  LOG_D(PHY, "rvidx in encoding = %d\n", rel15->rvIndex[0]);
+  LOG_D(PHY, "rvidx in encoding = %d\n", nrLDPC_TB_encoding_parameters->rv_index);
 #endif
   const uint32_t E = nrLDPC_TB_encoding_parameters->segments[macro_segment].E;
   uint32_t E2=E,E2_first_segment=macro_segment_end-macro_segment;
@@ -101,7 +101,7 @@ static void ldpc8blocks(void *p)
       }	 
     
 
-  LOG_D(NR_PHY,
+  LOG_I(NR_PHY,
         "Rate Matching, Code segment %d...%d/%d (coded bits (G) %u, E %d, Filler bits %d, Filler offset %d mod_order %d, nb_rb "
           "%d,nrOfLayer %d)...\n",
         macro_segment,
@@ -119,8 +119,8 @@ static void ldpc8blocks(void *p)
 
   uint8_t e[E] __attribute__((aligned(64)));
   uint8_t f[E] __attribute__((aligned(64)));
-  uint8_t e2[E] __attribute__((aligned(64)));
-  uint8_t f2[E] __attribute__((aligned(64)));
+  uint8_t e2[E2] __attribute__((aligned(64)));
+  uint8_t f2[E2] __attribute__((aligned(64)));
   bzero(e, E);
   if (Eshift) bzero(e2,E2);
   start_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_rate_match);
