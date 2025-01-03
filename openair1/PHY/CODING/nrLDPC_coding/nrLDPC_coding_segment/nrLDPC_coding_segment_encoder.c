@@ -64,98 +64,247 @@ static void ldpc8blocks(void *p)
 
   // nrLDPC_encoder output is in "d"
   // let's make this interface happy!
-  uint8_t tmp[8][68 * 384] __attribute__((aligned(64)));
-  uint8_t *d[impp->n_segments];
-  for (int rr = impp->macro_num * 8, i = 0; rr < impp->n_segments && rr < (impp->macro_num + 1) * 8; rr++, i++)
-    d[rr] = tmp[i];
-
+  uint8_t d[68 * 384] __attribute__((aligned(64)));
+  uint8_t *dp[2];
+  dp[0] = &d[0];
   uint8_t *c[nrLDPC_TB_encoding_parameters->C];
+  unsigned int macro_segment, macro_segment_end;
+
+  
+  macro_segment = 8*impp->macro_num;
+  macro_segment_end = (impp->n_segments > 8*(impp->macro_num+1)) ? 8*(impp->macro_num+1) : impp->n_segments;
   for (int r = 0; r < nrLDPC_TB_encoding_parameters->C; r++)
     c[r] = nrLDPC_TB_encoding_parameters->segments[r].c;
   start_meas(&nrLDPC_TB_encoding_parameters->segments[impp->macro_num * 8].ts_ldpc_encode);
-  LDPCencoder(c, d, impp);
+  ldpc_interface_segment.LDPCencoder(c, dp, impp);
   stop_meas(&nrLDPC_TB_encoding_parameters->segments[impp->macro_num * 8].ts_ldpc_encode);
   // Compute where to place in output buffer that is concatenation of all segments
 
-  uint32_t r_offset = 0;
-  for (int i = 0; i < impp->macro_num * 8; i++)
-    r_offset += nrLDPC_TB_encoding_parameters->segments[i].E;
-  for (int rr = impp->macro_num * 8; rr < impp->n_segments && rr < (impp->macro_num + 1) * 8; rr++) {
-    if (impp->F > 0) {
-      // writing into positions d[r][k-2Zc] as in clause 5.3.2 step 2) in 38.212
-      memset(&d[rr][impp->K - impp->F - 2 * impp->Zc], NR_NULL, impp->F);
-    }
+
+  if (impp->F>0) {
+      // writing into positions d[k-2Zc] as in clause 5.3.2 step 2) in 38.212
+      memset(&d[impp->K - impp->F - 2 * impp->Zc], NR_NULL, impp->F);
+  }
 
 #ifdef DEBUG_LDPC_ENCODING
-    LOG_D(PHY, "rvidx in encoding = %d\n", rel15->rvIndex[0]);
+  LOG_D(PHY, "rvidx in encoding = %d\n", rel15->rvIndex[0]);
 #endif
-    uint32_t E = nrLDPC_TB_encoding_parameters->segments[rr].E;
-    LOG_D(NR_PHY,
-          "Rate Matching, Code segment %d/%d (coded bits (G) %u, E %d, Filler bits %d, Filler offset %d mod_order %d, nb_rb "
+  const uint32_t E = nrLDPC_TB_encoding_parameters->segments[macro_segment].E;
+  uint32_t E2=E,E2_first_segment=macro_segment_end-macro_segment;
+  bool Eshift=false;
+  for (int s=macro_segment;s<macro_segment_end;s++)
+      if (nrLDPC_TB_encoding_parameters->segments[s].E != E) {
+	 E2=nrLDPC_TB_encoding_parameters->segments[s].E;
+         Eshift=true;
+	 E2_first_segment = s-macro_segment;
+         break;
+      }	 
+    
+
+  LOG_D(NR_PHY,
+        "Rate Matching, Code segment %d...%d/%d (coded bits (G) %u, E %d, Filler bits %d, Filler offset %d mod_order %d, nb_rb "
           "%d,nrOfLayer %d)...\n",
-          rr,
-          impp->n_segments,
-          G,
-          E,
-          impp->F,
-          impp->K - impp->F - 2 * impp->Zc,
-          mod_order,
-          nb_rb,
-          nrLDPC_TB_encoding_parameters->nb_layers);
+        macro_segment,
+        macro_segment_end,
+        impp->n_segments,
+        G,
+        E,
+        impp->F,
+        impp->K - impp->F - 2 * impp->Zc,
+        mod_order,
+        nb_rb,
+        nrLDPC_TB_encoding_parameters->nb_layers);
 
-    uint32_t Tbslbrm = nrLDPC_TB_encoding_parameters->tbslbrm;
+  uint32_t Tbslbrm = nrLDPC_TB_encoding_parameters->tbslbrm;
 
-    uint8_t e[E];
-    bzero(e, E);
-    start_meas(&nrLDPC_TB_encoding_parameters->segments[rr].ts_rate_match);
+  uint8_t e[E] __attribute__((aligned(64)));
+  uint8_t f[E] __attribute__((aligned(64)));
+  uint8_t e2[E] __attribute__((aligned(64)));
+  uint8_t f2[E] __attribute__((aligned(64)));
+  bzero(e, E);
+  if (Eshift) bzero(e2,E2);
+  start_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_rate_match);
+  nr_rate_matching_ldpc(Tbslbrm,
+                        impp->BG,
+                        impp->Zc,
+                        d,
+                        e,
+                        impp->n_segments,
+                        impp->F,
+                        impp->K - impp->F - 2 * impp->Zc,
+                        nrLDPC_TB_encoding_parameters->rv_index,
+                        E);
+  if (Eshift)
     nr_rate_matching_ldpc(Tbslbrm,
                           impp->BG,
                           impp->Zc,
-                          d[rr],
-                          e,
+                          d,
+                          e2,
                           impp->n_segments,
                           impp->F,
                           impp->K - impp->F - 2 * impp->Zc,
                           nrLDPC_TB_encoding_parameters->rv_index,
-                          E);
-    stop_meas(&nrLDPC_TB_encoding_parameters->segments[rr].ts_rate_match);
-    if (impp->K - impp->F - 2 * impp->Zc > E) {
-      LOG_E(PHY, "dlsch coding A %d K %d G %d (nb_rb %d, mod_order %d)\n", A, impp->K, G, nb_rb, (int)mod_order);
+                          E2);
 
-      LOG_E(NR_PHY,
-            "Rate Matching, Code segment %d/%d (coded bits (G) %u, E %d, K %d, Filler bits %d, Filler offset %d mod_order %d, "
-            "nb_rb %d)...\n",
-            rr,
-            impp->n_segments,
-            G,
-            E,
-            impp->K,
-            impp->F,
-            impp->K - impp->F - 2 * impp->Zc,
-            mod_order,
-            nb_rb);
-    }
-#ifdef DEBUG_LDPC_ENCODING
+  stop_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_rate_match);
+  if (impp->K - impp->F - 2 * impp->Zc > E) {
+    LOG_E(PHY,
+          "dlsch coding A %d  Kr %d G %d (nb_rb %d, mod_order %d)\n",
+          A,
+          impp->K,
+          G,
+          nb_rb,
+          (int)mod_order);
 
-    for (int i = 0; i < 16; i++)
-      printf("output ratematching e[%d]= %d r_offset %u\n", i, e[i], r_offset);
-
-#endif
-    start_meas(&nrLDPC_TB_encoding_parameters->segments[rr].ts_interleave);
-    nr_interleaving_ldpc(E, mod_order, e, impp->output + r_offset);
-    stop_meas(&nrLDPC_TB_encoding_parameters->segments[rr].ts_interleave);
-
-#ifdef DEBUG_LDPC_ENCODING
-    for (int i = i 0; i < 16; i++)
-      printf("output interleaving segment %d f[%d]= %d r_offset %u\n", rr, i,impp->output[i + r_offset], r_offset);
-
-    if (r == impp->n_segments - 1)
-      write_output("enc_output.m", "enc", impp->output, G, 1, 4);
-
-#endif
-    r_offset += E;
+    LOG_E(NR_PHY,
+          "Rate Matching, Code segments %d...%d/%d (coded bits (G) %u, E %d, Kr %d, Filler bits %d, Filler offset %d mod_order %d, "
+          "nb_rb %d)...\n",
+          macro_segment,
+	  macro_segment_end,
+          impp->n_segments,
+          G,
+          E,
+          impp->K,
+          impp->F,
+          impp->K - impp->F - 2 * impp->Zc,
+          mod_order,
+          nb_rb);
+  }
+  start_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_interleave);
+  nr_interleaving_ldpc(E,
+                       mod_order,
+                       e,
+                       f);
+  if (Eshift)
+    nr_interleaving_ldpc(E2,
+                         mod_order,
+                         e2,
+                         f2);
+  stop_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_interleave);
+  if(impp->toutput != NULL) start_meas(impp->toutput);
+/*
+  for (int i=0;i<16;i++)
+     for (int s=0;s<macro_segment_end-macro_segment;s++) 
+        printf("i %d: segment %d : f[%d] %d\n",i,macro_segment+s,i,(f[i]>>s)&1);
+*/
+  // information part and puncture columns
+  
+  uint8_t *output_offset=impp->output;
+  uint8_t *output_p;
+  for (int s=0; s<macro_segment; s++)
+    output_offset += (nrLDPC_TB_encoding_parameters->segments[s].E); 
+#ifdef __AVX512F__
+  int i=0;
+  for (i=0;i<E>>6;i++) {
+     output_p = output_offset + (i<<6);
+     for (int j=0; j < E2_first_segment; j++) {
+        _mm512_storeu_si512(output_p,_mm512_srai_epi16(((__m512i *)f)[i],j));
+        output_p += E;
+     }
+     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
+        _mm512_storeu_si512(output_p,_mm512_srai_epi16(((__m512i *)f2)[i],j));
+        output_p += E2;
+     }
+  }
+  uint8_t *output_p2;
+  int i2=(i<<6);
+  for (;i2<E;i2++){
+     output_p2 = output_offset + i2;
+     for (int j=0;j < E2_first_segment;j++) {
+        *output_p2 = f[i2]>>j;
+	output_p2 += E;
+     }
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
+  }
+  for (;i2<E2;i2++){
+     output_p2 = output_offset + i2 + E2_first_segment*E;
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
   }
 
+#elif defined(__aarch64__)
+  int i=0;
+  simde__m128i mask0 = simde_mm_set1_epi8(0x1);
+  for (i=0;i<E>>4;i++) {
+     output_p = output_offset + (i<<4);
+     for (int j=0; j < E2_first_segment; j++) {
+        simde_mm_storeu_si128(output_p,simde_mm_and_si128(simde_mm_srai_epi16(((simde__m128i *)f)[i],j),mask0));
+        output_p += E;
+     }
+     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
+        simde_mm_storeu_si128(output_p,simde_mm_and_si128(simde_mm_srai_epi16(((simde__m128i *)f2)[i],j),mask0));
+        output_p += E2;
+     }
+  }
+  uint8_t *output_p2;
+  int i2=(i<<4);
+  for (;i2<E;i2++){
+     output_p2 = output_offset + i2;
+     for (int j=0;j < E2_first_segment;j++) {
+        *output_p2 = f[i2]>>j;
+	output_p2 += E;
+     }
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
+  }
+  for (;i2<E2;i2++){
+     output_p2 = output_offset + i2 + E2_first_segment*E;
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
+  }
+
+#else
+  
+  int i=0;
+  for (i=0;i<E>>5;i++) {
+     output_p = output_offset + (i<<5);
+     for (int j=0; j < E2_first_segment; j++) {
+        _mm256_storeu_si512(output_p,_mm256_srai_epi16(((__m256i *)f)[i],j));
+        output_p += E;
+     }
+     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
+        _mm256_storeu_si256(output_p,_mm256_srai_epi16(((__m256i *)f2)[i],j));
+        output_p += E2;
+     }
+  }
+  uint8_t *output_p2;
+  int i2=(i<<5);
+  for (;i2<E;i2++){
+     output_p2 = output_offset + i2;
+     for (int j=0;j < E2_first_segment;j++) {
+        *output_p2 = f[i2]>>j;
+	output_p2 += E;
+     }
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
+  }
+  for (;i2<E2;i2++){
+     output_p2 = output_offset + i2 + E2_first_segment*E;
+     for (int j=E2_first_segment;j < macro_segment_end-macro_segment;j++) {
+        *output_p2 = f2[i2]>>j;
+	output_p2 += E2;
+     }
+  }
+#endif
+
+  if(impp->toutput != NULL) stop_meas(impp->toutput);
+/*
+  printf("E %d (mod16 %d) F %d\n",E,E&15,impp->F); 
+  for (int i=0;i<16;i++)
+     for (int s=0;s<macro_segment_end-macro_segment;s++) 
+        printf("i %d: segment %d : output[%d] %d\n",i,macro_segment+s,i,output_offset[i+s*E]);
+*/
   // Task running in // completed
   completed_task_ans(impp->ans);
 }
