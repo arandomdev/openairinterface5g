@@ -414,10 +414,27 @@ void nr_fo_compensation(double fo_Hz, int samples_per_ms, int sample_offset, c16
   const double phase_inc = -fo_Hz / (samples_per_ms * 1000);
   double phase = sample_offset * phase_inc;
   phase -= (int)phase;
-  for (int i = 0; i < size; i++) {
-    c16_t rot = get_sin_cos(phase);
-    *rxdata_ptr = c16mulShift(*rxdata_ptr, rot, 14);
-    rxdata_ptr++;
+#if 1
+#define CHUNK 128
+  c16_t rot[CHUNK] __attribute__((aligned(32)));
+  for (int i = 0; i < CHUNK; i++) {
+    rot[i] = get_sin_cos(phase);
     phase += phase_inc;
   }
+  const c16_t rot_vec = get_sin_cos(CHUNK * phase_inc);
+  while (size > CHUNK) {
+    mult_complex_vectors(rxdata_ptr, rot, rxdata_ptr, CHUNK, 14);
+    rxdata_ptr += CHUNK;
+    rotate_cpx_vector(rot, &rot_vec, rot, CHUNK, 14);
+    size -= CHUNK;
+  }
+  mult_complex_vectors(rxdata_ptr, rot, rxdata_ptr, size, 14);
+#else
+  c16_t rot[size] __attribute__((aligned(32)));
+  for (int i = 0; i < size; i++) {
+    rot[i] = get_sin_cos(phase);
+    phase += phase_inc;
+  }
+  mult_complex_vectors(rxdata_ptr, rot, rxdata_ptr, size, 14);
+#endif
 }
