@@ -58,8 +58,6 @@ typedef struct {
   time_stats_t *tprep;
   time_stats_t *tparity;
   time_stats_t *toutput;
-  time_stats_t *dlsch_rate_matching_stats;
-  time_stats_t *dlsch_interleaving_stats;
   /// Size in bits of the code segments
   uint32_t K;
   /// Number of lifting sizes to fit the payload
