@@ -33,14 +33,17 @@ void nr_codeword_scrambling(uint8_t *in,
 {
   const int roundedSz = (size + 31) / 32;
   uint32_t *seq = gold_cache((n_RNTI << 15) + (q << 14) + Nid, roundedSz);
-#ifdef __AVX2__
+  for (int i = 0; i < roundedSz; i++) 
+    out[i] = ((uint32_t*)in)[i] ^ seq[i];
+#if 0
+//#elif __AVX2__
   for (int i = 0; i < roundedSz; i++) {
     __m256i c = ((__m256i*)in)[i];
     uint32_t in32 = _mm256_movemask_epi8(_mm256_slli_epi16(c, 7));
     out[i] = in32 ^ seq[i];
     DEBUG_SCRAMBLING(LOG_D(PHY, "in[%d] %x => %x\n", i, in32, out[i]));
   }
-#elif defined (__aarch64__)
+//#elif defined (__aarch64__)
   const int8_t __attribute__ ((aligned (16))) ucShift[] = {0,1,2,3,4,5,6,7,0,1,2,3,4,5,6,7};
   int8x16_t vshift = vld1q_s8(ucShift);
   uint8x16_t *c = (uint8x16_t*)in;		     
