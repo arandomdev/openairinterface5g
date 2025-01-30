@@ -374,16 +374,27 @@ static void ldpc8blocks(void *p)
   uint16_t *output_p = (uint16_t*)impp->output;
   int i=0;
   uint32_t Eoffset2[8];
-  uint32_t E2offset2[8];
   uint32_t Eoffset2_bit[8];
-  uint32_t E2offset2_bit[8];
   Eoffset2[0] = Eoffset>>4;
   Eoffset2_bit[0] = Eoffset&15;
-  for (int n=1;n<8;n++) {
-    Eoffset2[n]  = Eoffset2[n-1] + (E>>4);
-    Eoffset2_bit[n] = (Eoffset2_bit[n-1] + E)&15;
-    E2offset2[n] = E2offset2[n-1] + (E2>>4);
-    E2offset2_bit[n] = (E2offset2_bit[n-1]+E2)&15;
+  //printf("E2_first_segment %d,Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2_first_segment,Eoffset,Eoffset2[0],Eoffset2_bit[0]);
+  for (int n=1;n<E2_first_segment;n++) {
+    Eoffset += E;
+    Eoffset2[n]  = Eoffset>>4;
+    Eoffset2_bit[n] = Eoffset&15;
+    //printf("E %d : n %d, Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E,n,Eoffset,Eoffset2[n],Eoffset2_bit[n]);
+  } 
+  if (Eshift) {
+    Eoffset += E;
+    Eoffset2[E2_first_segment] = Eoffset>>4;
+    Eoffset2_bit[E2_first_segment] = Eoffset &15;
+    //printf("E2 %d : Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2,Eoffset,Eoffset2[E2_first_segment],Eoffset2_bit[E2_first_segment]);
+  }
+  for (int n=E2_first_segment+1;n<macro_segment_end-macro_segment;n++) {
+    Eoffset+=E2;
+    Eoffset2[n] = Eoffset>>4;
+    Eoffset2_bit[n] = Eoffset&15;
+    //printf("E2 %d (macro_segment_end %d, macro_segment %d) : n %d, Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2,macro_segment_end,macro_segment,n,Eoffset,Eoffset2[n],Eoffset2_bit[n]);
   }
   int i2=0;
   const int8_t __attribute__ ((aligned (16))) ucShift[8][16] = {
@@ -395,27 +406,30 @@ static void ldpc8blocks(void *p)
     {-5,-4,-3,-2,-1,0,1,2,-5,-4,-3,-2,-1,0,1,2}, // segment 5
     {-6,-5,-4,-3,-2,-1,0,1,-6,-5,-4,-3,-2,-1,0,1}, // segment 6
     {-7,-6,-5,-4,-3,-2,-1,0,-7,-6,-5,-4,-3,-2,-1,0}}; // segment 7
-  const uint8_t __attrbute__ ((aligned(16))) masks[16] = 
+  const uint8_t __attribute__ ((aligned (16))) masks[16] = 
       {0x1,0x2,0x4,0x8,0x10,0x20,0x40,0x80,0x1,0x2,0x4,0x8,0x10,0x20,0x40,0x80};
   int8x16_t vshift[8];
-  for (int n=0;n<8;n++) vshift[n] = vldlq_s8(ucShift[n]);
-  int8x16_t vmask  = vldlq_u8(masks);
+  for (int n=0;n<8;n++) vshift[n] = vld1q_s8(ucShift[n]);
+  uint8x16_t vmask  = vld1q_u8(masks);
 
-  int16x4_t tmp;
-  for (i=0;i<E;i+=16,i2++) {
-     for (int j=0; j < E2_first_segment; j++) {
-       cshift = vandq_u8(vshlq_u8(((uint8x16_t*)f)[i2]),vmask);
+  int32_t tmp;
+  uint8x16_t cshift;
+  for (i=0;i<E2;i+=16,i2++) {
+     if (i<E) {	
+       for (int j=0; j < E2_first_segment; j++) {
+         cshift = vandq_u8(vshlq_u8(((uint8x16_t*)f)[i2],vshift[j]),vmask);
+         tmp = (int)vaddv_u8(vget_low_u8(cshift));
+         tmp += (int)(vaddv_u8(vget_high_u8(cshift))<<8);
+         *(output_p + Eoffset2[j])   |= (uint16_t)(tmp<<Eoffset2_bit[j]);
+         *(output_p + Eoffset2[j]+1) |= (uint16_t)(tmp>>(16-Eoffset2_bit[j]));
+       }
+     }
+     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
+       cshift = vandq_u8(vshlq_u8(((uint8x16_t*)f2)[i2],vshift[j]),vmask);
        tmp = (int)vaddv_u8(vget_low_u8(cshift));
        tmp += (int)(vaddv_u8(vget_high_u8(cshift))<<8);
        *(output_p + Eoffset2[j])   |= (uint16_t)(tmp<<Eoffset2_bit[j]);
-       *(output_p + Eoffset2[j]+1) |= (uint16_t)(tmp>>(64-Eoffset2_bit[j]));
-     }
-     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
-       cshift = vandq_u8(vshlq_u8(((uint8x16_t*)f)[i2]),vmask);
-       tmp = (int)vaddv_u8(vget_low_u8(cshift));
-       tmp += (int)(vaddv_u8(vget_high_u8(cshift))<<8);
-       *(output_p + E2offset2[j])   |= (uint16_t)(tmp<<E2offset2_bit[j]);
-       *(output_p + E2offset2[j]+1) |= (uint16_t)(tmp>>(64-E2offset2_bit[j]));
+       *(output_p + Eoffset2[j]+1) |= (uint16_t)(tmp>>(16-Eoffset2_bit[j]));
      }
      output_p++;
   }
