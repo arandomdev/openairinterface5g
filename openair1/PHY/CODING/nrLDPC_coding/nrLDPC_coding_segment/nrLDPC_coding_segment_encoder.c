@@ -253,7 +253,7 @@ static void ldpc8blocks(void *p)
                  0,
                  ((Eoffset2_bit[j] + i)&63) - 1);
 #endif 
-        // Note: Here and below, we are using the 64-bit SIMD instruction
+        // Note: Here and below for AVX2, we are using the 64-bit SIMD instruction
         // instead of C >>/<< because when the Eoffset2_bit is 64 or 0, the <<
         // and >> operations are undefined and in fact don't give "0" which is
         // what we want here. The SIMD version do give 0 when the shift is 64
@@ -421,46 +421,59 @@ static void ldpc8blocks(void *p)
   }
        
 #else
-  uint32_t *output_p = (uint64_t*)impp->output;
+  uint32_t *output_p = (uint32_t*)impp->output;
   int i=0;
   uint32_t Eoffset2[8];
-  uint32_t E2offset2[8];
   uint32_t Eoffset2_bit[8];
-  uint32_t E2offset2_bit[8];
   Eoffset2[0] = Eoffset>>5;
   Eoffset2_bit[0] = Eoffset&31;
-  for (int n=1;n<8;n++) {
-    Eoffset2[n]  = Eoffset2[n-1] + (E>>5);
-    Eoffset2_bit[n] = (Eoffset2_bit[n-1] + E)&31;
-    E2offset2[n] = E2offset2[n-1] + (E2>>5);
-    E2offset2_bit[n] = (E2offset2_bit[n-1]+E2)&31;
+  //printf("E2_first_segment %d,Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2_first_segment,Eoffset,Eoffset2[0],Eoffset2_bit[0]);
+  for (int n=1;n<E2_first_segment;n++) {
+    Eoffset += E;
+    Eoffset2[n]  = Eoffset>>5;
+    Eoffset2_bit[n] = Eoffset&31;
+    //printf("E %d : n %d, Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E,n,Eoffset,Eoffset2[n],Eoffset2_bit[n]);
+  } 
+  if (Eshift) {
+    Eoffset += E;
+    Eoffset2[E2_first_segment] = Eoffset>>5;
+    Eoffset2_bit[E2_first_segment] = Eoffset &31;
+    //printf("E2 %d : Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2,Eoffset,Eoffset2[E2_first_segment],Eoffset2_bit[E2_first_segment]);
+  }
+  for (int n=E2_first_segment+1;n<macro_segment_end-macro_segment;n++) {
+    Eoffset+=E2;
+    Eoffset2[n] = Eoffset>>5;
+    Eoffset2_bit[n] = Eoffset&31;
+    //printf("E2 %d (macro_segment_end %d, macro_segment %d) : n %d, Eoffset %d, Eoffset2 %d, Eoffset2_bit %d\n",E2,macro_segment_end,macro_segment,n,Eoffset,Eoffset2[n],Eoffset2_bit[n]);
   }
   int i2=0;
   int tmp;
   __m64 tmp64,tmp64b,tmp64c;
   
-  for (i=0;i<E;i+=32,i2++) {
-     for (int j=0; j < E2_first_segment; j++) {
-       // Note: Here and below, we are using the 64-bit SIMD instruction
-       // instead of C >>/<< because when the Eoffset2_bit is 64 or 0, the <<
-       // and >> operations are undefined and in fact don't give "0" which is
-       // what we want here. The SIMD version do give 0 when the shift is 64
-       tmp = _mm256_movemask_epi8(_mm256_slli_epi8(((__m256i *)f)[i2],7-j));
+  for (i=0;i<E2;i+=32,i2++) {
+     if (i<E) {
+       for (int j=0; j < E2_first_segment; j++) {
+         // Note: Here and below, we are using the 64-bit SIMD instruction
+         // instead of C >>/<< because when the Eoffset2_bit is 64 or 0, the <<
+         // and >> operations are undefined and in fact don't give "0" which is
+         // what we want here. The SIMD version do give 0 when the shift is 64
+         tmp = _mm256_movemask_epi8(_mm256_slli_epi16(((__m256i *)f)[i2],7-j));
+         tmp64=_mm_set1_pi32(tmp);
+         tmp64b  = _mm_or_si64(*(__m64*)(output_p + Eoffset2[j]),_mm_slli_pi32(tmp64,Eoffset2_bit[j]));
+         tmp64c = _mm_or_si64(*(__m64*)(output_p + Eoffset2[j]),_mm_srli_pi32(tmp64,(32-Eoffset2_bit[j])));
+         *(output_p + Eoffset2[j])   = _m_to_int(tmp64b);
+         *(output_p + Eoffset2[j]+1) = _m_to_int(_mm_srli_si64(tmp64c,32));
+       }
+    } 
+    for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
+       tmp = _mm256_movemask_epi8(_mm256_slli_epi16(((__m256i *)f2)[i2],7-j));
        tmp64=_mm_set1_pi32(tmp);
        tmp64b  = _mm_or_si64(*(__m64*)(output_p + Eoffset2[j]),_mm_slli_pi32(tmp64,Eoffset2_bit[j]));
        tmp64c = _mm_or_si64(*(__m64*)(output_p + Eoffset2[j]),_mm_srli_pi32(tmp64,(32-Eoffset2_bit[j])));
        *(output_p + Eoffset2[j])   = _m_to_int(tmp64b);
        *(output_p + Eoffset2[j]+1) = _m_to_int(_mm_srli_si64(tmp64c,32));
-     }
-     for (int j=E2_first_segment; j < macro_segment_end-macro_segment; j++) {
-       tmp = _mm256_movemask_epi8(_mm256_slli_epi8(((__m256i *)f)[i2],7-j));
-       tmp64=_mm_set1_pi32(tmp);
-       tmp64b  = _mm_or_si64(*(__m64*)(output_p + E2offset2[j]),_mm_slli_pi32(tmp64,E2offset2_bit[j]));
-       tmp64c = _mm_or_si64(*(__m64*)(output_p + E2offset2[j]),_mm_srli_pi32(tmp64,(32-E2offset2_bit[j])));
-       *(output_p + E2offset2[j])   = _m_to_int(tmp64b);
-       *(output_p + E2offset2[j]+1) = _m_to_int(_mm_srli_si64(tmp64c,32));
-     }
-     output_p++;
+    }
+    output_p++;
   }
 
   
