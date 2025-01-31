@@ -851,6 +851,28 @@ static void generateSecurityModeComplete(nr_ue_nas_t *nas, as_nas_info_t *initia
   }
 }
 
+static void generateSecurityModeReject(as_nas_info_t *initialNasMsg, cause_id_t cause)
+{
+  size_t size = 0;
+
+  // Set 5GMM plain header
+  fgmm_nas_message_plain_t plain = {0};
+  plain.header = set_mm_header(FGS_SECURITY_MODE_REJECT, PLAIN_5GS_MSG);
+  size += 3; /* = sizeof(plain.header) */
+
+  // Set plain FGMM Security Mode Reject
+  fgs_security_mode_reject_msg *smc_rej_msg = &plain.mm_msg.fgs_security_mode_reject;
+  // Cause
+  smc_rej_msg->cause = cause;
+  size += 1; /* += sizeof(fgs_security_mode_reject_msg) */
+
+  // Encode the message, with total length = 4 (fixed)
+  initialNasMsg->nas_data = malloc_or_fail(size * 1); /* * sizeof(*initialNasMsg->nas_data)*/
+
+  initialNasMsg->length =
+      mm_msg_encode(&plain, (uint8_t *)initialNasMsg->nas_data, size);
+}
+
 static void handle_security_mode_command(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, uint8_t *pdu, int pdu_length)
 {
   /* retrieve integrity and ciphering algorithms  */
