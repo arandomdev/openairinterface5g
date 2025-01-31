@@ -131,9 +131,9 @@ static void ldpc8blocks(void *p)
   uint32_t Tbslbrm = nrLDPC_TB_encoding_parameters->tbslbrm;
 
   uint8_t e[E] __attribute__((aligned(64)));
-  uint8_t f[E] __attribute__((aligned(64)));
+  uint8_t f[E+64] __attribute__((aligned(64)));
   uint8_t e2[E2] __attribute__((aligned(64)));
-  uint8_t f2[E2] __attribute__((aligned(64)));
+  uint8_t f2[E2+64] __attribute__((aligned(64)));
   bzero(e, E);
   if (Eshift) bzero(e2,E2);
   start_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_rate_match);
