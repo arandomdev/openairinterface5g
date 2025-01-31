@@ -205,7 +205,7 @@ static void ldpc8blocks(void *p)
   uint32_t Eoffset=0;
   for (int s=0; s<macro_segment; s++)
     Eoffset += (nrLDPC_TB_encoding_parameters->segments[s].E); 
-#ifdef __AVX512F__
+#ifdef __AVX512VBMI__
   uint64_t *output_p = (uint64_t*)impp->output;
   int i=0;
   __m512i bitperm[8];
