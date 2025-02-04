@@ -533,7 +533,7 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
 static void rrc_gNB_generate_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p)
 {
   uint8_t xid = rrc_gNB_get_next_transaction_identifier(rrc->module_id);
-  ue_p->xids[xid] = RRC_PDUSESSION_ESTABLISH;
+  ue_p->xids[xid] = RRC_DEDICATED_RECONF;
   struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *dedicatedNAS_MessageList = CALLOC(1, sizeof(*dedicatedNAS_MessageList));
 
   for (int i = 0; i < ue_p->nb_of_pdusessions; i++) {
@@ -545,8 +545,9 @@ static void rrc_gNB_generate_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_
 
       LOG_D(NR_RRC, "add NAS info with size %d (pdusession idx %d)\n", ue_p->pduSession[i].param.nas_pdu.length, i);
       ue_p->pduSession[i].xid = xid;
+      ue_p->xids[xid] = RRC_PDUSESSION_ESTABLISH;
     }
-    if (ue_p->pduSession[i].status < PDU_SESSION_STATUS_ESTABLISHED) {
+    if (ue_p->pduSession[i].status == PDU_SESSION_STATUS_NEW || ue_p->pduSession[i].status == PDU_SESSION_STATUS_RELEASED) {
       ue_p->pduSession[i].status = PDU_SESSION_STATUS_DONE;
     }
   }
@@ -684,20 +685,39 @@ void rrc_gNB_modify_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_RRC_UE_t 
   nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DL_SCH_LCID_DCCH, buffer, size);
 }
 
-//-----------------------------------------------------------------------------
+typedef struct deliver_ue_ctxt_modification_data_t {
+  gNB_RRC_INST *rrc;
+  f1ap_ue_context_modif_req_t *modification_req;
+  sctp_assoc_t assoc_id;
+} deliver_ue_ctxt_modification_data_t;
+
+static void rrc_deliver_ue_ctxt_modif_req(void *deliver_pdu_data, ue_id_t ue_id, int srb_id, char *buf, int size, int sdu_id)
+{
+  DevAssert(deliver_pdu_data != NULL);
+  deliver_ue_ctxt_modification_data_t *data = deliver_pdu_data;
+  data->modification_req->rrc_container = (uint8_t *)buf;
+  data->modification_req->rrc_container_length = size;
+  data->rrc->mac_rrc.ue_context_modification_request(data->assoc_id, data->modification_req);
+}
 void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
                                                           gNB_RRC_UE_t *ue_p,
                                                           uint8_t xid,
                                                           uint32_t nas_length,
                                                           uint8_t *nas_buffer)
-//-----------------------------------------------------------------------------
 {
-  NR_DRB_ToReleaseList_t *DRB_Release_configList2 = CALLOC(sizeof(*DRB_Release_configList2), 1);
+  f1ap_drb_to_be_released_t rel_drbs[32];
+  int n_rel_drbs = 0;
+
+  if (!ue_p->DRB_ReleaseList)
+    ue_p->DRB_ReleaseList = calloc(1, sizeof(*ue_p->DRB_ReleaseList));
 
   for (int i = 0; i < NB_RB_MAX; i++) {
     if ((ue_p->pduSession[i].status == PDU_SESSION_STATUS_TORELEASE) && ue_p->pduSession[i].xid == xid) {
-      asn1cSequenceAdd(DRB_Release_configList2->list, NR_DRB_Identity_t, DRB_release);
+      asn1cSequenceAdd(ue_p->DRB_ReleaseList->list, NR_DRB_Identity_t, DRB_release);
       *DRB_release = i + 1;
+      rel_drbs[n_rel_drbs].rb_id = *DRB_release;
+      n_rel_drbs++;
+      memset(&ue_p->established_drbs[i], 0, sizeof(drb_t));
     }
   }
 
@@ -707,9 +727,9 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
     dedicatedNAS_MessageList = CALLOC(1, sizeof(*dedicatedNAS_MessageList));
     asn1cSequenceAdd(dedicatedNAS_MessageList->list, NR_DedicatedNAS_Message_t, dedicatedNAS_Message);
     OCTET_STRING_fromBuf(dedicatedNAS_Message, (char *)nas_buffer, nas_length);
-    LOG_I(NR_RRC,"add NAS info with size %d\n", nas_length);
+    LOG_I(NR_RRC, "add NAS info with size %d\n", nas_length);
   } else {
-    LOG_W(NR_RRC,"dedlicated NAS list is empty\n");
+    LOG_W(NR_RRC, "dedlicated NAS list is empty\n");
   }
 
   uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
@@ -719,12 +739,12 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
                                    xid,
                                    NULL,
                                    NULL,
-                                   DRB_Release_configList2,
+                                   ue_p->DRB_ReleaseList,
                                    NULL,
                                    NULL,
                                    dedicatedNAS_MessageList,
                                    NULL);
-  LOG_DUMPMSG(NR_RRC,DEBUG_RRC,(char *)buffer,size, "[MSG] RRC Reconfiguration\n");
+  LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buffer, size, "[MSG] RRC Reconfiguration\n");
 
   /* Free all NAS PDUs */
   if (nas_length > 0) {
@@ -733,7 +753,29 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
   }
 
   LOG_I(NR_RRC, "UE %d: Generate NR_RRCReconfiguration (bytes %d)\n", ue_p->rrc_ue_id, size);
-  nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DL_SCH_LCID_DCCH, buffer, size);
+
+  f1_ue_data_t ue_data = cu_get_f1_ue_data(ue_p->rrc_ue_id);
+  f1ap_ue_context_modif_req_t ue_context_modif_req = {
+      .gNB_CU_ue_id = ue_p->rrc_ue_id,
+      .gNB_DU_ue_id = ue_data.secondary_ue,
+      .plmn.mcc = rrc->configuration.mcc[0],
+      .plmn.mnc = rrc->configuration.mnc[0],
+      .plmn.mnc_digit_length = rrc->configuration.mnc_digit_length[0],
+      .nr_cellid = rrc->nr_cellid,
+      .servCellId = 0,
+      .drbs_to_be_released_length = n_rel_drbs,
+      .drbs_to_be_released = (f1ap_drb_to_be_released_t *)rel_drbs,
+  };
+  deliver_ue_ctxt_modification_data_t data = {.rrc = rrc,
+                                              .modification_req = &ue_context_modif_req,
+                                              .assoc_id = ue_data.du_assoc_id};
+  nr_pdcp_data_req_srb(ue_p->rrc_ue_id,
+                       DL_SCH_LCID_DCCH,
+                       rrc_gNB_mui++,
+                       size,
+                       (unsigned char *const)buffer,
+                       rrc_deliver_ue_ctxt_modif_req,
+                       &data);
 }
 
 static void fill_security_info(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, security_information_t *secInfo)
@@ -1638,8 +1680,6 @@ static void handle_rrcReconfigurationComplete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *U
 
   switch (UE->xids[xid]) {
     case RRC_PDUSESSION_RELEASE: {
-      gtpv1u_gnb_delete_tunnel_req_t req = {0};
-      gtpv1u_delete_ngu_tunnel(rrc->module_id, &req);
       // NGAP_PDUSESSION_RELEASE_RESPONSE
       rrc_gNB_send_NGAP_PDUSESSION_RELEASE_RESPONSE(rrc, UE, xid);
     } break;
