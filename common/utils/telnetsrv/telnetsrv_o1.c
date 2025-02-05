@@ -38,6 +38,7 @@
 #include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.c"
 #include "common/utils/nr/nr_common.h"
+#include "common/ngran_types.h"
 
 #define ERROR_MSG_RET(mSG, aRGS...) do { prnt("FAILURE: " mSG, ##aRGS); return 1; } while (0)
 
@@ -58,6 +59,11 @@
 #define MNC     "nrcelldu3gpp:mnc"
 #define SD      "nrcelldu3gpp:sd"
 #define SST     "nrcelldu3gpp:sst"
+
+#define PMAX        "nrfreqrel3gpp:pMax"
+#define CELLLOCALID "nrcellcu3gpp:cellLocalId"
+#define CU_MCC      "nrcellcu3gpp:mcc"
+#define CU_MNC      "nrcellcu3gpp:mnc"
 
 typedef struct b {
   long int dl;
@@ -81,121 +87,150 @@ static int get_stats(char *buf, int debug, telnet_printfunc_t prnt)
 {
   if (buf)
     ERROR_MSG_RET("no parameter allowed\n");
+  
+  static ngran_node_t node_type;
+  node_type = node_type?node_type:get_node_type();
 
-  gNB_MAC_INST *mac = RC.nrmac[0];
-  AssertFatal(mac != NULL, "need MAC\n");
-  NR_SCHED_LOCK(&mac->sched_lock);
-
-  const f1ap_setup_req_t *sr = mac->f1_config.setup_req;
-  const f1ap_served_cell_info_t *cell_info = &sr->cell[0].info;
-
-  const NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
-  const NR_FrequencyInfoDL_t *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
-  const NR_FrequencyInfoUL_t *frequencyInfoUL = scc->uplinkConfigCommon->frequencyInfoUL;
-  frame_type_t frame_type = get_frame_type(*frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
-  const NR_BWP_t *initialDL = &scc->downlinkConfigCommon->initialDownlinkBWP->genericParameters;
-  const NR_BWP_t *initialUL = &scc->uplinkConfigCommon->initialUplinkBWP->genericParameters;
-
-  int scs = initialDL->subcarrierSpacing;
-  AssertFatal(scs == initialUL->subcarrierSpacing, "different SCS for UL/DL not supported!\n");
-  int band = *frequencyInfoDL->frequencyBandList.list.array[0];
-  int nrb = frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
-  AssertFatal(nrb == frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth, "different BW for UL/DL not supported!\n");
-  frequency_range_t fr = band > 256 ? FR2 : FR1;
-  int bw_index = get_supported_band_index(scs, fr, nrb);
-  int bw_mhz = get_supported_bw_mhz(fr, bw_index);
-
-  const mac_stats_t *stat = &mac->mac_stats;
-  static mac_stats_t last = {0};
-  int diff_used = stat->used_prb_aggregate - last.used_prb_aggregate;
-  int diff_total = stat->total_prb_aggregate - last.total_prb_aggregate;
-  int load = diff_total > 0 ? 100 * diff_used / diff_total : 0;
-  last = *stat;
-
-  static struct timespec tp_last = {0};
-  struct timespec tp_now;
-  clock_gettime(CLOCK_MONOTONIC, &tp_now);
-  size_t diff_msec = (tp_now.tv_sec - tp_last.tv_sec) * 1000 + (tp_now.tv_nsec - tp_last.tv_nsec) / 1000000;
-  tp_last = tp_now;
-
-  const int srb_flag = 0;
-  const int rb_id = 1;
-  static b_t last_total[MAX_MOBILES_PER_GNB] = {0}; // TODO: hash table?
-  ue_stat_t ue_stat[MAX_MOBILES_PER_GNB] = {0};
-  int num_ues = 0;
-  UE_iterator((NR_UE_info_t **)mac->UE_info.list, it) {
-    nr_rlc_statistics_t rlc = {0};
-    nr_rlc_get_statistics(it->rnti, srb_flag, rb_id, &rlc);
-    b_t *lt = &last_total[num_ues];
-    ue_stat_t *ue_s = &ue_stat[num_ues];
-    ue_s->rnti = it->rnti;
-    // static var last_total: we might have old data, larger than what
-    // reports RLC, leading to a huge number -> cut off to zero
-    if (lt->dl > rlc.txpdu_bytes)
-      lt->dl = rlc.txpdu_bytes;
-    if (lt->ul > rlc.rxpdu_bytes)
-      lt->ul = rlc.rxpdu_bytes;
-    ue_s->thr.dl = (rlc.txpdu_bytes - lt->dl) * 8 / diff_msec;
-    ue_s->thr.ul = (rlc.rxpdu_bytes - lt->ul) * 8 / diff_msec;
-    lt->dl = rlc.txpdu_bytes;
-    lt->ul = rlc.rxpdu_bytes;
-    num_ues++;
-  }
-
-  prnt("{\n");
+  if(node_type == ngran_gNB_CUCP || node_type == ngran_gNB){
+    const gNB_RRC_INST *rrc = RC.nrrrc[0];
+    const gNB_RrcConfigurationReq cu = rrc->configuration;
+    prnt("{\n");
     prnt("  \"o1-config\": {\n");
-
-    prnt("    \"BWP\": {\n");
-    prnt("      \"dl\": [{\n");
-    prnt("        \"" ISINITBWP "\": true,\n");
-    //prnt("      \"" CYCLPREF "\": %ld,\n", *initialDL->cyclicPrefix);
-    prnt("        \"" NUMRBS "\": %ld,\n", NRRIV2BW(initialDL->locationAndBandwidth, MAX_BWP_SIZE));
-    prnt("        \"" STARTRB "\": %ld,\n", NRRIV2PRBOFFSET(initialDL->locationAndBandwidth, MAX_BWP_SIZE));
-    prnt("        \"" BWPSCS "\": %ld\n", 15 * (1U << scs));
-    prnt("      }],\n");
-    prnt("      \"ul\": [{\n");
-    prnt("        \"" ISINITBWP "\": true,\n");
-    //prnt("      \"" CYCLPREF "\": %ld,\n", *initialUL->cyclicPrefix);
-    prnt("        \"" NUMRBS "\": %ld,\n", NRRIV2BW(initialUL->locationAndBandwidth, MAX_BWP_SIZE));
-    prnt("        \"" STARTRB "\": %ld,\n", NRRIV2PRBOFFSET(initialUL->locationAndBandwidth, MAX_BWP_SIZE));
-    prnt("        \"" BWPSCS "\": %ld\n", 15 * (1U << scs));
-    prnt("      }]\n");
-    prnt("    },\n");
-
-    prnt("    \"NRCELLDU\": {\n");
-    prnt("      \"" SSBFREQ "\": %ld,\n", *scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB);
-    prnt("      \"" ARFCNDL "\": %ld,\n", frequencyInfoDL->absoluteFrequencyPointA);
-    prnt("      \"" BWDL "\": %ld,\n", bw_mhz);
-    prnt("      \"" ARFCNUL "\": %ld,\n", frequencyInfoUL->absoluteFrequencyPointA ? *frequencyInfoUL->absoluteFrequencyPointA : frequencyInfoDL->absoluteFrequencyPointA);
-    prnt("      \"" BWUL "\": %ld,\n", bw_mhz);
-    prnt("      \"" PCI "\": %ld,\n", *scc->physCellId);
-    prnt("      \"" TAC "\": %ld,\n", *cell_info->tac);
-    prnt("      \"" MCC "\": \"%03d\",\n", cell_info->plmn.mcc);
-    prnt("      \"" MNC "\": \"%0*d\",\n", cell_info->plmn.mnc_digit_length, cell_info->plmn.mnc);
-    prnt("      \"" SD  "\": %d,\n", cell_info->nssai[0].sd);
-    prnt("      \"" SST "\": %d\n", cell_info->nssai[0].sst);
-    prnt("    },\n");
+    prnt("     \"NRCELLCU\": {\n");
+    prnt("      \""CELLLOCALID"\": %d,\n", rrc->node_id);
+    prnt("      \""CU_MCC"\": \"%03d\",\n", cu.mcc[0]);
+    prnt("      \""CU_MNC"\": \"%02d\"\n", cu.mnc[0]);
+    prnt("     },\n");
     prnt("    \"device\": {\n");
-    prnt("      \"gnbId\": %d,\n", sr->gNB_DU_id);
-    prnt("      \"gnbName\": \"%s\",\n", sr->gNB_DU_name);
-    prnt("      \"vendor\": \"OpenAirInterface\"\n");
+    prnt("      \"gNBId\": %d,\n", rrc->node_id);
+    prnt("      \"gnbCUName\": \"%s\"\n", rrc->node_name);
     prnt("    }\n");
     prnt("  },\n");
-
     prnt("  \"O1-Operational\": {\n");
-    prnt("    \"frame-type\": \"%s\",\n", frame_type == TDD ? "tdd" : "fdd");
-    prnt("    \"band-number\": %ld,\n", band);
-    prnt("    \"num-ues\": %d,\n", num_ues);
-    prnt("    \"ues\": ["); PRINTLIST_i(num_ues, "%d", ue_stat[i].rnti); prnt("],\n");
-    prnt("    \"load\": %d,\n", load);
-    prnt("    \"ues-thp\": [");
-      PRINTLIST_i(num_ues, "\n      {\"rnti\": %d, \"dl\": %ld, \"ul\": %ld}", ue_stat[i].rnti, ue_stat[i].thr.dl, ue_stat[i].thr.ul);
-    prnt("\n    ]\n");
+    prnt("    \"NUM_DUS\": %d,\n",rrc->num_dus);
+    prnt("    \"NUM_CUUPS\": %d,\n",rrc->num_cuups);
+    prnt("    \"vendor\": \"OpenAirInterface\"\n");
     prnt("  }\n");
-  prnt("}\n");
-  prnt("OK\n");
-  NR_SCHED_UNLOCK(&mac->sched_lock);
-  return 0;
+    prnt("}\n");
+
+  }
+
+  if(node_type == ngran_gNB_DU || node_type == ngran_gNB){
+    gNB_MAC_INST *mac = RC.nrmac[0];
+    AssertFatal(mac != NULL, "need MAC\n");
+    NR_SCHED_LOCK(&mac->sched_lock);
+
+    const f1ap_setup_req_t *sr = mac->f1_config.setup_req;
+    const f1ap_served_cell_info_t *cell_info = &sr->cell[0].info;
+
+    const NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
+    const NR_FrequencyInfoDL_t *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
+    const NR_FrequencyInfoUL_t *frequencyInfoUL = scc->uplinkConfigCommon->frequencyInfoUL;
+    frame_type_t frame_type = get_frame_type(*frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
+    const NR_BWP_t *initialDL = &scc->downlinkConfigCommon->initialDownlinkBWP->genericParameters;
+    const NR_BWP_t *initialUL = &scc->uplinkConfigCommon->initialUplinkBWP->genericParameters;
+
+    int scs = initialDL->subcarrierSpacing;
+    AssertFatal(scs == initialUL->subcarrierSpacing, "different SCS for UL/DL not supported!\n");
+    int band = *frequencyInfoDL->frequencyBandList.list.array[0];
+    int nrb = frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
+    AssertFatal(nrb == frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth, "different BW for UL/DL not supported!\n");
+    frequency_range_t fr = band > 256 ? FR2 : FR1;
+    int bw_index = get_supported_band_index(scs, fr, nrb);
+    int bw_mhz = get_supported_bw_mhz(fr, bw_index);
+
+    const mac_stats_t *stat = &mac->mac_stats;
+    static mac_stats_t last = {0};
+    int diff_used = stat->used_prb_aggregate - last.used_prb_aggregate;
+    int diff_total = stat->total_prb_aggregate - last.total_prb_aggregate;
+    int load = diff_total > 0 ? 100 * diff_used / diff_total : 0;
+    last = *stat;
+
+    static struct timespec tp_last = {0};
+    struct timespec tp_now;
+    clock_gettime(CLOCK_MONOTONIC, &tp_now);
+    size_t diff_msec = (tp_now.tv_sec - tp_last.tv_sec) * 1000 + (tp_now.tv_nsec - tp_last.tv_nsec) / 1000000;
+    tp_last = tp_now;
+
+    const int srb_flag = 0;
+    const int rb_id = 1;
+    static b_t last_total[MAX_MOBILES_PER_GNB] = {0}; // TODO: hash table?
+    ue_stat_t ue_stat[MAX_MOBILES_PER_GNB] = {0};
+    int num_ues = 0;
+    UE_iterator((NR_UE_info_t **)mac->UE_info.list, it) {
+      nr_rlc_statistics_t rlc = {0};
+      nr_rlc_get_statistics(it->rnti, srb_flag, rb_id, &rlc);
+      b_t *lt = &last_total[num_ues];
+      ue_stat_t *ue_s = &ue_stat[num_ues];
+      ue_s->rnti = it->rnti;
+      // static var last_total: we might have old data, larger than what
+      // reports RLC, leading to a huge number -> cut off to zero
+      if (lt->dl > rlc.txpdu_bytes)
+        lt->dl = rlc.txpdu_bytes;
+      if (lt->ul > rlc.rxpdu_bytes)
+        lt->ul = rlc.rxpdu_bytes;
+      ue_s->thr.dl = (rlc.txpdu_bytes - lt->dl) * 8 / diff_msec;
+      ue_s->thr.ul = (rlc.rxpdu_bytes - lt->ul) * 8 / diff_msec;
+      lt->dl = rlc.txpdu_bytes;
+      lt->ul = rlc.rxpdu_bytes;
+      num_ues++;
+    }
+
+    prnt("{\n");
+      prnt("  \"o1-config\": {\n");
+
+      prnt("    \"BWP\": {\n");
+      prnt("      \"dl\": [{\n");
+      prnt("        \"" ISINITBWP "\": true,\n");
+      //prnt("      \"" CYCLPREF "\": %ld,\n", *initialDL->cyclicPrefix);
+      prnt("        \"" NUMRBS "\": %ld,\n", NRRIV2BW(initialDL->locationAndBandwidth, MAX_BWP_SIZE));
+      prnt("        \"" STARTRB "\": %ld,\n", NRRIV2PRBOFFSET(initialDL->locationAndBandwidth, MAX_BWP_SIZE));
+      prnt("        \"" BWPSCS "\": %ld\n", 15 * (1U << scs));
+      prnt("      }],\n");
+      prnt("      \"ul\": [{\n");
+      prnt("        \"" ISINITBWP "\": true,\n");
+      //prnt("      \"" CYCLPREF "\": %ld,\n", *initialUL->cyclicPrefix);
+      prnt("        \"" NUMRBS "\": %ld,\n", NRRIV2BW(initialUL->locationAndBandwidth, MAX_BWP_SIZE));
+      prnt("        \"" STARTRB "\": %ld,\n", NRRIV2PRBOFFSET(initialUL->locationAndBandwidth, MAX_BWP_SIZE));
+      prnt("        \"" BWPSCS "\": %ld\n", 15 * (1U << scs));
+      prnt("      }]\n");
+      prnt("    },\n");
+
+      prnt("    \"NRCELLDU\": {\n");
+      prnt("      \"" SSBFREQ "\": %ld,\n", *scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB);
+      prnt("      \"" ARFCNDL "\": %ld,\n", frequencyInfoDL->absoluteFrequencyPointA);
+      prnt("      \"" BWDL "\": %ld,\n", bw_mhz);
+      prnt("      \"" ARFCNUL "\": %ld,\n", frequencyInfoUL->absoluteFrequencyPointA ? *frequencyInfoUL->absoluteFrequencyPointA : frequencyInfoDL->absoluteFrequencyPointA);
+      prnt("      \"" BWUL "\": %ld,\n", bw_mhz);
+      prnt("      \"" PCI "\": %ld,\n", *scc->physCellId);
+      prnt("      \"" TAC "\": %ld,\n", *cell_info->tac);
+      prnt("      \"" MCC "\": \"%03d\",\n", cell_info->plmn.mcc);
+      prnt("      \"" MNC "\": \"%0*d\",\n", cell_info->plmn.mnc_digit_length, cell_info->plmn.mnc);
+      prnt("      \"" SD  "\": %d,\n", cell_info->nssai[0].sd);
+      prnt("      \"" SST "\": %d\n", cell_info->nssai[0].sst);
+      prnt("    },\n");
+      prnt("    \"device\": {\n");
+      prnt("      \"gnbId\": %d,\n", sr->gNB_DU_id);
+      prnt("      \"gnbName\": \"%s\",\n", sr->gNB_DU_name);
+      prnt("      \"vendor\": \"OpenAirInterface\"\n");
+      prnt("    }\n");
+      prnt("  },\n");
+
+      prnt("  \"O1-Operational\": {\n");
+      prnt("    \"frame-type\": \"%s\",\n", frame_type == TDD ? "tdd" : "fdd");
+      prnt("    \"band-number\": %ld,\n", band);
+      prnt("    \"num-ues\": %d,\n", num_ues);
+      prnt("    \"ues\": ["); PRINTLIST_i(num_ues, "%d", ue_stat[i].rnti); prnt("],\n");
+      prnt("    \"load\": %d,\n", load);
+      prnt("    \"ues-thp\": [");
+        PRINTLIST_i(num_ues, "\n      {\"rnti\": %d, \"dl\": %ld, \"ul\": %ld}", ue_stat[i].rnti, ue_stat[i].thr.dl, ue_stat[i].thr.ul);
+      prnt("\n    ]\n");
+      prnt("  }\n");
+    prnt("}\n");
+    prnt("OK\n");
+    NR_SCHED_UNLOCK(&mac->sched_lock);
+    return 0;
+  }
 }
 
 static int read_long(const char *buf, const char *end, const char *id, long *val)
