@@ -45,9 +45,9 @@
 // 9.11.3.37 of 3GPP TS 24.501
 typedef struct {
   int sst;
-  int hplmn_sst;
-  int sd;
-  int hplmn_sd;
+  int *hplmn_sst;
+  int *sd;
+  int *hplmn_sd;
 } nr_nas_msg_snssai_t;
 
 /*

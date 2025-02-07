@@ -1176,11 +1176,14 @@ static void request_default_pdusession(nr_ue_nas_t *nas)
   itti_send_msg_to_task(TASK_NAS_NRUE, nas->UE_id, message_p);
 }
 
-static int get_user_nssai_idx(const nr_nas_msg_snssai_t allowed_nssai[8], const nr_ue_nas_t *nas)
+static int get_user_nssai_idx(const nr_nas_msg_snssai_t allowed_nssai[NAS_MAX_NUMBER_SLICES], const nr_ue_nas_t *nas)
 {
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < NAS_MAX_NUMBER_SLICES; i++) {
     const nr_nas_msg_snssai_t *nssai = allowed_nssai + i;
-    if ((nas->uicc->nssai_sst == nssai->sst) && (nas->uicc->nssai_sd == nssai->sd))
+    /* If it was received in Registration Accept, check the SD
+       in the stored Allowed N-SSAI, else, consider the SD valid */
+    bool sd_match = nssai->sd ? (nas->uicc->nssai_sd == *nssai->sd ? true : false) : true;
+    if ((nas->uicc->nssai_sst == nssai->sst) && sd_match)
       return i;
   }
   return -1;

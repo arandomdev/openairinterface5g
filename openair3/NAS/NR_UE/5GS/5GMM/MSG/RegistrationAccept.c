@@ -52,7 +52,6 @@ static int decode_nssai_ie(nr_nas_msg_snssai_t *nssai, const uint8_t *buf)
   const uint8_t *end = buf + length;
   while (buf < end) {
     nr_nas_msg_snssai_t *item = nssai + nssai_cnt;
-    item->sd = 0xffffff;
     const int item_len = *buf++; // Length of S-NSSAI IE item
     switch (item_len) {
       case 1:
@@ -62,31 +61,38 @@ static int decode_nssai_ie(nr_nas_msg_snssai_t *nssai, const uint8_t *buf)
 
       case 2:
         item->sst = *buf++;
-        item->hplmn_sst = *buf++;
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
         nssai_cnt++;
         break;
 
       case 4:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
         nssai_cnt++;
         break;
 
       case 5:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
-        item->hplmn_sst = *buf++;
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
         nssai_cnt++;
         break;
 
       case 8:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
-        item->hplmn_sst = *buf++;
-        item->hplmn_sd = 0xffffff & ntoh_int24_buf(buf);
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
+        item->hplmn_sd = malloc_or_fail(sizeof(*item->hplmn_sd));
+        *item->hplmn_sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
         nssai_cnt++;
         break;
