@@ -33,13 +33,12 @@
 #include <string.h>
 #include <stdint.h>
 #include "conversions.h"
-#include "TLVEncoder.h"
-#include "TLVDecoder.h"
 #include "RegistrationAccept.h"
-#include "assertions.h"
 #include "fgs_nas_utils.h"
+#include "common/utils/utils.h"
 
 #define IEI_5G_GUTI 0x77
+#define REGISTRATION_ACCEPT_MIN_LEN 2 // (5GS registration result) 2 octets
 
 /**
  * @brief Allowed NSSAI from Registration Accept according to 3GPP TS 24.501 Table 8.2.7.1.1
@@ -105,11 +104,17 @@ int decode_registration_accept(registration_accept_msg *registration_accept, con
   int dec = 0;
   const uint8_t *end = buffer + len;
 
-  /* Decoding mandatory fields */
+  if (len < REGISTRATION_ACCEPT_MIN_LEN) {
+    PRINT_NAS_ERROR("%s: buffer length is too short.\n", __func__);
+    return -1;
+  }
+
+  // 5GS registration result (M)
   if ((dec = decode_fgs_registration_result(&registration_accept->fgsregistrationresult, 0, *buffer, len)) < 0)
     return dec;
   buffer += dec;
 
+  // 5G-GUTI (O)
   if (buffer < end && *buffer == IEI_5G_GUTI) {
     registration_accept->guti = calloc_or_fail(1, sizeof(*registration_accept->guti));
     if ((dec = decode_5gs_mobile_identity(registration_accept->guti, IEI_5G_GUTI, buffer, end - buffer)) < 0) {
@@ -119,8 +124,7 @@ int decode_registration_accept(registration_accept_msg *registration_accept, con
     buffer += dec;
   }
 
-  // Allowed NSSAI (O)
-  /* Optional Presence IEs */
+  // Other optional IEs
   while (buffer < end) {
     const int iei = *buffer++;
     switch (iei) {
@@ -148,8 +152,6 @@ int encode_registration_accept(const registration_accept_msg *registration_accep
 {
   int encoded = 0;
 
-  LOG_FUNC_IN;
-
   *(buffer + encoded) = encode_fgs_registration_result(&registration_accept->fgsregistrationresult);
   encoded = encoded + 2;
 
@@ -160,6 +162,5 @@ int encode_registration_accept(const registration_accept_msg *registration_accep
     encoded += mi_enc;
   }
 
-  // todo ,Encoding optional fields
-  LOG_FUNC_RETURN(encoded);
+  return encoded;
 }
