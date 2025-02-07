@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "SecurityHeaderType.h"
 #include "MessageType.h"
@@ -71,5 +72,8 @@ typedef struct registration_accept_msg_tag {
 int decode_registration_accept(registration_accept_msg *registrationaccept, const uint8_t *buffer, uint32_t len);
 
 int encode_registration_accept(const registration_accept_msg *registrationaccept, uint8_t *buffer, uint32_t len);
+
+bool eq_fgmm_registration_accept(const registration_accept_msg *a, const registration_accept_msg *b);
+void free_fgmm_registration_accept(registration_accept_msg *msg);
 
 #endif /* ! defined(REGISTRATION_ACCEPT_H_) */
