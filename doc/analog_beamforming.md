@@ -10,6 +10,8 @@ There are three main beamforming techinques: analog, digital and hybrid. The nam
 
 The presence of a limited number of predefined beams at RU poses constraints to the scheduler at gNB. As a matter of fact, the scheduler can serve only a limited number of beams, depending on the RU characteristics (possibly only 1), in a given time scale, that also depends on the RU characteristics (e.g. 1 slot or 1 symbol). This limitation doesn't exist for digital beamforming.
 
+Analog beamforming implementation also allows to enable distributed antenna systems (DAS), where each beam corrispond to one antenna (or a set of antennas) of the system. In this scenario, the scheduler constaint is alleviated because normally the number of concurrent beams allowed equals the total number of beams.
+
 # Configuration file fields for analog beamforming
 
 A set of parameters in configuration files controls the implementation of analog beamforming and instructs the scheduler on how to behave in such scenarios. Since most notably this technique in 5G is employed in FR2, the configuration file example currently available is a RFsim one for band 261. [Config file example](../ci-scripts/conf_files/gnb.sa.band261.u3.32prb.rfsim.conf)
@@ -19,6 +21,8 @@ In the `MACRLC` section of configuration files, there are three new parameters: 
 - `beam_duration` is the number of slots (currently minimum duration of a beam) the scheduler is tied to a beam (default value is 1)
 - `beams_per_period` is the number of concurrent beams the RU can handle in the beam duration (default value is 1)
 - `beam_weights` is a vector field containing the set of beam indices to be provided by the OAI L1 to the RU is also required. In current implementation, the number of beam indices should be equal to the number of SSBs transmitted.
+
+DAS is enabled by setting to 1 the parameter `enable_das` in the L1 section of the configuration file.
 
 # Implementation in OAI scheduler
 
@@ -42,6 +46,8 @@ Additionally, L2 provides in each channel FAPI message information about the bea
 
 To handle multiple concurrent beam, the buffers containing Tx and Rx data in frequency domain (`txdataF` and `rxdataF`) have been extended by one dimension to contain multiple concurrent beam to be transmitted/received.
 The function `beam_index_allocation`, called by every L1 channel, is responsible to match the FAPI analog beam index to the RU beam index and to store the latter `beam_id` structure, which allocates the beams per symbol, despite L2 only supporting beam change at slot level. At the same time, the function returns the concurrent beam index, to be used to store data in frequency domain buffers. While doing so, the function also checks if there is room for current beam in the list of concurrent beams, which should always be the case, if L2 properly allocated the channels.
+
+In case of DAS, since each beam corresponds to a specific antenna port, the `beam_index_allocation` function is simplified in the sense that the beam index corresponds to the antenna port index of the frequency domain buffers.
 
 # RU implementation
 
