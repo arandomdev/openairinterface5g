@@ -1238,7 +1238,6 @@ static void handle_registration_accept(nr_ue_nas_t *nas, const uint8_t *pdu_buff
   // process GUTI
   if (msg.guti) {
     process_guti(&msg.guti->guti, nas);
-    free(msg.guti);
   } else {
     LOG_W(NAS, "no GUTI in registration accept\n");
   }
@@ -1254,6 +1253,8 @@ static void handle_registration_accept(nr_ue_nas_t *nas, const uint8_t *pdu_buff
   } else {
     request_default_pdusession(nas);
   }
+  // Free local message after processing
+  free_fgmm_registration_accept(&msg);
 }
 
 void *nas_nrue(void *args_p)
