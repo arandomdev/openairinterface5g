@@ -382,15 +382,6 @@ void finish_nr_dl_harq(NR_UE_sched_ctrl_t *sched_ctrl, int harq_pid)
   add_tail_nr_list(&sched_ctrl->available_dl_harq, harq_pid);
 }
 
-void abort_nr_dl_harq(NR_UE_info_t* UE, int8_t harq_pid)
-{
-  /* already mutex protected through handle_dl_harq() */
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-
-  finish_nr_dl_harq(sched_ctrl, harq_pid);
-  UE->mac_stats.dl.errors++;
-}
-
 typedef struct {
   int bwpStart;
   int bwpSize;

@@ -739,6 +739,11 @@ void nr_initiate_ra_proc(module_id_t module_idP,
 
   // Configure RA BWP
   configure_UE_BWP(nr_mac, scc, NULL, ra, NULL, -1, -1);
+  NR_UE_sched_ctrl_t *sched_ctrl = &ra->sched_ctrl;
+  memset(sched_ctrl, 0, sizeof(*sched_ctrl));
+  create_dl_harq_list(sched_ctrl, &ra->sc_info);
+  set_max_fb_time(&ra->UL_BWP, &ra->DL_BWP);
+  set_sched_pucch_list(sched_ctrl, &ra->UL_BWP, scc, &nr_mac->frame_structure);
 
   // return current SSB order in the list of tranmitted SSBs
   int n_ssb = ssb_index_from_prach(module_idP, frameP, slotP, preamble_index, freq_index, symbol);
@@ -1960,7 +1965,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
       return;
     }
 
-    NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+    NR_UE_sched_ctrl_t *sched_ctrl = &ra->sched_ctrl;
     /* get the PID of a HARQ process awaiting retrnasmission, or -1 otherwise */
     int current_harq_pid = sched_ctrl->retrans_dl_harq.head;
 
@@ -2183,7 +2188,19 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     rnti_t rnti = ra->ra_type == RA_4_STEP ? ra->rnti : ra->MsgB_rnti;
 
     const int pduindex = nr_mac->pdu_index[CC_id]++;
-    prepare_dl_pdus(nr_mac, ra, dl_bwp, dl_req, pucch, dmrs_info, msg4_tda, aggregation_level, CCEIndex, tb_size, harq->ndi, sched_ctrl->tpc1, delta_PRI,
+    prepare_dl_pdus(nr_mac,
+                    ra,
+                    dl_bwp,
+                    dl_req,
+                    pucch,
+                    dmrs_info,
+                    msg4_tda,
+                    aggregation_level,
+                    CCEIndex,
+                    tb_size,
+                    harq->ndi,
+                    sched_ctrl->tpc1,
+                    delta_PRI,
                     current_harq_pid,
                     time_domain_assignment,
                     CC_id,
@@ -2269,21 +2286,24 @@ static void nr_check_Msg4_MsgB_Ack(module_id_t module_id, int CC_id, frame_t fra
   }
   const int current_harq_pid = ra->harq_pid;
 
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+  NR_UE_sched_ctrl_t *sched_ctrl = &ra->sched_ctrl;
   NR_UE_harq_t *harq = &sched_ctrl->harq_processes[current_harq_pid];
 
-  LOG_D(NR_MAC, "ue rnti 0x%04x, harq is waiting %d, round %d, frame %d %d, harq id %d\n", ra->rnti, harq->is_waiting, harq->round, frame, slot, current_harq_pid);
+  LOG_D(NR_MAC,
+        "ue rnti 0x%04x, harq is waiting %d, round %d, frame %d %d, harq id %d\n",
+        ra->rnti,
+        harq->is_waiting,
+        harq->round,
+        frame,
+        slot,
+        current_harq_pid);
 
   if (harq->is_waiting == 0) {
     if (harq->round == 0) {
       if (UE->Msg4_MsgB_ACKed) {
-        LOG_A(NR_MAC,
-              "%4d.%2d UE %04x: Received Ack of %s. CBRA procedure succeeded!\n",
-              frame, slot, ra->rnti, ra_type_str);
+        LOG_A(NR_MAC, "%4d.%2d UE %04x: Received Ack of %s. CBRA procedure succeeded!\n", frame, slot, ra->rnti, ra_type_str);
       } else {
-        LOG_I(NR_MAC,
-              "%4d.%2d UE %04x: RA Procedure failed at %s!\n",
-              frame, slot, ra->rnti, ra_type_str);
+        LOG_I(NR_MAC, "%4d.%2d UE %04x: RA Procedure failed at %s!\n", frame, slot, ra->rnti, ra_type_str);
         nr_mac_trigger_ul_failure(sched_ctrl, UE->current_DL_BWP.scs);
       }
 

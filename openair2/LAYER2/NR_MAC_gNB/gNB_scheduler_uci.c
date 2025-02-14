@@ -37,9 +37,10 @@ static void nr_fill_nfapi_pucch(gNB_MAC_INST *nrmac,
                                 frame_t frame,
                                 sub_frame_t slot,
                                 const NR_sched_pucch_t *pucch,
-                                NR_UE_info_t* UE)
+                                NR_UE_UL_BWP_t *ul_bwp,
+                                rnti_t rnti,
+                                int ue_beam_idx)
 {
-
   const int index = ul_buffer_index(pucch->frame,
                                     pucch->ul_slot,
                                     nrmac->frame_structure.numb_slots_frame,
@@ -87,14 +88,16 @@ static void nr_fill_nfapi_pucch(gNB_MAC_INST *nrmac,
         "%4d.%2d Calling nr_configure_pucch (pucch_Config %p,r_pucch %d) pucch to be scheduled in %4d.%2d\n",
         frame,
         slot,
-        UE->current_UL_BWP.pucch_Config,
+        ul_bwp->pucch_Config,
         pucch->r_pucch,
         pucch->frame,
         pucch->ul_slot);
 
   nr_configure_pucch(pucch_pdu,
                      scc,
-                     UE,
+                     ul_bwp,
+                     rnti,
+                     ue_beam_idx,
                      pucch->resource_indicator,
                      pucch->csi_bits,
                      pucch->dai_c,
@@ -176,6 +179,43 @@ static int get_pucch_index(int frame, int slot, const frame_structure_t *fs, int
   return (frame_start + ul_period_start + ul_period_slot) % sched_pucch_size;
 }
 
+static void nr_sched_pucch_core(gNB_MAC_INST *nrmac,
+                                frame_t frame,
+                                int slot,
+                                NR_UE_sched_ctrl_t *sched_ctrl,
+                                NR_UE_UL_BWP_t *ul_bwp,
+                                int ue_beam_idx,
+                                rnti_t rnti)
+{
+  const int pucch_index = get_pucch_index(frame, slot, &nrmac->frame_structure, sched_ctrl->sched_pucch_size);
+  NR_sched_pucch_t *curr_pucch = &sched_ctrl->sched_pucch[pucch_index];
+  if (!curr_pucch->active)
+    return;
+  if (frame != curr_pucch->frame || slot != curr_pucch->ul_slot) {
+    LOG_E(NR_MAC,
+          "PUCCH frame/slot mismatch: current %4d.%2d vs. request %4d.%2d: not scheduling PUCCH\n",
+          curr_pucch->frame,
+          curr_pucch->ul_slot,
+          frame,
+          slot);
+    memset(curr_pucch, 0, sizeof(*curr_pucch));;
+    return;
+  }
+  const uint16_t O_ack = curr_pucch->dai_c;
+  const uint16_t O_csi = curr_pucch->csi_bits;
+  const uint8_t O_sr = curr_pucch->sr_flag;
+  LOG_D(NR_MAC,"Scheduling PUCCH[%d] RX for UE %04x in %4d.%2d O_ack %d, O_sr %d, O_csi %d\n",
+        pucch_index,
+        rnti,
+        curr_pucch->frame,
+        curr_pucch->ul_slot,
+        O_ack,
+        O_sr,
+        O_csi);
+  nr_fill_nfapi_pucch(nrmac, frame, slot, curr_pucch, ul_bwp, rnti, ue_beam_idx);
+  memset(curr_pucch, 0, sizeof(*curr_pucch));
+}
+
 void nr_schedule_pucch(gNB_MAC_INST *nrmac, frame_t frameP, sub_frame_t slotP)
 {
   /* already mutex protected: held in gNB_dlsch_ulsch_scheduler() */
@@ -184,31 +224,15 @@ void nr_schedule_pucch(gNB_MAC_INST *nrmac, frame_t frameP, sub_frame_t slotP)
   if (!is_ul_slot(slotP, &nrmac->frame_structure))
     return;
 
+  for (int i = 0; i < NR_NB_RA_PROC_MAX; ++i) {
+    NR_RA_t *ra = &nrmac->common_channels[0].ra[i];
+    if (ra->ra_state == nrRA_WAIT_Msg4_MsgB_ACK)
+      nr_sched_pucch_core(nrmac, frameP, slotP, &ra->sched_ctrl, &ra->UL_BWP, ra->beam_id, ra->rnti);
+  }
+
   UE_iterator(nrmac->UE_info.list, UE) {
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-    const int pucch_index = get_pucch_index(frameP, slotP, &nrmac->frame_structure, sched_ctrl->sched_pucch_size);
-    NR_sched_pucch_t *curr_pucch = &UE->UE_sched_ctrl.sched_pucch[pucch_index];
-    if (!curr_pucch->active)
-      continue;
-    if (frameP != curr_pucch->frame || slotP != curr_pucch->ul_slot) {
-      LOG_E(NR_MAC,
-            "PUCCH frame/slot mismatch: current %4d.%2d vs. request %4d.%2d: not scheduling PUCCH\n",
-            curr_pucch->frame,
-            curr_pucch->ul_slot,
-            frameP,
-            slotP);
-      memset(curr_pucch, 0, sizeof(*curr_pucch));;
-      continue;
-    }
-
-    const uint16_t O_ack = curr_pucch->dai_c;
-    const uint16_t O_csi = curr_pucch->csi_bits;
-    const uint8_t O_sr = curr_pucch->sr_flag;
-    LOG_D(NR_MAC,"Scheduling PUCCH[%d] RX for UE %04x in %4d.%2d O_ack %d, O_sr %d, O_csi %d\n",
-          pucch_index,UE->rnti,curr_pucch->frame,curr_pucch->ul_slot,O_ack,O_sr,O_csi);
-    nr_fill_nfapi_pucch(nrmac, frameP, slotP, curr_pucch, UE);
-    memset(curr_pucch, 0, sizeof(*curr_pucch));
-
+    nr_sched_pucch_core(nrmac, frameP, slotP, sched_ctrl, &UE->current_UL_BWP, UE->UE_beam_index, UE->rnti);
   }
 }
 
@@ -383,22 +407,31 @@ int get_pucch_resourceid(NR_PUCCH_Config_t *pucch_Config, int O_uci, int pucch_r
   return *resource_id;
 }
 
-static void handle_dl_harq(NR_UE_info_t * UE,
+static void abort_nr_dl_harq(NR_UE_sched_ctrl_t *sched_ctrl, NR_mac_dir_stats_t *dl_stats, int8_t harq_pid)
+{
+  /* already mutex protected through handle_dl_harq() */
+  finish_nr_dl_harq(sched_ctrl, harq_pid);
+  if (dl_stats)
+    dl_stats->errors++;
+}
+
+static void handle_dl_harq(NR_UE_sched_ctrl_t *sched_ctrl,
+                           NR_mac_dir_stats_t *dl_stats,
                            int8_t harq_pid,
+                           rnti_t rnti,
                            bool success,
                            int harq_round_max)
 {
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   NR_UE_harq_t *harq = &sched_ctrl->harq_processes[harq_pid];
   harq->feedback_slot = -1;
   harq->is_waiting = false;
   if (success) {
     finish_nr_dl_harq(sched_ctrl, harq_pid);
   } else if (harq->round >= harq_round_max - 1) {
-    abort_nr_dl_harq(UE, harq_pid);
-    LOG_D(NR_MAC, "retransmission error for UE %04x (total %"PRIu64")\n", UE->rnti, UE->mac_stats.dl.errors);
+    abort_nr_dl_harq(sched_ctrl, dl_stats, harq_pid);
+    LOG_D(NR_MAC, "retransmission error for UE %04x\n", rnti);
   } else {
-    LOG_D(PHY,"NACK for: pid %d, ue %04x\n",harq_pid, UE->rnti);
+    LOG_D(PHY,"NACK for: pid %d, ue %04x\n", harq_pid, rnti);
     add_tail_nr_list(&sched_ctrl->retrans_dl_harq, harq_pid);
     harq->round++;
   }
@@ -721,7 +754,7 @@ static void extract_pucch_csi_report(NR_CSI_MeasConfig_t *csi_MeasConfig,
   }
 }
 
-static NR_UE_harq_t *find_harq(frame_t frame, sub_frame_t slot, NR_UE_info_t * UE, int harq_round_max)
+static NR_UE_harq_t *find_harq(frame_t frame, sub_frame_t slot, NR_UE_info_t *UE, int harq_round_max)
 {
   /* In case of realtime problems: we can only identify a HARQ process by
    * timing. If the HARQ process's feedback_frame/feedback_slot is not the one we
@@ -735,7 +768,8 @@ static NR_UE_harq_t *find_harq(frame_t frame, sub_frame_t slot, NR_UE_info_t * U
     return NULL;
   NR_UE_harq_t *harq = &sched_ctrl->harq_processes[pid];
   /* old feedbacks we missed: mark for retransmission */
-  while ((harq->feedback_frame - frame + 1024 ) % 1024 > 512 // harq->feedback_frame < frame, distance of 512 is boundary to decide if feedback_frame is in the past or future
+  // harq->feedback_frame < frame, distance of 512 is boundary to decide if feedback_frame is in the past or future
+  while ((harq->feedback_frame - frame + 1024 ) % 1024 > 512
          || (harq->feedback_frame == frame && harq->feedback_slot < slot)) {
     LOG_W(NR_MAC,
           "UE %04x expected HARQ pid %d feedback at %4d.%2d, but is at %4d.%2d instead (HARQ feedback is in the past)\n",
@@ -746,14 +780,15 @@ static NR_UE_harq_t *find_harq(frame_t frame, sub_frame_t slot, NR_UE_info_t * U
           frame,
           slot);
     remove_front_nr_list(&sched_ctrl->feedback_dl_harq);
-    handle_dl_harq(UE, pid, 0, harq_round_max);
+    handle_dl_harq(sched_ctrl, &UE->mac_stats.dl, pid, UE->rnti, 0, harq_round_max);
     pid = sched_ctrl->feedback_dl_harq.head;
     if (pid < 0)
       return NULL;
     harq = &sched_ctrl->harq_processes[pid];
   }
   /* feedbacks that we wait for in the future: don't do anything */
-  if ((frame - harq->feedback_frame + 1024 ) % 1024 > 512 // harq->feedback_frame > frame, distance of 512 is boundary to decide if feedback_frame is in the past or future
+  // harq->feedback_frame > frame, distance of 512 is boundary to decide if feedback_frame is in the past or future
+  if ((frame - harq->feedback_frame + 1024 ) % 1024 > 512
       || (harq->feedback_frame == frame && harq->feedback_slot > slot)) {
 
     LOG_W(NR_MAC,
@@ -777,13 +812,28 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id,
   gNB_MAC_INST *nrmac = RC.nrmac[mod_id];
   int rssi_threshold = nrmac->pucch_rssi_threshold;
   NR_SCHED_LOCK(&nrmac->sched_lock);
-  NR_UE_info_t * UE = find_nr_UE(&nrmac->UE_info, uci_01->rnti);
+  NR_UE_info_t *UE = find_nr_UE(&nrmac->UE_info, uci_01->rnti);
+  NR_UE_sched_ctrl_t *sched_ctrl = NULL;
+  NR_mac_dir_stats_t *stats = NULL;
   if (!UE) {
-    LOG_E(NR_MAC, "%s(): unknown RNTI %04x in PUCCH UCI\n", __func__, uci_01->rnti);
-    NR_SCHED_UNLOCK(&nrmac->sched_lock);
-    return;
+    NR_RA_t *ra = NULL;
+    for (int i = 0; i < NR_NB_RA_PROC_MAX; ++i) {
+      NR_RA_t *temp_ra = &nrmac->common_channels[0].ra[i];
+      if (temp_ra->ra_state == nrRA_WAIT_Msg4_MsgB_ACK && uci_01->rnti == temp_ra->rnti) {
+        ra = temp_ra;
+        sched_ctrl = &ra->sched_ctrl;
+        break;
+      }
+    }
+    if (!ra) {
+      LOG_E(NR_MAC, "Unknown RNTI %04x in PUCCH UCI\n", uci_01->rnti);
+      NR_SCHED_UNLOCK(&nrmac->sched_lock);
+      return;
+    }
+  } else {
+    sched_ctrl = &UE->UE_sched_ctrl;
+    stats = &UE->mac_stats.dl;
   }
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
 
   if (((uci_01->pduBitmap >> 1) & 0x01)) {
     // iterate over received harq bits
@@ -792,15 +842,15 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id,
       const uint8_t harq_confidence = uci_01->harq.harq_confidence_level;
       NR_UE_harq_t *harq = find_harq(frame, slot, UE, nrmac->dl_bler.harq_round_max);
       if (!harq) {
-        LOG_E(NR_MAC, "UE %04x: Could not find a HARQ process at %4d.%2d!\n", UE->rnti, frame, slot);
+        LOG_E(NR_MAC, "UE %04x: Could not find a HARQ process at %4d.%2d!\n", uci_01->rnti, frame, slot);
         break;
       }
       DevAssert(harq->is_waiting);
       const int8_t pid = sched_ctrl->feedback_dl_harq.head;
       remove_front_nr_list(&sched_ctrl->feedback_dl_harq);
-      LOG_D(NR_MAC,"%4d.%2d bit %d pid %d ack/nack %d\n",frame, slot, harq_bit,pid,harq_value);
+      LOG_D(NR_MAC, "%4d.%2d bit %d pid %d ack/nack %d\n", frame, slot, harq_bit, pid, harq_value);
       nr_mac_update_pdcch_closed_loop_adjust(sched_ctrl, harq_confidence != 0);
-      handle_dl_harq(UE, pid, harq_value == 0 && harq_confidence == 0, nrmac->dl_bler.harq_round_max);
+      handle_dl_harq(sched_ctrl, stats, pid, uci_01->rnti, harq_value == 0 && harq_confidence == 0, nrmac->dl_bler.harq_round_max);
       if (!UE->Msg4_MsgB_ACKed && harq_value == 0 && harq_confidence == 0)
         UE->Msg4_MsgB_ACKed = true;
       if (harq_confidence == 1)  UE->mac_stats.pucch0_DTX++;
@@ -876,7 +926,12 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id,
       const int8_t pid = sched_ctrl->feedback_dl_harq.head;
       remove_front_nr_list(&sched_ctrl->feedback_dl_harq);
       LOG_D(NR_MAC,"%4d.%2d bit %d pid %d ack/nack %d\n",frame, slot, harq_bit, pid, acknack);
-      handle_dl_harq(UE, pid, uci_234->harq.harq_crc != 1 && acknack, nrmac->dl_bler.harq_round_max);
+      handle_dl_harq(sched_ctrl,
+                     &UE->mac_stats.dl,
+                     pid,
+                     UE->rnti,
+                     uci_234->harq.harq_crc != 1 && acknack,
+                     nrmac->dl_bler.harq_round_max);
     }
     free(uci_234->harq.harq_payload);
   }

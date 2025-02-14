@@ -194,115 +194,6 @@ typedef struct NR_sched_pdcch {
   int n_rb;
 } NR_sched_pdcch_t;
 
-/*! \brief gNB template for the Random access information */
-typedef struct {
-  /// Flag to indicate this process is active
-  RA_gNB_state_t ra_state;
-  /// CORESET0 configured flag
-  int coreset0_configured;
-  /// Frame where preamble was received
-  int preamble_frame;
-  /// Slot where preamble was received
-  uint8_t preamble_slot;
-  /// Received preamble_index
-  uint8_t preamble_index;
-  /// Timing offset indicated by PHY
-  int16_t timing_offset;
-  /// Subframe where Msg2 is to be sent
-  uint8_t Msg2_slot;
-  /// Frame where Msg2 is to be sent
-  frame_t Msg2_frame;
-  /// Subframe where Msg3 is to be sent
-  sub_frame_t Msg3_slot;
-  /// Frame where Msg3 is to be sent
-  frame_t Msg3_frame;
-  /// Msg3 time domain allocation index
-  int Msg3_tda_id;
-  /// Msg3 beam matrix index
-  NR_beam_alloc_t Msg3_beam;
-  /// harq_pid used for Msg4 transmission
-  uint8_t harq_pid;
-  /// UE RNTI allocated during RAR
-  rnti_t rnti;
-  /// RA RNTI allocated from received PRACH
-  uint16_t RA_rnti;
-  /// MsgB RNTI allocated from received MsgA
-  uint16_t MsgB_rnti;
-  /// Received UE Contention Resolution Identifier
-  uint8_t cont_res_id[6];
-  /// Msg3 first RB
-  int msg3_first_rb;
-  /// Msg3 number of RB
-  int msg3_nb_rb;
-  /// Msg3 BWP start
-  int msg3_bwp_start;
-  /// Msg3 TPC command
-  uint8_t msg3_TPC;
-  /// Round of Msg3 HARQ
-  uint8_t msg3_round;
-  int msg3_startsymb;
-  int msg3_nbSymb;
-  /// MAC PDU length for Msg4
-  int mac_pdu_length;
-  /// RA search space
-  NR_SearchSpace_t *ra_ss;
-  /// RA Coreset
-  NR_ControlResourceSet_t *coreset;
-  NR_sched_pdcch_t sched_pdcch;
-  // Beam index
-  uint8_t beam_id;
-  /// CellGroup for UE that is to come (NSA is non-null, null for SA)
-  NR_CellGroupConfig_t *CellGroup;
-  /// Preambles for contention-free access
-  NR_preamble_ue_t preambles;
-  int contention_resolution_timer;
-  nr_ra_type_t ra_type;
-  /// CFRA flag
-  bool cfra;
-  // BWP for RA
-  NR_UE_DL_BWP_t DL_BWP;
-  NR_UE_UL_BWP_t UL_BWP;
-  NR_UE_ServingCell_Info_t sc_info;
-} NR_RA_t;
-
-/*! \brief gNB common channels */
-typedef struct {
-  frame_type_t frame_type;
-  NR_BCCH_BCH_Message_t *mib;
-  NR_BCCH_DL_SCH_Message_t *sib1;
-  NR_BCCH_DL_SCH_Message_t *sib19;
-  NR_ServingCellConfigCommon_t *ServingCellConfigCommon;
-  /// pre-configured ServingCellConfig that is default for every UE
-  NR_ServingCellConfig_t *pre_ServingCellConfig;
-  /// Outgoing MIB PDU for PHY
-  uint8_t MIB_pdu[3];
-  /// Outgoing BCCH pdu for PHY
-  uint8_t sib1_bcch_pdu[NR_MAX_SIB_LENGTH / 8];
-  int sib1_bcch_length;
-  /// used for sib19 data
-  uint8_t sib19_bcch_pdu[NR_MAX_SIB_LENGTH / 8];
-  int sib19_bcch_length;
-  /// Template for RA computations
-  NR_RA_t ra[NR_NB_RA_PROC_MAX];
-  /// VRB map for common channels
-  uint16_t vrb_map[MAX_NUM_BEAM_PERIODS][275];
-  /// VRB map for common channels and PUSCH, dynamically allocated because
-  /// length depends on number of slots and RBs
-  uint16_t *vrb_map_UL[MAX_NUM_BEAM_PERIODS];
-  ///Number of active SSBs
-  int num_active_ssb;
-  //Total available prach occasions per configuration period
-  int total_prach_occasions_per_config_period;
-  //Total available prach occasions
-  int total_prach_occasions;
-  //Max Association period
-  int max_association_period;
-  //SSB index
-  uint8_t ssb_index[MAX_NUM_OF_SSB];
-  //CB preambles for each SSB
-  int cb_preambles_per_ssb;
-} NR_COMMON_channels_t;
-
 // SP ZP CSI-RS Resource Set Activation/Deactivation MAC CE
 typedef struct sp_zp_csirs {
   bool is_scheduled;     //ZP CSI-RS ACT/Deact MAC CE is scheduled
@@ -818,6 +709,116 @@ typedef struct {
   uint64_t total_prb_aggregate;
   uint64_t used_prb_aggregate;
 } mac_stats_t;
+
+/*! \brief gNB template for the Random access information */
+typedef struct {
+  /// Flag to indicate this process is active
+  RA_gNB_state_t ra_state;
+  /// CORESET0 configured flag
+  int coreset0_configured;
+  /// Frame where preamble was received
+  int preamble_frame;
+  /// Slot where preamble was received
+  uint8_t preamble_slot;
+  /// Received preamble_index
+  uint8_t preamble_index;
+  /// Timing offset indicated by PHY
+  int16_t timing_offset;
+  /// Subframe where Msg2 is to be sent
+  uint8_t Msg2_slot;
+  /// Frame where Msg2 is to be sent
+  frame_t Msg2_frame;
+  /// Subframe where Msg3 is to be sent
+  sub_frame_t Msg3_slot;
+  /// Frame where Msg3 is to be sent
+  frame_t Msg3_frame;
+  /// Msg3 time domain allocation index
+  int Msg3_tda_id;
+  /// Msg3 beam matrix index
+  NR_beam_alloc_t Msg3_beam;
+  /// harq_pid used for Msg4 transmission
+  uint8_t harq_pid;
+  /// UE RNTI allocated during RAR
+  rnti_t rnti;
+  /// RA RNTI allocated from received PRACH
+  uint16_t RA_rnti;
+  /// MsgB RNTI allocated from received MsgA
+  uint16_t MsgB_rnti;
+  /// Received UE Contention Resolution Identifier
+  uint8_t cont_res_id[6];
+  /// Msg3 first RB
+  int msg3_first_rb;
+  /// Msg3 number of RB
+  int msg3_nb_rb;
+  /// Msg3 BWP start
+  int msg3_bwp_start;
+  /// Msg3 TPC command
+  uint8_t msg3_TPC;
+  /// Round of Msg3 HARQ
+  uint8_t msg3_round;
+  int msg3_startsymb;
+  int msg3_nbSymb;
+  /// MAC PDU length for Msg4
+  int mac_pdu_length;
+  /// RA search space
+  NR_SearchSpace_t *ra_ss;
+  /// RA Coreset
+  NR_ControlResourceSet_t *coreset;
+  NR_sched_pdcch_t sched_pdcch;
+  // Beam index
+  uint8_t beam_id;
+  /// CellGroup for UE that is to come (NSA is non-null, null for SA)
+  NR_CellGroupConfig_t *CellGroup;
+  /// Preambles for contention-free access
+  NR_preamble_ue_t preambles;
+  int contention_resolution_timer;
+  nr_ra_type_t ra_type;
+  /// CFRA flag
+  bool cfra;
+  // BWP for RA
+  NR_UE_DL_BWP_t DL_BWP;
+  NR_UE_UL_BWP_t UL_BWP;
+  NR_UE_ServingCell_Info_t sc_info;
+  NR_UE_sched_ctrl_t sched_ctrl;
+} NR_RA_t;
+
+/*! \brief gNB common channels */
+typedef struct {
+  frame_type_t frame_type;
+  NR_BCCH_BCH_Message_t *mib;
+  NR_BCCH_DL_SCH_Message_t *sib1;
+  NR_BCCH_DL_SCH_Message_t *sib19;
+  NR_ServingCellConfigCommon_t *ServingCellConfigCommon;
+  /// pre-configured ServingCellConfig that is default for every UE
+  NR_ServingCellConfig_t *pre_ServingCellConfig;
+  /// Outgoing MIB PDU for PHY
+  uint8_t MIB_pdu[3];
+  /// Outgoing BCCH pdu for PHY
+  uint8_t sib1_bcch_pdu[NR_MAX_SIB_LENGTH / 8];
+  int sib1_bcch_length;
+  /// used for sib19 data
+  uint8_t sib19_bcch_pdu[NR_MAX_SIB_LENGTH / 8];
+  int sib19_bcch_length;
+  /// Template for RA computations
+  NR_RA_t ra[NR_NB_RA_PROC_MAX];
+  /// VRB map for common channels
+  uint16_t vrb_map[MAX_NUM_BEAM_PERIODS][275];
+  /// VRB map for common channels and PUSCH, dynamically allocated because
+  /// length depends on number of slots and RBs
+  uint16_t *vrb_map_UL[MAX_NUM_BEAM_PERIODS];
+  ///Number of active SSBs
+  int num_active_ssb;
+  //Total available prach occasions per configuration period
+  int total_prach_occasions_per_config_period;
+  //Total available prach occasions
+  int total_prach_occasions;
+  //Max Association period
+  int max_association_period;
+  //SSB index
+  uint8_t ssb_index[MAX_NUM_OF_SSB];
+  //CB preambles for each SSB
+  int cb_preambles_per_ssb;
+} NR_COMMON_channels_t;
 
 /*! \brief top level eNB MAC structure */
 typedef struct gNB_MAC_INST_s {

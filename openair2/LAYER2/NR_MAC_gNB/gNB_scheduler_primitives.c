@@ -916,7 +916,9 @@ int nr_get_pucch_resource(NR_ControlResourceSet_t *coreset,
 // This function configures pucch pdu fapi structure
 void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
                         NR_ServingCellConfigCommon_t *scc,
-                        NR_UE_info_t *UE,
+                        NR_UE_UL_BWP_t *current_BWP,
+                        rnti_t rnti,
+                        int UE_beam_index,
                         uint8_t pucch_resource,
                         uint16_t O_csi,
                         uint16_t O_ack,
@@ -925,10 +927,7 @@ void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
 {
   NR_PUCCH_Resource_t *pucchres;
   NR_PUCCH_FormatConfig_t *pucchfmt;
-  NR_UE_UL_BWP_t *current_BWP = &UE->current_UL_BWP;
-
   int res_found = 0;
-
   pucch_pdu->bit_len_harq = O_ack;
   pucch_pdu->bit_len_csi_part1 = O_csi;
 
@@ -999,7 +998,7 @@ void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
       if (pucchres->pucch_ResourceId == resource_id) {
         res_found = 1;
         pucch_pdu->prb_start = pucchres->startingPRB;
-        pucch_pdu->rnti = UE->rnti;
+        pucch_pdu->rnti = rnti;
         // FIXME why there is only one frequency hopping flag
         // what about inter slot frequency hopping?
         pucch_pdu->freq_hop_flag = pucchres->intraSlotFrequencyHopping ? 1 : 0;
@@ -1107,7 +1106,7 @@ void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
                       &start_symb);
 
     pucch_pdu->prb_start = prb_start;
-    pucch_pdu->rnti = UE->rnti;
+    pucch_pdu->rnti = rnti;
     pucch_pdu->freq_hop_flag = 1;
     pucch_pdu->second_hop_prb = second_hop_prb;
     pucch_pdu->format_type = default_pucch_fmt[rsetindex];
@@ -1125,7 +1124,7 @@ void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
   pucch_pdu->beamforming.num_prgs = 0;
   pucch_pdu->beamforming.prg_size = 0; // pucch_pdu->prb_size;
   pucch_pdu->beamforming.dig_bf_interface = 0;
-  pucch_pdu->beamforming.prgs_list[0].dig_bf_interface_list[0].beam_idx = UE->UE_beam_index;
+  pucch_pdu->beamforming.prgs_list[0].dig_bf_interface_list[0].beam_idx = UE_beam_index;
 }
 
 void set_r_pucch_parms(int rsetindex,
@@ -2166,10 +2165,10 @@ int get_ulbw_tbslbrm(int scc_bwpsize, const NR_ServingCellConfig_t *servingCellC
   return bw;
 }
 
-static void set_sched_pucch_list(NR_UE_sched_ctrl_t *sched_ctrl,
-                                 const NR_UE_UL_BWP_t *ul_bwp,
-                                 const NR_ServingCellConfigCommon_t *scc,
-                                 const frame_structure_t *fs)
+void set_sched_pucch_list(NR_UE_sched_ctrl_t *sched_ctrl,
+                          const NR_UE_UL_BWP_t *ul_bwp,
+                          const NR_ServingCellConfigCommon_t *scc,
+                          const frame_structure_t *fs)
 {
   const int NTN_gNB_Koffset = get_NTN_Koffset(scc);
   const int n_ul_slots_period = get_ul_slots_per_period(fs);

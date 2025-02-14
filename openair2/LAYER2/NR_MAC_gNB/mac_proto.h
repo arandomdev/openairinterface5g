@@ -139,7 +139,7 @@ void nr_initiate_ra_proc(module_id_t module_idP,
                          uint32_t preamble_power);
 
 void nr_clear_ra_proc(NR_RA_t *ra);
-
+void set_max_fb_time(NR_UE_UL_BWP_t *UL_BWP, const NR_UE_DL_BWP_t *DL_BWP);
 int nr_allocate_CCEs(int module_idP, int CC_idP, frame_t frameP, sub_frame_t slotP, int test_only);
 
 void schedule_nr_prach(module_id_t module_idP, frame_t frameP, sub_frame_t slotP);
@@ -207,9 +207,16 @@ int nr_get_pucch_resource(NR_ControlResourceSet_t *coreset,
                           NR_PUCCH_Config_t *pucch_Config,
                           int CCEIndex);
 
-void nr_configure_pucch(nfapi_nr_pucch_pdu_t* pucch_pdu,
+void set_sched_pucch_list(NR_UE_sched_ctrl_t *sched_ctrl,
+                          const NR_UE_UL_BWP_t *ul_bwp,
+                          const NR_ServingCellConfigCommon_t *scc,
+                          const frame_structure_t *fs);
+
+void nr_configure_pucch(nfapi_nr_pucch_pdu_t *pucch_pdu,
                         NR_ServingCellConfigCommon_t *scc,
-                        NR_UE_info_t* UE,
+                        NR_UE_UL_BWP_t *current_BWP,
+                        rnti_t rnti,
+                        int UE_beam_index,
                         uint8_t pucch_resource,
                         uint16_t O_csi,
                         uint16_t O_ack,
@@ -463,7 +470,6 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE);
 void send_initial_ul_rrc_message(int rnti, const uint8_t *sdu, sdu_size_t sdu_len, void *data);
 
 void finish_nr_dl_harq(NR_UE_sched_ctrl_t *sched_ctrl, int harq_pid);
-void abort_nr_dl_harq(NR_UE_info_t* UE, int8_t harq_pid);
 
 void nr_mac_trigger_release_timer(NR_UE_sched_ctrl_t *sched_ctrl, NR_SubcarrierSpacing_t subcarrier_spacing);
 bool nr_mac_check_release(NR_UE_sched_ctrl_t *sched_ctrl, int rnti);
