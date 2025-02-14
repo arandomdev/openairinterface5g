@@ -999,12 +999,13 @@ bool check_bits_vs_coderate_limit(NR_PUCCH_Config_t *pucch_Config, int O_uci, in
 // this function returns an index to NR_sched_pucch structure
 // if the function returns -1 it was not possible to schedule acknack
 int nr_acknack_scheduling(gNB_MAC_INST *mac,
-                          NR_UE_info_t *UE,
+                          const NR_UE_UL_BWP_t *ul_bwp,
+                          NR_UE_sched_ctrl_t *sched_ctrl,
                           frame_t frame,
                           sub_frame_t slot,
                           int ue_beam,
                           int r_pucch,
-                          int is_common)
+                          nr_dci_format_t dci_format)
 {
   /* we assume that this function is mutex-protected from outside. Since it is
    * called often, don't try to lock every time */
@@ -1014,19 +1015,12 @@ int nr_acknack_scheduling(gNB_MAC_INST *mac,
   const int NTN_gNB_Koffset = get_NTN_Koffset(scc);
 
   const int minfbtime = mac->radio_config.minRXTXTIME + NTN_gNB_Koffset;
-  const NR_UE_UL_BWP_t *ul_bwp = &UE->current_UL_BWP;
   const int n_slots_frame = mac->frame_structure.numb_slots_frame;
   const frame_structure_t *fs = &mac->frame_structure;
-
-  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   NR_PUCCH_Config_t *pucch_Config = ul_bwp->pucch_Config;
 
   const int bwp_start = ul_bwp->BWPStart;
   const int bwp_size = ul_bwp->BWPSize;
-
-  nr_dci_format_t dci_format = NR_DL_DCI_FORMAT_1_0;
-  if(is_common == 0)
-   dci_format = UE->current_DL_BWP.dci_format;
 
   uint8_t pdsch_to_harq_feedback[8];
   int fb_size = get_pdsch_to_harq_feedback(pucch_Config, dci_format, pdsch_to_harq_feedback);

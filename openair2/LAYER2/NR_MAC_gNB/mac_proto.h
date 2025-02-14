@@ -191,12 +191,13 @@ void nr_csirs_scheduling(int Mod_idP, frame_t frame, sub_frame_t slot, nfapi_nr_
 void nr_csi_meas_reporting(int Mod_idP, frame_t frameP, sub_frame_t slotP);
 
 int nr_acknack_scheduling(gNB_MAC_INST *mac,
-                          NR_UE_info_t *UE,
-                          frame_t frameP,
-                          sub_frame_t slotP,
-                          int beam_index,
+                          const NR_UE_UL_BWP_t *ul_bwp,
+                          NR_UE_sched_ctrl_t *sched_ctrl,
+                          frame_t frame,
+                          sub_frame_t slot,
+                          int ue_beam,
                           int r_pucch,
-                          int do_common);
+                          nr_dci_format_t dci_format);
 
 int get_pdsch_to_harq_feedback(NR_PUCCH_Config_t *pucch_Config,
                                nr_dci_format_t dci_format,

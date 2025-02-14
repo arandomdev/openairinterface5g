@@ -2104,7 +2104,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
 
       LOG_D(NR_MAC, "Msg4 r_pucch %d (CCEIndex %d, delta_PRI %d)\n", r_pucch, CCEIndex, delta_PRI);
 
-      alloc = nr_acknack_scheduling(nr_mac, UE, frameP, slotP, ra->beam_id, r_pucch, 1);
+      alloc = nr_acknack_scheduling(nr_mac, &ra->UL_BWP, sched_ctrl, frameP, slotP, ra->beam_id, r_pucch, NR_DL_DCI_FORMAT_1_0);
       if (alloc < 0) {
         LOG_D(NR_MAC,"Couldn't find a pucch allocation for ack nack (msg4) in frame %d slot %d\n", frameP, slotP);
         reset_beam_status(&nr_mac->beam_info, frameP, slotP, ra->beam_id, n_slots_frame, beam.new_beam);
