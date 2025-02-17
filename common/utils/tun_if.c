@@ -38,7 +38,7 @@
 int nas_sock_fd[MAX_MOBILES_PER_ENB * 2]; // Allocated for both LTE UE and NR UE.
 int nas_sock_mbms_fd;
 
-static int tun_alloc(const char *dev)
+int tun_alloc(const char *dev)
 {
   struct ifreq ifr;
   int fd, err;
@@ -160,8 +160,7 @@ static bool setInterfaceParameter(int sock_fd, const char *ifn, int af, const ch
 /*
  * \brief bring interface up (up != 0) or down (up == 0)
  */
-typedef enum { INTERFACE_DOWN, INTERFACE_UP } if_action_t;
-static bool change_interface_state(int sock_fd, const char *ifn, if_action_t if_action)
+bool change_interface_state(int sock_fd, const char *ifn, if_action_t if_action)
 {
   const char* action = if_action == INTERFACE_DOWN ? "DOWN" : "UP";
 
@@ -261,4 +260,11 @@ void setup_ue_ipv4_route(const char* ifname, int instance_id, const char *ipv4)
 int tun_generate_ifname(char *ifname, const char *ifprefix, int instance_id)
 {
   return snprintf(ifname, IFNAMSIZ, "%s%d", ifprefix, instance_id + 1);
+}
+
+int tun_generate_ue_ifname(char *ifname, int instance_id, int pdu_session_id)
+{
+  char pdu_session_string[10];
+  snprintf(pdu_session_string, sizeof(pdu_session_string), "p%d", pdu_session_id);
+  return snprintf(ifname, IFNAMSIZ, "%s%d%s", "oaitun_ue", instance_id + 1, pdu_session_id == -1 ? "" : pdu_session_string);
 }
