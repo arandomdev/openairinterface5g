@@ -349,10 +349,17 @@ For LEO satellite scenarios, the parameter `--ntn-initial-time-drift` must be pr
 This parameter provides the drift rate of the complete DL timing (incl. feeder link and service link) in µs/s.
 Also, to perform an autonomous TA update based on the DL drift, the boolean parameter `--autonomous-ta` should be added in case of a LEO satellite scenario.
 
+The parameter `--cont-fo-comp` enables the continuous frequency offset (FO) estimation and compensation.
+The parameter value `1` specifies that the main FO contribution comes from the local oscillator's (LO) accuracy.
+The parameter value `2` specifies that the main FO contribution comes from Doppler shift.
+For LEO satellite scenario we assume the LO to be very accurate and the main FO contribution comes from Doppler shift.
+Therefore, we use the command line parameter `--cont-fo-comp 2` to continuously compensate the DL Doppler and pre-compensate the UL Doppler.
+The initial Doppler frequency offset must be provided via command line with the parameter `--initial-fo`.
+
 So an example NR UE command for FDD, 5MHz BW, 15 kHz SCS, transparent LEO satellite 5G NR NTN is this:
 ```
 cd cmake_targets
-sudo ./ran_build/build/nr-uesoftmodem -O ../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf --band 254 -C 2488400000 --CO -873500000 -r 25 --numerology 0 --ssb 60 --rfsim --rfsimulator.prop_delay 20 --rfsimulator.options chanmod --time-sync-I 0.1 --ntn-initial-time-drift -46 --autonomous-ta
+sudo ./ran_build/build/nr-uesoftmodem -O ../targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.conf --band 254 -C 2488400000 --CO -873500000 -r 25 --numerology 0 --ssb 60 --rfsim --rfsimulator.prop_delay 20 --rfsimulator.options chanmod --time-sync-I 0.1 --ntn-initial-time-drift -46 --autonomous-ta --initial-fo 57340 --cont-fo-comp 2
 ```
 
 # Specific OAI modes
