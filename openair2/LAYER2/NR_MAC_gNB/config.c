@@ -806,7 +806,7 @@ void nr_mac_config_scc(gNB_MAC_INST *nrmac, NR_ServingCellConfigCommon_t *scc, c
   NR_SCHED_LOCK(&nrmac->sched_lock);
   for (int n = 0; n < NR_NB_RA_PROC_MAX; n++) {
     NR_RA_t *ra = &cc->ra[n];
-    nr_clear_ra_proc(ra);
+    nr_clear_ra_proc(ra, nrmac);
   }
 
   nr_fill_sched_osi(nrmac, scc->downlinkConfigCommon->initialDownlinkBWP->pdcch_ConfigCommon);
@@ -863,8 +863,14 @@ bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t
   DevAssert(get_softmodem_params()->phy_test);
   NR_SCHED_LOCK(&nrmac->sched_lock);
 
-  NR_UE_info_t *UE = add_new_nr_ue(nrmac, rnti, CellGroup);
+  NR_UE_info_t *UE = create_new_nr_ue(nrmac, rnti, CellGroup);
   if (!UE) {
+    LOG_E(NR_MAC, "Error creating UE %04x\n", rnti);
+    NR_SCHED_UNLOCK(&nrmac->sched_lock);
+    return false;
+  }
+  bool add_ue = add_new_nr_ue(nrmac, UE);
+  if (!add_ue) {
     LOG_E(NR_MAC, "Error adding UE %04x\n", rnti);
     NR_SCHED_UNLOCK(&nrmac->sched_lock);
     return false;
@@ -873,7 +879,12 @@ bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t
   if (CellGroup->spCellConfig && CellGroup->spCellConfig->reconfigurationWithSync
       && CellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated
       && CellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra) {
-    nr_mac_prepare_ra_ue(RC.nrmac[0], UE->rnti, CellGroup);
+    NR_RA_t *ra = nr_mac_prepare_ra_ue(RC.nrmac[0], UE->rnti, CellGroup);
+    if (!ra) {
+      LOG_E(NR_MAC, "Error creating RA\n");
+      NR_SCHED_UNLOCK(&nrmac->sched_lock);
+      return false;
+    }
   }
   process_addmod_bearers_cellGroupConfig(&UE->UE_sched_ctrl, CellGroup->rlc_BearerToAddModList);
   AssertFatal(CellGroup->rlc_BearerToReleaseList == NULL, "cannot release bearers while adding new UEs\n");
@@ -882,7 +893,7 @@ bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t
   return true;
 }
 
-bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup)
+NR_RA_t *nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup)
 {
   DevAssert(nrmac != NULL);
   DevAssert(CellGroup != NULL);
@@ -899,7 +910,7 @@ bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig
   }
   if (ra_index == NR_NB_RA_PROC_MAX) {
     LOG_E(NR_MAC, "RA processes are not available for CFRA RNTI %04x\n", rnti);
-    return false;
+    return NULL;
   }
   NR_RA_t *ra = &cc->ra[ra_index];
   ra->cfra = true;
@@ -918,7 +929,7 @@ bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig
     }
   }
   LOG_I(NR_MAC, "Added new %s process for UE RNTI %04x with initial CellGroup\n", ra->cfra ? "CFRA" : "CBRA", rnti);
-  return true;
+  return ra;
 }
 
 /* Prepare a new CellGroupConfig to be applied for this UE. We cannot

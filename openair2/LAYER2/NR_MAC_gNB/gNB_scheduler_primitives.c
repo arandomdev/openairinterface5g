@@ -2068,7 +2068,7 @@ NR_UE_info_t *find_nr_UE(NR_UEs_t *UEs, rnti_t rntiP)
   return NULL;
 }
 
-void delete_nr_ue_data(NR_UE_info_t *UE, NR_COMMON_channels_t *ccPtr, uid_allocator_t *uia)
+void delete_nr_ue_data(NR_UE_info_t *UE, uid_allocator_t *uia)
 {
   ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->CellGroup);
   ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->reconfigCellGroup);
@@ -2493,27 +2493,56 @@ void reset_srs_stats(NR_UE_info_t *UE) {
   }
 }
 
-//------------------------------------------------------------------------------
-NR_UE_info_t *add_new_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rntiP, NR_CellGroupConfig_t *CellGroup)
+bool add_new_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
+{
+  NR_UEs_t *UE_info = &nr_mac->UE_info;
+  NR_SCHED_LOCK(&UE_info->mutex);
+  int i;
+  for(i = 0; i < MAX_MOBILES_PER_GNB; i++) {
+    if (UE_info->list[i] == NULL) {
+      UE_info->list[i] = UE;
+      break;
+    }
+  }
+  if (i == MAX_MOBILES_PER_GNB) {
+    LOG_E(NR_MAC, "Try to add UE %04x but the list is full\n", UE->rnti);
+    delete_nr_ue_data(UE, &UE_info->uid_allocator);
+  }
+  NR_SCHED_UNLOCK(&UE_info->mutex);
+  return i < MAX_MOBILES_PER_GNB;
+}
+
+NR_UE_info_t *create_new_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rntiP, NR_CellGroupConfig_t *CellGroup)
 {
   NR_ServingCellConfigCommon_t *scc = nr_mac->common_channels[0].ServingCellConfigCommon;
   NR_UEs_t *UE_info = &nr_mac->UE_info;
-  LOG_I(NR_MAC, "Adding new UE context with RNTI 0x%04x\n", rntiP);
   dump_nr_list(UE_info->list);
 
-  // We will attach at the end, to mitigate race conditions
-  // This is not good, but we will fix it progressively
-  NR_UE_info_t *UE = calloc(1, sizeof(NR_UE_info_t));
-  if(!UE) {
-    LOG_E(NR_MAC,"want to add UE %04x but the fixed allocated size is full\n",rntiP);
+  NR_SCHED_LOCK(&UE_info->mutex);
+  int i;
+  NR_UE_info_t *UE = NULL;
+  for(i = 0; i < MAX_MOBILES_PER_GNB; i++) {
+    if (UE_info->list[i] == NULL) {
+      LOG_I(NR_MAC, "Adding new UE context with RNTI 0x%04x\n", rntiP);
+      UE = calloc(1, sizeof(NR_UE_info_t));
+      if(!UE) {
+        LOG_E(NR_MAC, "want to add UE %04x but the fixed allocated size is full\n", rntiP);
+        NR_SCHED_UNLOCK(&UE_info->mutex);
+        return NULL;
+      }
+      break;
+    }
+  }
+  if (!UE) {
+    LOG_E(NR_MAC,"Try to create UE %04x but the list is full\n", rntiP);
+    NR_SCHED_UNLOCK(&UE_info->mutex);
     return NULL;
   }
+  NR_SCHED_UNLOCK(&UE_info->mutex);
 
   UE->rnti = rntiP;
   UE->uid = uid_linear_allocator_new(&UE_info->uid_allocator);
   UE->CellGroup = CellGroup;
-
-  UE->Msg4_MsgB_ACKed = CellGroup != NULL;
 
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   memset(sched_ctrl, 0, sizeof(*sched_ctrl));
@@ -2547,25 +2576,9 @@ NR_UE_info_t *add_new_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rntiP, NR_CellGroupConf
 
   reset_srs_stats(UE);
 
-  NR_SCHED_LOCK(&UE_info->mutex);
-  int i;
-  for(i=0; i<MAX_MOBILES_PER_GNB; i++) {
-    if (UE_info->list[i] == NULL) {
-      UE_info->list[i] = UE;
-      break;
-    }
-  }
-  if (i == MAX_MOBILES_PER_GNB) {
-    LOG_E(NR_MAC,"Try to add UE %04x but the list is full\n", rntiP);
-    delete_nr_ue_data(UE, nr_mac->common_channels, &UE_info->uid_allocator);
-    NR_SCHED_UNLOCK(&UE_info->mutex);
-    return NULL;
-  }
-  NR_SCHED_UNLOCK(&UE_info->mutex);
-
   LOG_D(NR_MAC, "Add NR rnti %x\n", rntiP);
   dump_nr_list(UE_info->list);
-  return (UE);
+  return UE;
 }
 
 void free_sched_pucch_list(NR_UE_sched_ctrl_t *sched_ctrl)
@@ -2666,6 +2679,18 @@ void reset_ul_harq_list(NR_UE_sched_ctrl_t *sched_ctrl) {
   }
 }
 
+void remove_nr_ue_from_list(NR_UEs_t *UE_info, rnti_t rnti)
+{
+  NR_SCHED_ENSURE_LOCKED(&UE_info->mutex);
+  NR_UE_info_t * newUEs[MAX_MOBILES_PER_GNB + 1] = {0};
+  int newListIdx = 0;
+  for (int i = 0; i < MAX_MOBILES_PER_GNB; i++)
+    if(UE_info->list[i] && UE_info->list[i]->rnti != rnti)
+      newUEs[newListIdx++] = UE_info->list[i];
+  memcpy(UE_info->list, newUEs, sizeof(UE_info->list));
+}
+
+
 void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti)
 {
   /* already mutex protected */
@@ -2674,32 +2699,25 @@ void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti)
   NR_UEs_t *UE_info = &nr_mac->UE_info;
   NR_SCHED_LOCK(&UE_info->mutex);
   UE_iterator(UE_info->list, UE) {
-    if (UE->rnti==rnti)
+    if (UE->rnti == rnti)
       break;
   }
-
   if (!UE) {
     LOG_W(NR_MAC,"Call to del rnti %04x, but not existing\n", rnti);
     NR_SCHED_UNLOCK(&UE_info->mutex);
     return;
   }
 
-  NR_UE_info_t * newUEs[MAX_MOBILES_PER_GNB+1]={0};
-  int newListIdx=0;
-  for (int i=0; i<MAX_MOBILES_PER_GNB; i++)
-    if(UE_info->list[i] && UE_info->list[i]->rnti != rnti)
-      newUEs[newListIdx++]=UE_info->list[i];
-  memcpy(UE_info->list, newUEs, sizeof(UE_info->list));
+  remove_nr_ue_from_list(UE_info, rnti);
   NR_SCHED_UNLOCK(&UE_info->mutex);
-
   const int CC_id = 0;
   NR_COMMON_channels_t *cc = &nr_mac->common_channels[CC_id];
   NR_RA_t *ra = find_ra_rnti_with_state(cc, false, 0, UE->rnti);
   if (ra) {
-    nr_clear_ra_proc(ra);
+    nr_clear_ra_proc(ra, nr_mac);
     ra->cfra = 0;
   }
-  delete_nr_ue_data(UE, cc, &UE_info->uid_allocator);
+  delete_nr_ue_data(UE, &UE_info->uid_allocator);
 }
 
 // all values passed to this function are in dB x10

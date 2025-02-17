@@ -710,7 +710,7 @@ void nr_initiate_ra_proc(module_id_t module_idP,
     bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, cc->ra, sizeofArray(cc->ra), &ra->rnti);
     if (!rnti_found) {
       LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
-      nr_clear_ra_proc(ra);
+      nr_clear_ra_proc(ra, nr_mac);
       NR_SCHED_UNLOCK(&nr_mac->sched_lock);
       return;
     }
@@ -1403,7 +1403,7 @@ static void nr_generate_Msg2(module_id_t module_idP,
   const int n_slots_frame = nr_mac->frame_structure.numb_slots_frame;
   if (!msg2_in_response_window(ra->preamble_frame, ra->preamble_slot, n_slots_frame, rrc_ra_ResponseWindow, frameP, slotP)) {
     LOG_E(NR_MAC, "UE RA-RNTI %04x TC-RNTI %04x: exceeded RA window, cannot schedule Msg2\n", ra->RA_rnti, ra->rnti);
-    nr_clear_ra_proc(ra);
+    nr_clear_ra_proc(ra, nr_mac);
     return;
   }
 
@@ -1693,11 +1693,11 @@ static void nr_generate_Msg2(module_id_t module_idP,
       ra->UL_BWP.scs);
 
   if (ra->cfra) {
-    NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[module_idP]->UE_info, ra->rnti);
+    NR_UE_info_t *UE = ra->UE_info;
     if (UE) {
       int delay = nr_mac_get_reconfig_delay_slots(ra->DL_BWP.scs);
       interrupt_followup_action_t action = UE->reconfigCellGroup ? FOLLOW_INSYNC_RECONFIG : FOLLOW_INSYNC;
-      nr_mac_interrupt_ue_transmission(RC.nrmac[module_idP], UE, action, delay);
+      nr_mac_interrupt_ue_transmission(nr_mac, UE, action, delay);
     }
   }
 
@@ -1957,14 +1957,6 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     AssertFatal(coreset != NULL, "Coreset cannot be null for RA %s\n", ra_type_str);
 
     uint16_t mac_sdu_length = 0;
-
-    NR_UE_info_t *UE = find_nr_UE(&nr_mac->UE_info, ra->rnti);
-    if (!UE) {
-      LOG_E(NR_MAC, "want to generate %s, but rnti %04x not in the table. Abort RA\n", ra_type_str, ra->rnti);
-      nr_clear_ra_proc(ra);
-      return;
-    }
-
     NR_UE_sched_ctrl_t *sched_ctrl = &ra->sched_ctrl;
     /* get the PID of a HARQ process awaiting retrnasmission, or -1 otherwise */
     int current_harq_pid = sched_ctrl->retrans_dl_harq.head;
@@ -2024,7 +2016,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     // Checking if the DCI allocation is feasible in current subframe
     nfapi_nr_dl_tti_request_body_t *dl_req = &DL_req->dl_tti_request_body;
     if (dl_req->nPDUs > NFAPI_NR_MAX_DL_TTI_PDUS - 2) {
-      LOG_I(NR_MAC, "UE %04x: %d.%d FAPI DL structure is full\n", ra->rnti, frameP, slotP);
+      LOG_I(NR_MAC, "RNTI %04x: %d.%d FAPI DL structure is full\n", ra->rnti, frameP, slotP);
       reset_beam_status(&nr_mac->beam_info, frameP, slotP, ra->beam_id, n_slots_frame, beam.new_beam);
       return;
     }
@@ -2105,8 +2097,7 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
 
     // HARQ management
     if (current_harq_pid < 0) {
-      AssertFatal(sched_ctrl->available_dl_harq.head >= 0,
-                  "UE context not initialized: no HARQ processes found\n");
+      AssertFatal(sched_ctrl->available_dl_harq.head >= 0, "No free HARQ process for RA\n");
       current_harq_pid = sched_ctrl->available_dl_harq.head;
       remove_front_nr_list(&sched_ctrl->available_dl_harq);
     }
@@ -2119,7 +2110,6 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
     harq->feedback_frame = pucch->frame;
     harq->is_waiting = true;
     ra->harq_pid = current_harq_pid;
-    UE->mac_stats.dl.rounds[harq->round]++;
     harq->tb_size = tb_size;
     uint8_t *buf = allocate_transportBlock_buffer(&harq->transportBlock, tb_size);
     // Bytes to be transmitted
@@ -2248,21 +2238,17 @@ static void nr_generate_Msg4_MsgB(module_id_t module_idP,
   }
 }
 
-static void nr_check_Msg4_MsgB_Ack(module_id_t module_id, int CC_id, frame_t frame, sub_frame_t slot, NR_RA_t *ra)
+void nr_check_Msg4_MsgB_Ack(module_id_t module_id, int CC_id, frame_t frame, sub_frame_t slot, NR_RA_t *ra, bool success)
 {
+  gNB_MAC_INST *nr_mac = RC.nrmac[module_id];
   const char *ra_type_str = ra->ra_type == RA_2_STEP ? "MsgB" : "Msg4";
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[module_id]->UE_info, ra->rnti);
-  if (!UE) {
-    LOG_E(NR_MAC, "Cannot check %s ACK/NACK, rnti %04x not in the table\n", ra_type_str, ra->rnti);
-    return;
-  }
   const int current_harq_pid = ra->harq_pid;
 
   NR_UE_sched_ctrl_t *sched_ctrl = &ra->sched_ctrl;
   NR_UE_harq_t *harq = &sched_ctrl->harq_processes[current_harq_pid];
 
   LOG_D(NR_MAC,
-        "ue rnti 0x%04x, harq is waiting %d, round %d, frame %d %d, harq id %d\n",
+        "RNTI 0x%04x, harq is waiting %d, round %d, frame %d %d, harq id %d\n",
         ra->rnti,
         harq->is_waiting,
         harq->round,
@@ -2272,36 +2258,42 @@ static void nr_check_Msg4_MsgB_Ack(module_id_t module_id, int CC_id, frame_t fra
 
   if (harq->is_waiting == 0) {
     if (harq->round == 0) {
-      if (UE->Msg4_MsgB_ACKed) {
-        LOG_A(NR_MAC, "%4d.%2d UE %04x: Received Ack of %s. CBRA procedure succeeded!\n", frame, slot, ra->rnti, ra_type_str);
-      } else {
-        LOG_I(NR_MAC, "%4d.%2d UE %04x: RA Procedure failed at %s!\n", frame, slot, ra->rnti, ra_type_str);
-        nr_mac_trigger_ul_failure(sched_ctrl, UE->current_DL_BWP.scs);
-      }
-
-      // Pause scheduling according to:
-      // 3GPP TS 38.331 Section 12 Table 12.1-1: UE performance requirements for RRC procedures for UEs
-      // Msg4 may transmit a RRCReconfiguration, for example when UE sends RRCReestablishmentComplete and MAC CE for C-RNTI in Msg3.
-      // In that case, gNB will generate a RRCReconfiguration that will be transmitted in Msg4, so we need to apply CellGroup after the Ack,
-      // UE->reconfigCellGroup already set when processing RRCReestablishment message
-      int delay = nr_mac_get_reconfig_delay_slots(UE->current_UL_BWP.scs);
-      nr_mac_interrupt_ue_transmission(RC.nrmac[module_id], UE, UE->interrupt_action, delay);
-
-      nr_clear_ra_proc(ra);
-      if (sched_ctrl->retrans_dl_harq.head >= 0) {
+      if (sched_ctrl->retrans_dl_harq.head >= 0)
         remove_nr_list(&sched_ctrl->retrans_dl_harq, current_harq_pid);
+      if (success) {
+        NR_UE_info_t *UE = ra->UE_info;
+        bool ret = !UE ? true : add_new_nr_ue(nr_mac, UE); // if MSG4 contains RRC Reject there might be no UE associated
+        if (ret) {
+          LOG_A(NR_MAC, "%4d.%2d RNTI %04x: Received Ack of %s. CBRA procedure succeeded!\n", frame, slot, ra->rnti, ra_type_str);
+          if (UE) {
+            // Pause scheduling according to:
+            // 3GPP TS 38.331 Section 12 Table 12.1-1: UE performance requirements for RRC procedures for UEs
+            // Msg4 may transmit a RRCReconfiguration, for example when UE sends RRCReestablishmentComplete and MAC CE for C-RNTI in Msg3.
+            // In that case, gNB will generate a RRCReconfiguration that will be transmitted in Msg4, so we need to apply CellGroup after the Ack,
+            // UE->reconfigCellGroup already set when processing RRCReestablishment message
+            int delay = nr_mac_get_reconfig_delay_slots(ra->UL_BWP.scs);
+            nr_mac_interrupt_ue_transmission(nr_mac, UE, UE->interrupt_action, delay);
+          }
+          ra->UE_info = NULL;
+          nr_clear_ra_proc(ra, nr_mac);
+          return;
+        }
       }
+      LOG_I(NR_MAC, "%4d.%2d RNTI %04x: RA Procedure failed at %s!\n", frame, slot, ra->rnti, ra_type_str);
+      nr_mac_trigger_ul_failure(sched_ctrl, ra->DL_BWP.scs);
     } else {
-      LOG_I(NR_MAC, "(UE %04x) Received Nack in %s, preparing retransmission!\n", ra->rnti, ra_type_str);
+      LOG_I(NR_MAC, "(RNTI %04x) Received Nack in %s, preparing retransmission!\n", ra->rnti, ra_type_str);
       ra->ra_state = ra->ra_type == RA_4_STEP ? nrRA_Msg4 : nrRA_MsgB;
     }
   }
 }
 
-void nr_clear_ra_proc(NR_RA_t *ra)
+void nr_clear_ra_proc(NR_RA_t *ra, gNB_MAC_INST *nr_mac)
 {
   /* we assume that this function is mutex-protected from outside */
-  NR_SCHED_ENSURE_LOCKED(&RC.nrmac[0]->sched_lock);
+  NR_SCHED_ENSURE_LOCKED(&nr_mac->sched_lock);
+  if (ra->UE_info)
+    delete_nr_ue_data(ra->UE_info, &nr_mac->UE_info.uid_allocator);
   memset(ra, 0, sizeof(*ra));
   ra->ra_state = nrRA_gNB_IDLE;
   if (IS_SA_MODE(get_softmodem_params())) { // in SA, prefill with allowed preambles
@@ -2465,7 +2457,7 @@ void nr_schedule_RA(module_id_t module_idP,
           bool requested = nr_mac_request_release_ue(mac, ra->rnti);
           if (!requested)
             nr_mac_release_ue(mac, ra->rnti);
-          nr_clear_ra_proc(ra);
+          nr_clear_ra_proc(ra, mac);
           continue;
         }
       }
@@ -2480,9 +2472,6 @@ void nr_schedule_RA(module_id_t module_idP,
         case nrRA_Msg4:
         case nrRA_MsgB:
           nr_generate_Msg4_MsgB(module_idP, CC_id, frameP, slotP, ra, DL_req, TX_req);
-          break;
-        case nrRA_WAIT_Msg4_MsgB_ACK:
-          nr_check_Msg4_MsgB_Ack(module_idP, CC_id, frameP, slotP, ra);
           break;
         default:
           break;

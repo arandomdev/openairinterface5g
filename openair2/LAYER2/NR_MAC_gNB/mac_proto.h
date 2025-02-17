@@ -59,8 +59,8 @@ void nr_mac_configure_sib1(gNB_MAC_INST *nrmac, const f1ap_plmn_t *plmn, uint64_
 void nr_mac_configure_sib19(gNB_MAC_INST *nrmac);
 
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
-bool nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
-
+NR_RA_t *nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
+void delete_nr_ue_data(NR_UE_info_t *UE, uid_allocator_t *uia);
 int nr_mac_get_reconfig_delay_slots(NR_SubcarrierSpacing_t scs);
 
 bool nr_mac_prepare_cellgroup_update(gNB_MAC_INST *nrmac, NR_UE_info_t *UE, NR_CellGroupConfig_t *CellGroup);
@@ -138,10 +138,11 @@ void nr_initiate_ra_proc(module_id_t module_idP,
                          int16_t timing_offset,
                          uint32_t preamble_power);
 
-void nr_clear_ra_proc(NR_RA_t *ra);
 void set_max_fb_time(NR_UE_UL_BWP_t *UL_BWP, const NR_UE_DL_BWP_t *DL_BWP);
+void nr_clear_ra_proc(NR_RA_t *ra, gNB_MAC_INST *nr_mac);
+void remove_nr_ue_from_list(NR_UEs_t *UE_info, rnti_t rnti);
 int nr_allocate_CCEs(int module_idP, int CC_idP, frame_t frameP, sub_frame_t slotP, int test_only);
-
+void nr_check_Msg4_MsgB_Ack(module_id_t module_id, int CC_id, frame_t frame, sub_frame_t slot, NR_RA_t *ra, bool success);
 void schedule_nr_prach(module_id_t module_idP, frame_t frameP, sub_frame_t slotP);
 
 uint16_t nr_mac_compute_RIV(uint16_t N_RB_DL, uint16_t RBstart, uint16_t Lcrbs);
@@ -342,7 +343,8 @@ void configure_UE_BWP(gNB_MAC_INST *nr_mac,
                       int dl_bwp_switch,
                       int ul_bwp_switch);
 
-NR_UE_info_t* add_new_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rntiP, NR_CellGroupConfig_t *CellGroup);
+bool add_new_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE);
+NR_UE_info_t *create_new_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rntiP, NR_CellGroupConfig_t *CellGroup);
 
 void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti);
 

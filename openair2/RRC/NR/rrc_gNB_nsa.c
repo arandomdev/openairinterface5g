@@ -373,7 +373,8 @@ void rrc_add_nsa_user(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p, x2a
               && secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated
               && secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra);
     NR_SCHED_LOCK(&RC.nrmac[rrc->module_id]->sched_lock);
-    ret = nr_mac_prepare_ra_ue(RC.nrmac[rrc->module_id], du_ue_id, secondaryCellGroup);
+    NR_RA_t *ra = nr_mac_prepare_ra_ue(RC.nrmac[rrc->module_id], du_ue_id, secondaryCellGroup);
+    ret = ra != NULL;
     NR_SCHED_UNLOCK(&RC.nrmac[rrc->module_id]->sched_lock);
   }
   AssertFatal(ret, "cannot add NSA UE in MAC, aborting\n");

@@ -661,7 +661,6 @@ typedef struct {
   NR_UE_NR_Capability_t *capability;
   // UE selected beam index
   uint8_t UE_beam_index;
-  bool Msg4_MsgB_ACKed;
   float ul_thr_ue;
   float dl_thr_ue;
   long pdsch_HARQ_ACK_Codebook;
@@ -780,6 +779,7 @@ typedef struct {
   NR_UE_UL_BWP_t UL_BWP;
   NR_UE_ServingCell_Info_t sc_info;
   NR_UE_sched_ctrl_t sched_ctrl;
+  NR_UE_info_t *UE_info;
 } NR_RA_t;
 
 /*! \brief gNB common channels */

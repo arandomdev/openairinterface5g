@@ -474,7 +474,7 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
   if (!found)
     return NULL;
 
-  NR_UE_info_t* UE = add_new_nr_ue(mac, rnti, NULL);
+  NR_UE_info_t *UE = create_new_nr_ue(mac, rnti, NULL);
   if (!UE)
     return NULL;
 
@@ -486,16 +486,14 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
   const NR_ServingCellConfig_t *sccd = mac->common_channels[CC_id].pre_ServingCellConfig;
   NR_CellGroupConfig_t *cellGroupConfig = get_initial_cellGroupConfig(UE->uid, scc, sccd, &mac->radio_config);
   cellGroupConfig->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(UE->rnti, UE->uid, scc);
-  // note: we don't pass the cellGroupConfig to add_new_nr_ue() because we need
+  // note: we don't pass the cellGroupConfig to create_new_nr_ue() because we need
   // the uid to create the CellGroupConfig (which is in the UE context created
-  // by add_new_nr_ue(); it's a kind of chicken-and-egg problem), so below we
-  // complete the UE context with the information that add_new_nr_ue() would
+  // by create_new_nr_ue(); it's a kind of chicken-and-egg problem), so below we
+  // complete the UE context with the information that create_new_nr_ue() would
   // have added
-  UE->Msg4_MsgB_ACKed = true;
   UE->CellGroup = cellGroupConfig;
 
   nr_rlc_activate_srb0(UE->rnti, UE, NULL);
-  nr_mac_prepare_ra_ue(mac, rnti, UE->CellGroup);
   /* SRB1 is added to RLC and MAC in the handler later */
   return UE;
 }
@@ -586,6 +584,11 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
   resp.du_to_cu_rrc_information->cellGroupConfig_length = (enc_rval.encoded + 7) >> 3;
 
   nr_mac_prepare_cellgroup_update(mac, UE, new_CellGroup);
+
+  if (!ue_id_provided) {
+    NR_RA_t *ra = nr_mac_prepare_ra_ue(mac, UE->rnti, new_CellGroup);
+    ra->UE_info = UE;
+  }
 
   NR_SCHED_UNLOCK(&mac->sched_lock);
 
@@ -755,7 +758,7 @@ void ue_context_modification_refuse(const f1ap_ue_context_modif_refuse_t *refuse
   NR_COMMON_channels_t *cc = &mac->common_channels[CC_id];
   NR_RA_t *ra = find_ra_rnti_with_state(cc, false, 0, UE->rnti);
   if (ra)
-    nr_clear_ra_proc(ra);
+    nr_clear_ra_proc(ra, mac);
   NR_SCHED_UNLOCK(&mac->sched_lock);
 
   f1ap_ue_context_release_req_t request = {
@@ -812,11 +815,6 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
   pthread_mutex_lock(&mac->sched_lock);
   /* check first that the scheduler knows such UE */
   NR_UE_info_t *UE = find_nr_UE(&mac->UE_info, dl_rrc->gNB_DU_ue_id);
-  if (UE == NULL) {
-    LOG_E(MAC, "ERROR: unknown UE with RNTI %04x, ignoring DL RRC Message Transfer\n", dl_rrc->gNB_DU_ue_id);
-    pthread_mutex_unlock(&mac->sched_lock);
-    return;
-  }
   pthread_mutex_unlock(&mac->sched_lock);
 
   if (!du_exists_f1_ue_data(dl_rrc->gNB_DU_ue_id)) {
@@ -826,7 +824,7 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
     DevAssert(success);
   }
 
-  if (UE->expect_reconfiguration && dl_rrc->srb_id == 1) {
+  if (UE && UE->expect_reconfiguration && dl_rrc->srb_id == 1) {
     /* we expected a reconfiguration, and this is on DCCH. We assume this is
      * the reconfiguration: nr_mac_prepare_cellgroup_update() already stored
      * the CellGroupConfig. Below, we trigger a timer, and the CellGroupConfig
@@ -859,6 +857,8 @@ void dl_rrc_message_transfer(const f1ap_dl_rrc_message_t *dl_rrc)
     /* 38.331 5.3.7.2 says that the UE releases the spCellConfig, so we drop it
      * from the current configuration. Also, expect the reconfiguration from
      * the CU, so save the old UE's CellGroup for the new UE */
+    NR_RA_t *ra = find_ra_rnti_with_state(&mac->common_channels[0], false, 0, dl_rrc->gNB_DU_ue_id);
+    UE = ra->UE_info;
     UE->CellGroup->spCellConfig = NULL;
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
