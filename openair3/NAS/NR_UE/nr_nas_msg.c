@@ -298,35 +298,17 @@ static security_state_t nas_security_rx_process(nr_ue_nas_t *nas, uint8_t *pdu_b
   }
 
   /* check integrity */
-  uint8_t computed_mac[NAS_INTEGRITY_SIZE];
-  nas_stream_cipher_t stream_cipher;
-  stream_cipher.context = nas->security_container->integrity_context;
-  stream_cipher.count = nas->security.nas_count_dl;
-  stream_cipher.bearer = 1; /* todo: don't hardcode */
-  stream_cipher.direction = 1;
-  stream_cipher.message = pdu_buffer + SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH - 1;
-  /* length in bits */
-  stream_cipher.blength = (pdu_length - SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH + 1) << 3;
-  stream_compute_integrity(nas->security_container->integrity_algorithm, &stream_cipher, computed_mac);
-
   uint8_t *received_mac = pdu_buffer + 2;
+  uint8_t computed_mac[4];
+  nas_security_compute_mac(nas, pdu_buffer, false, true, pdu_length, computed_mac);
 
   if (memcmp(received_mac, computed_mac, NAS_INTEGRITY_SIZE) != 0)
     return NAS_SECURITY_INTEGRITY_FAILED;
 
   /* decipher */
-  uint8_t payload_len = pdu_length - SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH;
-  uint8_t buf[payload_len];
-  stream_cipher.context = nas->security_container->ciphering_context;
-  stream_cipher.count = nas->security.nas_count_dl;
-  stream_cipher.bearer = 1; /* todo: don't hardcode */
-  stream_cipher.direction = 1;
-  stream_cipher.message = pdu_buffer + SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH;
-  /* length in bits */
-  stream_cipher.blength = (payload_len) << 3;
-  stream_compute_encrypt(nas->security_container->ciphering_algorithm, &stream_cipher, buf);
-  memcpy(pdu_buffer + SECURITY_PROTECTED_5GS_NAS_MESSAGE_HEADER_LENGTH, buf, payload_len);
+  nas_security_decrypt_payload(nas, pdu_buffer, false, true, pdu_length);
 
+  /* update estimated DL Counter */
   nas->security.nas_count_dl++;
 
   return NAS_SECURITY_INTEGRITY_PASSED;
@@ -867,7 +849,7 @@ static void generateSecurityModeReject(as_nas_info_t *initialNasMsg, cause_id_t 
   size += 1; /* += sizeof(fgs_security_mode_reject_msg) */
 
   // Encode the message, with total length = 4 (fixed)
-  initialNasMsg->nas_data = malloc_or_fail(size * 1); /* * sizeof(*initialNasMsg->nas_data)*/
+  initialNasMsg->nas_data = malloc_or_fail(size); /* * sizeof(*initialNasMsg->nas_data) = 1*/
 
   initialNasMsg->length =
       mm_msg_encode(&plain, (uint8_t *)initialNasMsg->nas_data, size);
@@ -875,6 +857,32 @@ static void generateSecurityModeReject(as_nas_info_t *initialNasMsg, cause_id_t 
 
 static void handle_security_mode_command(nr_ue_nas_t *nas, as_nas_info_t *initialNasMsg, uint8_t *pdu, int pdu_length)
 {
+  /* Handle security mode command: must be authenticated, especially if no security
+    context has been previously established. */
+  uint8_t recv_mac[4];
+  Security_header_t sec_hdr;
+
+  /* Must have valid security header*/
+  if(!nas_security_get_sec_hdr(pdu, pdu_length, &sec_hdr)) {
+    LOG_E(NAS, "Received Security Mode Command without integrity protection.\n");
+    generateSecurityModeReject(initialNasMsg, Security_mode_rejected_unspecified);
+    return;
+  }
+
+  /* Must be integrity protected with new context (=3), see 3GPP TS 24.501 5.4.2.2 */
+  if(sec_hdr != INTEGRITY_PROTECTED_WITH_NEW_SECU_CTX) {
+    LOG_E(NAS, "Received Security Mode Command with invalid security header type %d.\n", sec_hdr);
+    generateSecurityModeReject(initialNasMsg, Security_mode_rejected_unspecified);
+    return;
+  }
+
+  /* Must have a MAC - checked after deriving keys */
+  if(!nas_security_get_mac(pdu, pdu_length, recv_mac)) {
+    LOG_E(NAS, "Received Security Mode Command with invalid MAC.\n");
+    generateSecurityModeReject(initialNasMsg, Security_mode_rejected_unspecified);
+    return;
+  }
+
   /* retrieve integrity and ciphering algorithms  */
   AssertFatal(pdu_length > 10, "nas: bad pdu\n");
   int ciphering_algorithm = (pdu[10] >> 4) & 0x0f;
@@ -906,6 +914,22 @@ static void handle_security_mode_command(nr_ue_nas_t *nas, as_nas_info_t *initia
   /* Handle the invalid container with a reject message */
   if(nas->security_container == NULL) {
     LOG_W(NAS, "Could not create security container!\n");
+    generateSecurityModeReject(initialNasMsg, Security_mode_rejected_unspecified);
+    return;
+  }
+
+  /* Check MAC and delete context if it does not match */
+  uint8_t computed_mac[4];
+  nas_security_compute_mac(nas, pdu, false, true, pdu_length, computed_mac);
+
+  /* Teardown security container if mismatch. */
+  if(memcmp(computed_mac, recv_mac, 4) != 0) {
+    LOG_W(NAS, "MAC does not match\n");
+    stream_security_container_delete(nas->security_container);
+    nas->security_container = NULL;
+
+    /* Signal rejection */
+    generateSecurityModeReject(initialNasMsg, Security_mode_rejected_unspecified);
     return;
   }
 
