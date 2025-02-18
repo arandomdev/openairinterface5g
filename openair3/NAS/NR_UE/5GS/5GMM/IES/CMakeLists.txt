@@ -4,6 +4,7 @@ add_library(fgs_5gmm_ies_lib OBJECT
   FGSRegistrationResult.c
   FGMMCapability.c
   NrUESecurityCapability.c
+  FGSNasCause.c
   FGCNasMessageContainer.c
   SORTransparentContainer.c
 )
