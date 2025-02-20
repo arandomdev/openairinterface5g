@@ -2426,6 +2426,18 @@ static void nr_fill_rar(uint8_t Mod_idP, NR_RA_t *ra, uint8_t *dlsch_buffer, nfa
   ra->msg3_TPC = 1;
 }
 
+NR_RA_t *find_ra_rnti_with_state(NR_COMMON_channels_t *cc, bool check_state, RA_gNB_state_t state, rnti_t rnti)
+{
+  NR_RA_t *ra = NULL;
+  for (int i = 0; i < NR_NB_RA_PROC_MAX; i++) {
+    bool is_state = check_state ? cc->ra[i].ra_state == state : true;
+    if (is_state && cc->ra[i].rnti == rnti) {
+      ra = &cc->ra[i];
+    }
+  }
+  return ra;
+}
+
 void nr_schedule_RA(module_id_t module_idP,
                     frame_t frameP,
                     sub_frame_t slotP,

@@ -486,17 +486,14 @@ static int nr_process_mac_pdu(instance_t module_idP,
         break;
 
       case UL_SCH_LCID_C_RNTI:
-        for (int i = 0; i < NR_NB_RA_PROC_MAX; i++) {
-          NR_RA_t *ra = &RC.nrmac[module_idP]->common_channels[CC_id].ra[i];
-          if (ra->ra_state == nrRA_gNB_IDLE && ra->rnti == UE->rnti) {
-            // Extract C-RNTI value
-            rnti_t crnti = ((pduP[1] & 0xFF) << 8) | (pduP[2] & 0xFF);
-            AssertFatal(false,
-                        "Received MAC CE for C-RNTI %04x without RA running, procedure exists? Or is it a bug while decoding the "
-                        "MAC PDU?\n",
-                        crnti);
-            break;
-          }
+        if (find_ra_rnti_with_state(&RC.nrmac[module_idP]->common_channels[CC_id], true, nrRA_gNB_IDLE, UE->rnti)) {
+          // Extract C-RNTI value
+          rnti_t crnti = ((pduP[1] & 0xFF) << 8) | (pduP[2] & 0xFF);
+          AssertFatal(false,
+                      "Received MAC CE for C-RNTI %04x without RA running, procedure exists? Or is it a bug while decoding the "
+                      "MAC PDU?\n",
+                      crnti);
+          break;
         }
         break;
 

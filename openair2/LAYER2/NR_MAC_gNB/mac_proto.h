@@ -393,7 +393,7 @@ void handle_nr_ul_harq(const int CC_idP,
 
 uint8_t *allocate_transportBlock_buffer(byte_array_t *tb, uint32_t needed);
 void free_transportBlock_buffer(byte_array_t *tb);
-
+NR_RA_t *find_ra_rnti_with_state(NR_COMMON_channels_t *cc, bool check_state, RA_gNB_state_t state, rnti_t rnti);
 void handle_nr_srs_measurements(const module_id_t module_id,
                                 const frame_t frame,
                                 const sub_frame_t slot,

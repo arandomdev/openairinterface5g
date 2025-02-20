@@ -816,16 +816,10 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id,
   NR_UE_sched_ctrl_t *sched_ctrl = NULL;
   NR_mac_dir_stats_t *stats = NULL;
   if (!UE) {
-    NR_RA_t *ra = NULL;
-    for (int i = 0; i < NR_NB_RA_PROC_MAX; ++i) {
-      NR_RA_t *temp_ra = &nrmac->common_channels[0].ra[i];
-      if (temp_ra->ra_state == nrRA_WAIT_Msg4_MsgB_ACK && uci_01->rnti == temp_ra->rnti) {
-        ra = temp_ra;
-        sched_ctrl = &ra->sched_ctrl;
-        break;
-      }
-    }
-    if (!ra) {
+    NR_RA_t *ra = find_ra_rnti_with_state(&nrmac->common_channels[0], true, nrRA_WAIT_Msg4_MsgB_ACK, uci_01->rnti);
+    if (ra) {
+      sched_ctrl = &ra->sched_ctrl;
+    } else {
       LOG_E(NR_MAC, "Unknown RNTI %04x in PUCCH UCI\n", uci_01->rnti);
       NR_SCHED_UNLOCK(&nrmac->sched_lock);
       return;

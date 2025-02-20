@@ -2694,15 +2694,12 @@ void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti)
 
   const int CC_id = 0;
   NR_COMMON_channels_t *cc = &nr_mac->common_channels[CC_id];
-  for (int i = 0; i < NR_NB_RA_PROC_MAX; i++) {
-    NR_RA_t *ra = &cc->ra[i];
-    if (ra->rnti == UE->rnti) {
-      nr_clear_ra_proc(ra);
-      ra->cfra = 0;
-    }
+  NR_RA_t *ra = find_ra_rnti_with_state(cc, false, 0, UE->rnti);
+  if (ra) {
+    nr_clear_ra_proc(ra);
+    ra->cfra = 0;
   }
-
-  delete_nr_ue_data(UE, nr_mac->common_channels, &UE_info->uid_allocator);
+  delete_nr_ue_data(UE, cc, &UE_info->uid_allocator);
 }
 
 // all values passed to this function are in dB x10
