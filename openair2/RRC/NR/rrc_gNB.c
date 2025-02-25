@@ -509,17 +509,20 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
   NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish);
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(UE, reestablish);
 
-  int size = do_RRCReconfiguration(UE,
-                                   buf,
-                                   max_len,
-                                   xid,
-                                   SRBs,
-                                   DRBs,
-                                   UE->DRB_ReleaseList,
-                                   NULL,
-                                   measconfig,
-                                   nas_messages,
-                                   cellGroupConfig);
+  RRCReconfigurationParams_t params = {.buffer.buf = buf,
+                                       .buffer.len = max_len,
+                                       .cell_group_config = cellGroupConfig,
+                                       .dedicated_nas_message_list = nas_messages,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = UE->DRB_ReleaseList,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = UE->nh_ncc,
+                                       .meas_config = measconfig,
+                                       .security_config = NULL,
+                                       .srb_config_list = SRBs,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buf, size, "[MSG] RRC Reconfiguration\n");
   freeSRBlist(SRBs);
   freeDRBlist(DRBs);
@@ -661,17 +664,20 @@ void rrc_gNB_modify_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_RRC_UE_t 
 
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(ue_p, false);
   uint8_t buffer[NR_RRC_BUF_SIZE];
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   xid,
-                                   NULL,
-                                   DRBs,
-                                   NULL,
-                                   NULL,
-                                   NULL,
-                                   dedicatedNAS_MessageList,
-                                   NULL);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = NULL,
+                                       .dedicated_nas_message_list = dedicatedNAS_MessageList,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buffer, size, "[MSG] RRC Reconfiguration\n");
   freeDRBlist(DRBs);
 
@@ -712,17 +718,20 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
   }
 
   uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   xid,
-                                   NULL,
-                                   NULL,
-                                   DRB_Release_configList2,
-                                   NULL,
-                                   NULL,
-                                   dedicatedNAS_MessageList,
-                                   NULL);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = NULL,
+                                       .dedicated_nas_message_list = dedicatedNAS_MessageList,
+                                       .drb_config_list = NULL,
+                                       .drb_release_list = DRB_Release_configList2,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC,DEBUG_RRC,(char *)buffer,size, "[MSG] RRC Reconfiguration\n");
 
   /* Free all NAS PDUs */
@@ -966,17 +975,20 @@ static void rrc_gNB_process_RRCReestablishmentComplete(gNB_RRC_INST *rrc, gNB_RR
   uint8_t new_xid = rrc_gNB_get_next_transaction_identifier(rrc->module_id);
   ue_p->xids[new_xid] = RRC_REESTABLISH_COMPLETE;
   uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   new_xid,
-                                   SRBs,
-                                   DRBs,
-                                   NULL,
-                                   NULL,
-                                   NULL, // MeasObj_list,
-                                   NULL,
-                                   cellGroupConfig);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = cellGroupConfig,
+                                       .dedicated_nas_message_list = NULL,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = SRBs,
+                                       .transaction_id = new_xid};
+  int size = do_RRCReconfiguration(&params);
+
   freeSRBlist(SRBs);
   freeDRBlist(DRBs);
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buffer, size, "[MSG] RRC Reconfiguration\n");
@@ -1006,7 +1018,19 @@ int nr_rrc_reconfiguration_req(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p, const int 
   }
 
   uint8_t buffer[NR_RRC_BUF_SIZE];
-  int size = do_RRCReconfiguration(ue_p, buffer, NR_RRC_BUF_SIZE, xid, NULL, NULL, NULL, NULL, NULL, NULL, masterCellGroup);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = masterCellGroup,
+                                       .dedicated_nas_message_list = NULL,
+                                       .drb_config_list = NULL,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
 
   nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DL_SCH_LCID_DCCH, buffer, size);
 

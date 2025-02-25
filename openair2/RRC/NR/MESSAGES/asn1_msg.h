@@ -56,6 +56,20 @@
 struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList;
 struct asn_TYPE_descriptor_s;
 
+typedef struct {
+  byte_array_t buffer;
+  uint8_t transaction_id;
+  NR_SRB_ToAddModList_t *srb_config_list;
+  NR_DRB_ToAddModList_t *drb_config_list;
+  NR_DRB_ToReleaseList_t *drb_release_list;
+  NR_SecurityConfig_t *security_config;
+  NR_MeasConfig_t *meas_config;
+  struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *dedicated_nas_message_list;
+  NR_CellGroupConfig_t *cell_group_config;
+  bool masterKeyUpdate;
+  int nextHopChainingCount;
+} RRCReconfigurationParams_t;
+
 /*
  * The variant of the above function which dumps the BASIC-XER (XER_F_BASIC)
  * output into the chosen string buffer.
@@ -103,17 +117,7 @@ int do_NR_SA_UECapabilityEnquiry(uint8_t *const buffer, const uint8_t Transactio
 
 int do_NR_RRCRelease(uint8_t *buffer, size_t buffer_size, uint8_t Transaction_id);
 
-int do_RRCReconfiguration(const gNB_RRC_UE_t *UE,
-                          uint8_t *buffer,
-                          size_t buffer_size,
-                          uint8_t Transaction_id,
-                          NR_SRB_ToAddModList_t *SRB_configList,
-                          NR_DRB_ToAddModList_t *DRB_configList,
-                          NR_DRB_ToReleaseList_t *DRB_releaseList,
-                          NR_SecurityConfig_t *security_config,
-                          NR_MeasConfig_t *meas_config,
-                          struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *dedicatedNAS_MessageList,
-                          NR_CellGroupConfig_t *cellGroupConfig);
+int do_RRCReconfiguration(const RRCReconfigurationParams_t *params);
 
 int do_RRCSetupComplete(uint8_t *buffer,
                         size_t buffer_size,
