@@ -656,112 +656,130 @@ int do_NR_RRCRelease(uint8_t *buffer, size_t buffer_size, uint8_t Transaction_id
   return((enc_rval.encoded+7)/8);
 }
 
-//------------------------------------------------------------------------------
-int do_RRCReconfiguration(const gNB_RRC_UE_t *UE,
-                          uint8_t *buffer,
-                          size_t buffer_size,
-                          uint8_t Transaction_id,
-                          NR_SRB_ToAddModList_t *SRB_configList,
-                          NR_DRB_ToAddModList_t *DRB_configList,
-                          NR_DRB_ToReleaseList_t *DRB_releaseList,
-                          NR_SecurityConfig_t *security_config,
-                          NR_MeasConfig_t *meas_config,
-                          struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *dedicatedNAS_MessageList,
-                          NR_CellGroupConfig_t *cellGroupConfig)
-//------------------------------------------------------------------------------
+/** @brief Build RRCReconfiguration message (3GPP TS 38.331) */
+static NR_RRCReconfiguration_IEs_t *build_RRCReconfiguration_IEs(const RRCReconfigurationParams_t *params, bool is_ho)
 {
-  NR_DL_DCCH_Message_t                             dl_dcch_msg={0};
-    asn_enc_rval_t                                   enc_rval;
-    NR_RRCReconfiguration_IEs_t                      *ie;
+  NR_RRCReconfiguration_IEs_t *ie = calloc_or_fail(1, sizeof(*ie));
 
-    dl_dcch_msg.message.present            = NR_DL_DCCH_MessageType_PR_c1;
-    asn1cCalloc(dl_dcch_msg.message.choice.c1, c1);//          = CALLOC(1, sizeof(struct NR_DL_DCCH_MessageType__c1));
-    c1->present = NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration;
+  // radioBearerConfig
+  if ((params->srb_config_list && params->srb_config_list->list.size)
+      || (params->drb_config_list && params->drb_config_list->list.size)) {
+    ie->radioBearerConfig = calloc_or_fail(1, sizeof(*ie->radioBearerConfig));
+    struct NR_RadioBearerConfig *cfg = ie->radioBearerConfig;
+    cfg->srb_ToAddModList = params->srb_config_list;
+    cfg->drb_ToAddModList = params->drb_config_list;
+    cfg->securityConfig = params->security_config;
+    cfg->srb3_ToRelease = NULL;
+    cfg->drb_ToReleaseList = params->drb_release_list;
+  }
 
-    asn1cCalloc(c1->choice.rrcReconfiguration, rrcReconf); // = calloc(1, sizeof(NR_RRCReconfiguration_t));
-    rrcReconf->rrc_TransactionIdentifier = Transaction_id;
-    rrcReconf->criticalExtensions.present = NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration;
+  /* secondaryCellGroup: mandatory present in RRCReconfiguration message
+  in an RRCResume or RRCConnectionReconfiguration message. Optional
+  present in RRCReconfiguration on SRB3 or RRCReconfiguration message
+  in another RRCReconfiguration message. Absent otherwise. */
+  ie->secondaryCellGroup = NULL;
 
-    /******************** Radio Bearer Config ********************/
-    /* Configure Security */
-    // security_config    =  CALLOC(1, sizeof(NR_SecurityConfig_t));
-    // security_config->securityAlgorithmConfig = CALLOC(1, sizeof(*ie->radioBearerConfig->securityConfig->securityAlgorithmConfig));
-    // security_config->securityAlgorithmConfig->cipheringAlgorithm     = NR_CipheringAlgorithm_nea0;
-    // security_config->securityAlgorithmConfig->integrityProtAlgorithm = NULL;
-    // security_config->keyToUse = CALLOC(1, sizeof(*ie->radioBearerConfig->securityConfig->keyToUse));
-    // *security_config->keyToUse = NR_SecurityConfig__keyToUse_master;
+  /* measConfig */
+  ie->measConfig = params->meas_config;
 
-    ie = calloc(1, sizeof(NR_RRCReconfiguration_IEs_t));
-    if ((SRB_configList &&  SRB_configList->list.size) ||
-        (DRB_configList &&  DRB_configList->list.size))  {
-      ie->radioBearerConfig = calloc(1, sizeof(NR_RadioBearerConfig_t));
-      ie->radioBearerConfig->srb_ToAddModList  = SRB_configList;
-      ie->radioBearerConfig->drb_ToAddModList  = DRB_configList;
-      ie->radioBearerConfig->securityConfig    = security_config;
-      ie->radioBearerConfig->srb3_ToRelease    = NULL;
-      ie->radioBearerConfig->drb_ToReleaseList = DRB_releaseList;
+  /* lateNonCriticalExtension */
+  ie->lateNonCriticalExtension = NULL;
+
+  /* nonCriticalExtension, RRCReconfiguration-v1530-IEs */
+  if (params->cell_group_config || params->dedicated_nas_message_list) {
+    // Allocate memory for extension IE
+    ie->nonCriticalExtension = calloc_or_fail(1, sizeof(*ie->nonCriticalExtension));
+  }
+
+  // Configure Cell Group Config
+  if (ie->nonCriticalExtension) {
+    /* dedicatedNAS-MessageList: The field is absent in case of reconfiguration with sync
+       otherwise it is optionally present */
+    if (!is_ho && params->dedicated_nas_message_list) {
+      ie->nonCriticalExtension->dedicatedNAS_MessageList = params->dedicated_nas_message_list;
     }
 
-    /******************** Meas Config ********************/
-    // measConfig
-    ie->measConfig = meas_config;
-    // lateNonCriticalExtension
-    ie->lateNonCriticalExtension = NULL;
-    // nonCriticalExtension
+    /* fullConfig: mandatory present in case of inter-system handover from E-UTRA/EPC to NR,
+    optionally present during reconfiguration with sync and also in first reconfiguration
+    after reestablishment or for intra-system handover from E-UTRA/5GC to NR. Absent otherwise. */
+    ie->nonCriticalExtension->fullConfig = NULL;
 
-    if (cellGroupConfig || dedicatedNAS_MessageList) {
-      ie->nonCriticalExtension = calloc(1, sizeof(NR_RRCReconfiguration_v1530_IEs_t));
-      if (dedicatedNAS_MessageList)
-        ie->nonCriticalExtension->dedicatedNAS_MessageList = dedicatedNAS_MessageList;
-    }
-
-    if (cellGroupConfig != NULL) {
+    /* masterCellGroup */
+    if (params->cell_group_config) {
+      NR_CellGroupConfig_t *cgc = params->cell_group_config;
+      // Encode in extension IE (Master cell group)
       uint8_t *buf = NULL;
-      ssize_t len = uper_encode_to_new_buffer(&asn_DEF_NR_CellGroupConfig, NULL, cellGroupConfig, (void **)&buf);
+      ssize_t len = uper_encode_to_new_buffer(&asn_DEF_NR_CellGroupConfig, NULL, cgc, (void **)&buf);
       AssertFatal(len > 0, "ASN1 message encoding failed (%lu)!\n", len);
-      if ( LOG_DEBUGFLAG(DEBUG_ASN1) ) {
-        xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, (const void *) cellGroupConfig);
+      if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+        xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, (const void *)cgc);
       }
-      ie->nonCriticalExtension->masterCellGroup = calloc(1,sizeof(OCTET_STRING_t));
+      ie->nonCriticalExtension->masterCellGroup = calloc_or_fail(1, sizeof(*ie->nonCriticalExtension->masterCellGroup));
       ie->nonCriticalExtension->masterCellGroup->buf = buf;
       ie->nonCriticalExtension->masterCellGroup->size = len;
     }
 
-    dl_dcch_msg.message.choice.c1->choice.rrcReconfiguration->criticalExtensions.choice.rrcReconfiguration = ie;
-
-    if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
-      xer_fprint(stdout, &asn_DEF_NR_DL_DCCH_Message, (void *)&dl_dcch_msg);
+    /* masterKeyUpdate */
+    if (params->masterKeyUpdate) {
+      ie->nonCriticalExtension->masterKeyUpdate = calloc_or_fail(1, sizeof(*ie->nonCriticalExtension->masterKeyUpdate));
+      ie->nonCriticalExtension->masterKeyUpdate->keySetChangeIndicator = false;
+      ie->nonCriticalExtension->masterKeyUpdate->nextHopChainingCount = params->nextHopChainingCount;
     }
+  }
 
-    enc_rval = uper_encode_to_buffer(&asn_DEF_NR_DL_DCCH_Message,
-                                     NULL,
-                                     (void *)&dl_dcch_msg,
-                                     buffer,
-                                     buffer_size);
+  return ie;
+}
 
-    AssertFatal(enc_rval.encoded >0, "ASN1 message encoding failed (%s, %lu)!\n",
-                enc_rval.failed_type->name, enc_rval.encoded);
+int do_RRCReconfiguration(const RRCReconfigurationParams_t *params)
+{
+  NR_RRCReconfiguration_IEs_t *ie = build_RRCReconfiguration_IEs(params, false);
 
-    // don't free what we did not allocate, so set fields with pointers to NULL
-    // if memory comes from outside
-    ie->measConfig = NULL;
-    if (ie->radioBearerConfig) {
-      ie->radioBearerConfig->srb_ToAddModList = NULL;
-      ie->radioBearerConfig->drb_ToAddModList = NULL;
-      ie->radioBearerConfig->securityConfig = NULL;
-      ie->radioBearerConfig->srb3_ToRelease = NULL;
-      ie->radioBearerConfig->drb_ToReleaseList = NULL;
-    }
-    if (ie->nonCriticalExtension)
-      ie->nonCriticalExtension->dedicatedNAS_MessageList = NULL;
+  // Create the DL DCCH message
+  NR_DL_DCCH_Message_t dl_dcch_msg = {0};
+  dl_dcch_msg.message.present = NR_DL_DCCH_MessageType_PR_c1;
+
+  // Message type: RRC Reconfiguration
+  asn1cCalloc(dl_dcch_msg.message.choice.c1, c1);
+  c1->present = NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration;
+  asn1cCalloc(c1->choice.rrcReconfiguration, rrcReconf);
+  rrcReconf->rrc_TransactionIdentifier = params->transaction_id;
+  rrcReconf->criticalExtensions.present = NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration;
+  rrcReconf->criticalExtensions.choice.rrcReconfiguration = ie;
+
+  // Dump
+  if (LOG_DEBUGFLAG(DEBUG_ASN1)) {
+    xer_fprint(stdout, &asn_DEF_NR_DL_DCCH_Message, (void *)&dl_dcch_msg);
+  }
+
+  // Encode the message
+  asn_enc_rval_t enc_rval =
+      uper_encode_to_buffer(&asn_DEF_NR_DL_DCCH_Message, NULL, &dl_dcch_msg, params->buffer.buf, params->buffer.len);
+  if (enc_rval.encoded <= 0) {
+    LOG_E(NR_RRC, "ASN1 message encoding failed (%s, %lu)\n", enc_rval.failed_type->name, enc_rval.encoded);
     ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_DL_DCCH_Message, &dl_dcch_msg);
-    LOG_D(NR_RRC,
-          "RRCReconfiguration for UE %d: Encoded %zd bits (%zd bytes)\n",
-          UE->rrc_ue_id,
-          enc_rval.encoded,
-          (enc_rval.encoded + 7) / 8);
+    return -1;
+  }
 
-    return((enc_rval.encoded+7)/8);
+  // don't free what we did not allocate, so set fields with pointers to NULL
+  // if memory comes from outside
+  ie->measConfig = NULL;
+  if (ie->radioBearerConfig) {
+    ie->radioBearerConfig->srb_ToAddModList = NULL;
+    ie->radioBearerConfig->drb_ToAddModList = NULL;
+    ie->radioBearerConfig->securityConfig = NULL;
+    ie->radioBearerConfig->srb3_ToRelease = NULL;
+    ie->radioBearerConfig->drb_ToReleaseList = NULL;
+  }
+  if (ie->nonCriticalExtension)
+    ie->nonCriticalExtension->dedicatedNAS_MessageList = NULL;
+
+  // Cleanup
+  ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_DL_DCCH_Message, &dl_dcch_msg);
+  LOG_D(NR_RRC, "RRCReconfiguration: Encoded %zd bits (%zd bytes)\n",
+        enc_rval.encoded,
+        (enc_rval.encoded + 7) / 8);
+
+  return ((enc_rval.encoded + 7) / 8);
 }
 
 int do_RRCSetupRequest(uint8_t *buffer, size_t buffer_size, uint8_t *rv, uint64_t fiveG_S_TMSI)
