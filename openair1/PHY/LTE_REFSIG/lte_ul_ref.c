@@ -31,8 +31,8 @@
 static const uint16_t ref_primes[34] = {11,  23,  31,  47,  59,  71,  89,  107, 113, 139, 179, 191, 211, 239, 283,  293,  317,
                                         359, 383, 431, 479, 523, 571, 599, 647, 719, 761, 863, 887, 953, 971, 1069, 1151, 1193};
 
-int16_t *ul_ref_sigs[30][2][34];
-int16_t *ul_ref_sigs_rx[30][2][34]; //these contain the sequences in repeated format and quantized to QPSK ifdef IFFT_FPGA
+c16_t *ul_ref_sigs[30][2][34];
+c16_t *ul_ref_sigs_rx[30][2][34]; // these contain the sequences in repeated format and quantized to QPSK ifdef IFFT_FPGA
 
 /* 36.211 table 5.5.1.2-1 */
 static const char ref12[360] = {
@@ -84,7 +84,7 @@ void generate_ul_ref_sigs(void) {
     for (u=0; u<30; u++) {
       for (v=0; v<2; v++) {
         qbar = ref_primes[Msc_RS] * (u+1)/(double)31;
-        ul_ref_sigs[u][v][Msc_RS] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[Msc_RS]);
+        ul_ref_sigs[u][v][Msc_RS] = malloc16(sizeof(c16_t) * dftsizes[Msc_RS]);
 
         if ((((int)floor(2*qbar))&1) == 0)
           q = (int)(floor(qbar+.5)) - v;
@@ -98,8 +98,8 @@ void generate_ul_ref_sigs(void) {
         for (n=0; n<dftsizes[Msc_RS]; n++) {
           m=n%ref_primes[Msc_RS];
           phase = (double)q*m*(m+1)/ref_primes[Msc_RS];
-          ul_ref_sigs[u][v][Msc_RS][n<<1]     =(int16_t)(floor(32767*cos(M_PI*phase)));
-          ul_ref_sigs[u][v][Msc_RS][1+(n<<1)] =-(int16_t)(floor(32767*sin(M_PI*phase)));
+          ul_ref_sigs[u][v][Msc_RS][n].r = (int16_t)floor(32767 * cos(M_PI * phase));
+          ul_ref_sigs[u][v][Msc_RS][n].i = -(int16_t)floor(32767 * sin(M_PI * phase));
 #ifdef MAIN
 
           if (Msc_RS<5)
@@ -120,21 +120,21 @@ void generate_ul_ref_sigs(void) {
 
   // These are the sequences for RB 1
   for (u=0; u<30; u++) {
-    ul_ref_sigs[u][0][0] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[0]);
+    ul_ref_sigs[u][0][0] = malloc16(sizeof(c16_t) * dftsizes[0]);
 
     for (n=0; n<dftsizes[0]; n++) {
-      ul_ref_sigs[u][0][0][n<<1]    =(int16_t)(floor(32767*cos(M_PI*ref12[(u*12) + n]/4)));
-      ul_ref_sigs[u][0][0][1+(n<<1)]=(int16_t)(floor(32767*sin(M_PI*ref12[(u*12) + n]/4)));
+      ul_ref_sigs[u][0][0][n].r = (int16_t)floor(32767 * cos(M_PI * ref12[(u * 12) + n] / 4));
+      ul_ref_sigs[u][0][0][n].i = (int16_t)floor(32767 * sin(M_PI * ref12[(u * 12) + n] / 4));
     }
   }
 
   // These are the sequences for RB 2
   for (u=0; u<30; u++) {
-    ul_ref_sigs[u][0][1] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[1]);
+    ul_ref_sigs[u][0][1] = malloc16(sizeof(c16_t) * dftsizes[1]);
 
     for (n=0; n<dftsizes[1]; n++) {
-      ul_ref_sigs[u][0][1][n<<1]    =(int16_t)(floor(32767*cos(M_PI*ref24[(u*24) + n]/4)));
-      ul_ref_sigs[u][0][1][1+(n<<1)]=(int16_t)(floor(32767*sin(M_PI*ref24[(u*24) + n]/4)));
+      ul_ref_sigs[u][0][1][n].r = (int16_t)floor(32767 * cos(M_PI * ref24[(u * 24) + n] / 4));
+      ul_ref_sigs[u][0][1][n].i = (int16_t)floor(32767 * sin(M_PI * ref24[(u * 24) + n] / 4));
     }
   }
 }
@@ -148,7 +148,7 @@ void generate_ul_ref_sigs_rx(void) {
     for (u=0; u<30; u++) {
       for (v=0; v<2; v++) {
         qbar = ref_primes[Msc_RS] * (u+1)/(double)31;
-        ul_ref_sigs_rx[u][v][Msc_RS] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[Msc_RS]);
+        ul_ref_sigs_rx[u][v][Msc_RS] = malloc16(sizeof(c16_t) * dftsizes[Msc_RS]);
 
         if ((((int)floor(2*qbar))&1) == 0)
           q = (int)(floor(qbar+.5)) - v;
@@ -162,8 +162,8 @@ void generate_ul_ref_sigs_rx(void) {
         for (n=0; n<dftsizes[Msc_RS]; n++) {
           m=n%ref_primes[Msc_RS];
           phase = (double)q*m*(m+1)/ref_primes[Msc_RS];
-          ul_ref_sigs_rx[u][v][Msc_RS][n<<1]     =(int16_t)(floor(32767*cos(M_PI*phase)));
-          ul_ref_sigs_rx[u][v][Msc_RS][1+(n<<1)] =-(int16_t)(floor(32767*sin(M_PI*phase)));
+          ul_ref_sigs_rx[u][v][Msc_RS][n].r = (int16_t)floor(32767 * cos(M_PI * phase));
+          ul_ref_sigs_rx[u][v][Msc_RS][n].i = -(int16_t)floor(32767 * sin(M_PI * phase));
 #ifdef MAIN
 
           if (Msc_RS<5)
@@ -184,21 +184,21 @@ void generate_ul_ref_sigs_rx(void) {
 
   // These are the sequences for RB 1
   for (u=0; u<30; u++) {
-    ul_ref_sigs_rx[u][0][0] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[0]);
+    ul_ref_sigs_rx[u][0][0] = malloc16(sizeof(c16_t) * dftsizes[0]);
 
     for (n=0; n<dftsizes[0]; n++) {
-      ul_ref_sigs_rx[u][0][0][n<<1]    = (int16_t)(floor(32767*cos(M_PI*ref12[(u*12) + n]/4)));
-      ul_ref_sigs_rx[u][0][0][1+(n<<1)]= (int16_t)(floor(32767*sin(M_PI*ref12[(u*12) + n]/4)));
+      ul_ref_sigs_rx[u][0][0][n].r = (int16_t)floor(32767 * cos(M_PI * ref12[(u * 12) + n] / 4));
+      ul_ref_sigs_rx[u][0][0][n].i = (int16_t)floor(32767 * sin(M_PI * ref12[(u * 12) + n] / 4));
     }
   }
 
   // These are the sequences for RB 2
   for (u=0; u<30; u++) {
-    ul_ref_sigs_rx[u][0][1] = (int16_t *)malloc16(2*sizeof(int16_t)*dftsizes[1]);
+    ul_ref_sigs_rx[u][0][1] = malloc16(sizeof(c16_t) * dftsizes[1]);
 
     for (n=0; n<dftsizes[1]; n++) {
-      ul_ref_sigs_rx[u][0][1][n<<1]    = (int16_t)(floor(32767*cos(M_PI*ref24[(u*24) + n]/4)));
-      ul_ref_sigs_rx[u][0][1][1+(n<<1)]= (int16_t)(floor(32767*sin(M_PI*ref24[(u*24) + n]/4)));
+      ul_ref_sigs_rx[u][0][1][n].r = (int16_t)floor(32767 * cos(M_PI * ref24[(u * 24) + n] / 4));
+      ul_ref_sigs_rx[u][0][1][n].i = (int16_t)floor(32767 * sin(M_PI * ref24[(u * 24) + n] / 4));
     }
   }
 }

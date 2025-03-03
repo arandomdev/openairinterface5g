@@ -41,8 +41,6 @@
 
 #include "../LTE_TRANSPORT/pucch_extern.h"
 
-
-
 void generate_pucch1x(int32_t **txdataF,
 		      LTE_DL_FRAME_PARMS *frame_parms,
 		      uint8_t ncs_cell[20][7],
@@ -56,7 +54,7 @@ void generate_pucch1x(int32_t **txdataF,
 {
 
   uint32_t u,v,n;
-  uint32_t z[12*14],*zptr;
+  c16_t z[12 * 14], *zptr;
   int16_t d0;
   uint8_t ns,N_UL_symb,nsymb,n_oc,n_oc0,n_oc1;
   uint8_t c = (frame_parms->Ncp==0) ? 3 : 2;
@@ -64,9 +62,7 @@ void generate_pucch1x(int32_t **txdataF,
   uint16_t i,j,re_offset,thres,h;
   uint8_t Nprime_div_deltaPUCCH_Shift,Nprime,d;
   uint8_t m,l,refs;
-  uint8_t n_cs,S,alpha_ind,rem;
-  int16_t tmp_re,tmp_im,ref_re,ref_im,W_re=0,W_im=0;
-  int32_t *txptr;
+  uint8_t n_cs, S, alpha_ind, rem;
   uint32_t symbol_offset;
 
   uint8_t deltaPUCCH_Shift          = frame_parms->pucch_config_common.deltaPUCCH_Shift;
@@ -145,6 +141,7 @@ void generate_pucch1x(int32_t **txdataF,
   nprime=nprime0;
   n_oc  =n_oc0;
 
+  c16_t W = {};
   // loop over 2 slots
   for (ns=(subframe<<1),u=u0,v=v0; ns<(2+(subframe<<1)); ns++,u=u1,v=v1) {
 
@@ -164,50 +161,37 @@ void generate_pucch1x(int32_t **txdataF,
         n_cs = ((uint16_t)n_cs + (nprime*deltaPUCCH_Shift + (n_oc>>1))%Nprime)%12;
       }
 
-
-      refs=0;
-
+      refs = 0;
       // Comput W_noc(m) (36.211 p. 19)
-      if ((ns==(1+(subframe<<1))) && (shortened_format==1)) {  // second slot and shortened format
-
+      if ((ns == (1 + (subframe << 1))) && (shortened_format == 1)) { // second slot and shortened format
         if (l<2) {                                         // data
-          W_re=W3_re[n_oc][l];
-          W_im=W3_im[n_oc][l];
+          W = W3[n_oc][l];
         } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==0)) { // reference and normal CP
-          W_re=W3_re[n_oc][l-2];
-          W_im=W3_im[n_oc][l-2];
+          W = W3[n_oc][l - 2];
           refs=1;
         } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==1)) { // reference and extended CP
-          W_re=W4[n_oc][l-2];
-          W_im=0;
+          W = (c16_t){W4[n_oc][l - 2], 0};
           refs=1;
         } else if ((l>=N_UL_symb-2)) {                      // data
-          W_re=W3_re[n_oc][l-N_UL_symb+4];
-          W_im=W3_im[n_oc][l-N_UL_symb+4];
+          W = W3[n_oc][l - N_UL_symb + 4];
         }
       } else {
         if (l<2) {                                         // data
-          W_re=W4[n_oc][l];
-          W_im=0;
+          W = (c16_t){W4[n_oc][l], 0};
         } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==0)) { // reference and normal CP
-          W_re=W3_re[n_oc][l-2];
-          W_im=W3_im[n_oc][l-2];
+          W = W3[n_oc][l - 2];
           refs=1;
         } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==1)) { // reference and extended CP
-          W_re=W4[n_oc][l-2];
-          W_im=0;
+          W = (c16_t){W4[n_oc][l - 2], 0};
           refs=1;
         } else if ((l>=N_UL_symb-2)) {                     // data
-          W_re=W4[n_oc][l-N_UL_symb+4];
-          W_im=0;
+          W = (c16_t){W4[n_oc][l - N_UL_symb + 4], 0};
         }
       }
 
       // multiply W by S(ns) (36.211 p.17). only for data, reference symbols do not have this factor
       if ((S==1)&&(refs==0)) {
-        tmp_re = W_re;
-        W_re = -W_im;
-        W_im = tmp_re;
+        W = (c16_t){-W.i, W.r};
       }
 
 #ifdef DEBUG_PUCCH_TX
@@ -216,45 +200,31 @@ void generate_pucch1x(int32_t **txdataF,
       alpha_ind=0;
       // compute output sequence
 
-      for (n=0; n<12; n++) {
-
+      for (n = 0; n < 12; n++) {
         // this is r_uv^alpha(n)
-        tmp_re = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][n<<1] - (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)])>>15);
-        tmp_im = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)] + (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][n<<1])>>15);
-
+        c16_t tmp = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
         // this is S(ns)*w_noc(m)*r_uv^alpha(n)
-        ref_re = (tmp_re*W_re - tmp_im*W_im)>>15;
-        ref_im = (tmp_re*W_im + tmp_im*W_re)>>15;
-
+        c16_t ref = c16mulShift(tmp, W, 15);
         if ((l<2)||(l>=(N_UL_symb-2))) { //these are PUCCH data symbols
           switch (fmt) {
           case pucch_format1:   //OOK 1-bit
-
-            ((int16_t *)&zptr[n])[0] = ((int32_t)amp*ref_re)>>15;
-            ((int16_t *)&zptr[n])[1] = ((int32_t)amp*ref_im)>>15;
-
+            zptr[n] = c16mulRealShift(ref, amp, 15);
             break;
 
           case pucch_format1a:  //BPSK 1-bit
             d0 = (payload[0]&1)==0 ? amp : -amp;
-            ((int16_t *)&zptr[n])[0] = ((int32_t)d0*ref_re)>>15;
-            ((int16_t *)&zptr[n])[1] = ((int32_t)d0*ref_im)>>15;
-            //      printf("d0 %d\n",d0);
+            zptr[n] = c16mulRealShift(ref, d0, 15);
             break;
 
           case pucch_format1b:  //QPSK 2-bits (Table 5.4.1-1 from 36.211, pg. 18)
             if (((payload[0]&1)==0) && ((payload[1]&1)==0))  {// 1
-              ((int16_t *)&zptr[n])[0] = ((int32_t)amp*ref_re)>>15;
-              ((int16_t *)&zptr[n])[1] = ((int32_t)amp*ref_im)>>15;
+              zptr[n] = c16mulRealShift(ref, amp, 15);
             } else if (((payload[0]&1)==0) && ((payload[1]&1)==1))  { // -j
-              ((int16_t *)&zptr[n])[0] = ((int32_t)amp*ref_im)>>15;
-              ((int16_t *)&zptr[n])[1] = (-(int32_t)amp*ref_re)>>15;
+              zptr[n] = c16mulRealShift((c16_t){ref.i, -ref.r}, amp, 15);
             } else if (((payload[0]&1)==1) && ((payload[1]&1)==0))  { // j
-              ((int16_t *)&zptr[n])[0] = (-(int32_t)amp*ref_im)>>15;
-              ((int16_t *)&zptr[n])[1] = ((int32_t)amp*ref_re)>>15;
+              zptr[n] = c16mulRealShift((c16_t){-ref.i, ref.r}, amp, 15);
             } else  { // -1
-              ((int16_t *)&zptr[n])[0] = (-(int32_t)amp*ref_re)>>15;
-              ((int16_t *)&zptr[n])[1] = (-(int32_t)amp*ref_im)>>15;
+              zptr[n] = c16mulRealShift((c16_t){-ref.r, -ref.i}, amp, 15);
             }
 
             break;
@@ -274,10 +244,7 @@ void generate_pucch1x(int32_t **txdataF,
             abort();
           } // switch fmt
         } else { // These are PUCCH reference symbols
-
-          ((int16_t *)&zptr[n])[0] = ((int32_t)amp*ref_re)>>15;
-          ((int16_t *)&zptr[n])[1] = ((int32_t)amp*ref_im)>>15;
-          //    printf("ref\n");
+          zptr[n] = c16mulRealShift(ref, amp, 15);
         }
 
 #ifdef DEBUG_PUCCH_TX
@@ -318,7 +285,7 @@ void generate_pucch1x(int32_t **txdataF,
       re_offset -= (frame_parms->ofdm_symbol_size);
 
     symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size*(l+(subframe*nsymb));
-    txptr = &txdataF[0][symbol_offset];
+    c16_t *txptr = (c16_t *)&txdataF[0][symbol_offset];
 
     for (i=0; i<12; i++,j++) {
       txptr[re_offset++] = z[j];
@@ -368,24 +335,23 @@ uint32_t pucch_code[13] = {0xFFFFF,0x5A933,0x10E5A,0x6339C,0x73CE0,
 			   0xFFC00,0xD8E64,0x4F6B0,0x218EC,0x1B746,
 			   0x0FFFF,0x33FFF,0x3FFFC};
 
-
-void generate_pucch2x(int32_t **txdataF,
-		      LTE_DL_FRAME_PARMS *fp,
-		      uint8_t ncs_cell[20][7],
-		      PUCCH_FMT_t fmt,
-		      PUCCH_CONFIG_DEDICATED *pucch_config_dedicated,
-		      uint16_t n2_pucch,
-		      uint8_t *payload,
-		      int A,
-		      int B2,
-		      int16_t amp,
-		      uint8_t subframe,
-		      uint16_t rnti) {
-
+void generate_pucch2x(c16_t **txdataF,
+                      LTE_DL_FRAME_PARMS *fp,
+                      uint8_t ncs_cell[20][7],
+                      PUCCH_FMT_t fmt,
+                      PUCCH_CONFIG_DEDICATED *pucch_config_dedicated,
+                      uint16_t n2_pucch,
+                      uint8_t *payload,
+                      int A,
+                      int B2,
+                      int16_t amp,
+                      uint8_t subframe,
+                      uint16_t rnti)
+{
   int i,j;
   uint32_t B=0;
   uint8_t btilde[20];
-  int16_t d[22];
+  c16_t d[11];
   uint8_t deltaPUCCH_Shift          = fp->pucch_config_common.deltaPUCCH_Shift;
   uint8_t NRB2                      = fp->pucch_config_common.nRB_CQI;
   uint8_t Ncs1                      = fp->pucch_config_common.nCS_AN;
@@ -395,14 +361,12 @@ void generate_pucch2x(int32_t **txdataF,
   uint32_t v0 = fp->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe<<1];
   uint32_t v1 = fp->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[1+(subframe<<1)];
 
-  uint32_t z[12*14],*zptr;
+  c16_t z[12 * 14], *zptr;
   uint32_t u,v,n;
   uint8_t ns,N_UL_symb,nsymb_slot0,nsymb_pertti;
   uint32_t nprime,l,n_cs;
-  int alpha_ind,data_ind;
-  int16_t ref_re,ref_im;
-  int m,re_offset,symbol_offset;
-  int32_t *txptr;
+  int alpha_ind, data_ind;
+  int m, re_offset, symbol_offset;
 
   if ((deltaPUCCH_Shift==0) || (deltaPUCCH_Shift>3)) {
     printf("[PHY] generate_pucch: Illegal deltaPUCCH_shift %d (should be 1,2,3)\n",deltaPUCCH_Shift);
@@ -422,26 +386,25 @@ void generate_pucch2x(int32_t **txdataF,
   // scrambling
   pucch2x_scrambling(fp,subframe,rnti,B,btilde);
   // modulation
-  pucch2x_modulation(btilde,d,amp);
+  pucch2x_modulation(btilde, (int16_t *)d, amp);
 
   // add extra symbol for 2a/2b
-  d[20]=0;
-  d[21]=0;
+  d[10] = (c16_t){};
   if (fmt==pucch_format2a)
-    d[20] = (B2 == 0) ? amp : -amp;
+    d[10].r = (B2 == 0) ? amp : -amp;
   else if (fmt==pucch_format2b) {
     switch (B2) {
     case 0:
-      d[20] = amp;
+      d[10].i = amp;
       break;
     case 1:
-      d[21] = -amp;
+      d[10].i = -amp;
       break;
     case 2:
-      d[21] = amp;
+      d[10].i = amp;
       break;
     case 3:
-      d[20] = -amp;
+      d[10].r = -amp;
       break;
     default:
       AssertFatal(1==0,"Illegal modulation symbol %d for PUCCH %s\n",B2,pucch_format_string[fmt]);
@@ -478,39 +441,28 @@ void generate_pucch2x(int32_t **txdataF,
       for (n=0; n<12; n++)
       {
           // this is r_uv^alpha(n)
-          ref_re = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][n<<1] - (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)])>>15);
-          ref_im = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)] + (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][n<<1])>>15);
-
-          if ((l!=1)&&(l!=5)) { //these are PUCCH data symbols
-              ((int16_t *)&zptr[n])[0] = ((int32_t)d[data_ind]*ref_re - (int32_t)d[data_ind+1]*ref_im)>>15;
-              ((int16_t *)&zptr[n])[1] = ((int32_t)d[data_ind]*ref_im + (int32_t)d[data_ind+1]*ref_re)>>15;
-              //LOG_I(PHY,"slot %d ofdm# %d ==> d[%d,%d] \n",ns,l,data_ind,n);
-          }
-          else {
-              if ((l==1) || ( (l==5) && (fmt==pucch_format2) ))
-              {
-                  ((int16_t *)&zptr[n])[0] = ((int32_t)amp*ref_re>>15);
-                  ((int16_t *)&zptr[n])[1] = ((int32_t)amp*ref_im>>15);
-              }
-              // l == 5 && pucch format 2a
-              else if (fmt==pucch_format2a)
-              {
-                  ((int16_t *)&zptr[n])[0] = ((int32_t)d[20]*ref_re>>15);
-                  ((int16_t *)&zptr[n])[1] = ((int32_t)d[21]*ref_im>>15);
-              }
-              // l == 5 && pucch format 2b
-              else if (fmt==pucch_format2b)
-              {
-                  ((int16_t *)&zptr[n])[0] = ((int32_t)d[20]*ref_re>>15);
-                  ((int16_t *)&zptr[n])[1] = ((int32_t)d[21]*ref_im>>15);
-              }
+          c16_t ref = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
+          if ((l != 1) && (l != 5)) { // these are PUCCH data symbols
+            zptr[n] = c16mulShift(d[data_ind], ref, 15);
+          } else {
+            if ((l == 1) || ((l == 5) && (fmt == pucch_format2))) {
+              zptr[n] = c16mulRealShift(ref, amp, 15);
+            }
+            // l == 5 && pucch format 2a
+            else if (fmt == pucch_format2a) {
+              zptr[n] = c16mulRealShift(d[10], amp, 15);
+            }
+            // l == 5 && pucch format 2b
+            else if (fmt == pucch_format2b) {
+              zptr[n] = c16mulRealShift(d[10], amp, 15);
+            }
           } // l==1 || l==5
       alpha_ind = (alpha_ind + n_cs)%12;
       } // n
       zptr+=12;
 
       if ((l!=1)&&(l!=5))  //these are PUCCH data symbols so increment data index
-	     data_ind+=2;
+        data_ind++;
     } // l
   } //ns
 
@@ -543,7 +495,7 @@ void generate_pucch2x(int32_t **txdataF,
 
 
     symbol_offset = (unsigned int)fp->ofdm_symbol_size*(l+(subframe*nsymb_pertti));
-    txptr = &txdataF[0][symbol_offset];
+    c16_t *txptr = &txdataF[0][symbol_offset];
 
     //LOG_I(PHY,"ofdmSymb %d/%d, firstCarrierOffset %d, symbolOffset[sfn %d] %d, reOffset %d, &txptr: %x \n", l, nsymb, fp->first_carrier_offset, subframe, symbol_offset, re_offset, &txptr[0]);
 
@@ -564,48 +516,40 @@ void generate_pucch2x(int32_t **txdataF,
 
 /* PUCCH format3 >> */
 /* DFT */
-void pucchfmt3_Dft( int16_t *x, int16_t *y )
+static void pucchfmt3_Dft(c16_t *x, c16_t *y)
 {
-  int16_t i, k;
-  int16_t tmp[2];
-  int16_t calctmp[D_NSC1RB*2]={0};
-
-  for (i=0; i<D_NSC1RB; i++) {
-    for(k=0; k<D_NSC1RB; k++) {
-      tmp[0] = alphaTBL_re[(12-((i*k)%12))%12];
-      tmp[1] = alphaTBL_im[(12-((i*k)%12))%12];
-
-      calctmp[2*i] += (((int32_t)x[2*k] * tmp[0] - (int32_t)x[2*k+1] * tmp[1])>>15);
-      calctmp[2*i+1] += (((int32_t)x[2*k+1] * tmp[0] + (int32_t)x[2*k] * tmp[1])>>15);
+  for (int i = 0; i < D_NSC1RB; i++) {
+    c32_t calctmp = {0};
+    for (int k = 0; k < D_NSC1RB; k++) {
+      c16_t tmp = c16mulShift(x[k], alphaTBL[(12 - ((i * k) % 12)) % 12], 15);
+      calctmp = (c32_t){calctmp.r + tmp.r, calctmp.i + tmp.i};
     }
-    y[2*i] = (int16_t)( (double) calctmp[2*i] / sqrt(D_NSC1RB));
-    y[2*i+1] = (int16_t)((double) calctmp[2*i+1] / sqrt(D_NSC1RB));
+    y[i] = (c16_t){calctmp.r / sqrt(D_NSC1RB), calctmp.i / sqrt(D_NSC1RB)};
   }
 }
 
-void generate_pucch3x(int32_t **txdataF,
-                    LTE_DL_FRAME_PARMS *frame_parms,
-                    uint8_t ncs_cell[20][7],
-                    PUCCH_FMT_t fmt,
-                    PUCCH_CONFIG_DEDICATED *pucch_config_dedicated,
-                    uint16_t n3_pucch,
-                    uint8_t shortened_format,
-                    uint8_t *payload,
-                    int16_t amp,
-                    uint8_t subframe,
-                    uint16_t rnti)
+void generate_pucch3x(c16_t **txdataF,
+                      LTE_DL_FRAME_PARMS *frame_parms,
+                      uint8_t ncs_cell[20][7],
+                      PUCCH_FMT_t fmt,
+                      PUCCH_CONFIG_DEDICATED *pucch_config_dedicated,
+                      uint16_t n3_pucch,
+                      uint8_t shortened_format,
+                      uint8_t *payload,
+                      int16_t amp,
+                      uint8_t subframe,
+                      uint16_t rnti)
 {
 
   uint32_t u, v;
   uint16_t i, j, re_offset;
-  uint32_t z[12*14], *zptr;
-  uint32_t y_tilda[12*14]={}, *y_tilda_ptr;
+  c16_t z[12 * 14], *zptr;
+  c16_t y_tilda[12 * 14] = {}, *y_tilda_ptr;
   uint8_t ns, nsymb, n_oc, n_oc0, n_oc1;
   uint8_t N_UL_symb = (frame_parms->Ncp==0) ? 7 : 6;
   uint8_t m, l;
   uint8_t n_cs;
-  int16_t tmp_re, tmp_im, W_re=0, W_im=0;
-  int32_t *txptr;
+  c16_t *txptr;
   uint32_t symbol_offset;
   
   uint32_t u0 = (frame_parms->Nid_cell + frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.grouphop[subframe<<1]) % 30;
@@ -625,21 +569,15 @@ void generate_pucch3x(int32_t **txdataF,
   uint8_t  scr_dt[48]={};
 
   // variables for Modulation
-  int16_t d_re[24]={};
-  int16_t d_im[24]={};
+  c16_t d[24] = {};
 
   // variables for orthogonal sequence selection
   uint8_t N_PUCCH_SF0 = 5;
   uint8_t N_PUCCH_SF1 = (shortened_format==0)? 5:4;
-  uint8_t first_slot  = 0;
-  int16_t rot_re=0;
-  int16_t rot_im=0;
-
+  uint8_t first_slot = 0;
   uint8_t dt_offset;
   uint8_t sym_offset;
-  int16_t y_re[14][12]; //={0};
-  int16_t y_im[14][12]; //={0};
-
+  c16_t W = {};
   // DMRS
   uint8_t alpha_idx=0;
   uint8_t m_alpha_idx=0;
@@ -672,17 +610,17 @@ void generate_pucch3x(int32_t **txdataF,
     // Modulation
     for (uint8_t i=0; i<48; i+=2){
       if (scr_dt[i]==0 && scr_dt[i+1]==0){
-        d_re[ i>>1] = ((ONE_OVER_SQRT2_Q15 * amp) >>15);
-        d_im[ i>>1] = ((ONE_OVER_SQRT2_Q15 * amp) >>15);
+        d[i >> 1].r = ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
+        d[i >> 1].i = ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
       } else if (scr_dt[i]==0 && scr_dt[i+1]==1) {
-        d_re[ i>>1] = ((ONE_OVER_SQRT2_Q15 * amp) >>15);
-        d_im[ i>>1] = -1 * ((ONE_OVER_SQRT2_Q15 * amp) >>15);
+        d[i >> 1].r = ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
+        d[i >> 1].i = -1 * ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
       } else if (scr_dt[i]==1 && scr_dt[i+1]==0) {
-        d_re[ i>>1] = -1 * ((ONE_OVER_SQRT2_Q15 * amp)>>15);
-        d_im[ i>>1] = ((ONE_OVER_SQRT2_Q15 * amp)>>15);
+        d[i >> 1].r = -1 * ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
+        d[i >> 1].i = ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
       } else if (scr_dt[i]==1 && scr_dt[i+1]==1) {
-        d_re[ i>>1] = -1 * ((ONE_OVER_SQRT2_Q15 * amp)>>15);
-        d_im[ i>>1] = -1 * ((ONE_OVER_SQRT2_Q15 * amp)>>15);
+        d[i >> 1].r = -1 * ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
+        d[i >> 1].i = -1 * ((ONE_OVER_SQRT2_Q15 * amp) >> 15);
       } else {
         //***log Modulation Error!
       }
@@ -705,25 +643,20 @@ void generate_pucch3x(int32_t **txdataF,
 
       //loop over symbols in slot
       for (l=0; l<N_UL_symb; l++) {
-        rot_re = RotTBL_re[(uint8_t) ncs_cell[ns][l]/64] ;
-        rot_im = RotTBL_im[(uint8_t) ncs_cell[ns][l]/64] ;
+        c16_t rot = RotTBL[ncs_cell[ns][l] / 64];
 
         // Comput W_noc(m) (36.211 p. 19)
         if ( first_slot == 0 && shortened_format==1) {  // second slot and shortened format
           n_oc = n_oc1;
 
           if (l<1) {                                         // data
-            W_re=W4_fmt3[n_oc][l];
-            W_im=0;
+            W = (c16_t){W4_fmt3[n_oc][l], 0};
           } else if (l==1) {                                  // DMRS
-            W_re=W2[0];
-            W_im=0;
+            W = (c16_t){W2[0], 0};
           } else if (l>=2 && l<5) {                          // data
-            W_re=W4_fmt3[n_oc][l-1];
-            W_im=0;
+            W = (c16_t){W4_fmt3[n_oc][l - 1], 0};
           } else if (l==5) {                                 // DMRS
-            W_re=W2[1];
-            W_im=0;
+            W = (c16_t){W2[1], 0};
           } else if ((l>=N_UL_symb-2)) {                      // data
             ;
           } else {
@@ -737,20 +670,15 @@ void generate_pucch3x(int32_t **txdataF,
           }
 
           if (l<1) {                                         // data
-            W_re=W5_fmt3_re[n_oc][l];
-            W_im=W5_fmt3_im[n_oc][l];
+            W = (c16_t){W5_fmt3_re[n_oc][l], W5_fmt3_im[n_oc][l]};
           } else if (l==1) {                                  // DMRS
-            W_re=W2[0];
-            W_im=0;
+            W = (c16_t){W2[0], 0};
           } else if (l>=2 && l<5) {                          // data
-            W_re=W5_fmt3_re[n_oc][l-1];
-            W_im=W5_fmt3_im[n_oc][l-1];
+            W = (c16_t){W5_fmt3_re[n_oc][l - 1], W5_fmt3_im[n_oc][l - 1]};
           } else if (l==5) {                                 // DMRS
-            W_re=W2[1];
-            W_im=0;
+            W = (c16_t){W2[1], 0};
           } else if ((l>=N_UL_symb-1)) {                     // data
-            W_re=W5_fmt3_re[n_oc][l-N_UL_symb+5];
-            W_im=W5_fmt3_im[n_oc][l-N_UL_symb+5];
+            W = (c16_t){W5_fmt3_re[n_oc][l - N_UL_symb + 5], W5_fmt3_im[n_oc][l - N_UL_symb + 5]};
           } else {
             //***log W Select Error!
           }
@@ -769,21 +697,14 @@ void generate_pucch3x(int32_t **txdataF,
         sym_offset = (first_slot == 1) ? 0:7;
 
         for (i=0; i<12; i++) {
-          // Calculate yn(i) 
-          tmp_re = (((int32_t) (W_re*rot_re - W_im*rot_im)) >>15);
-          tmp_im = (((int32_t) (W_re*rot_im + W_im*rot_re)) >>15);
-          y_re[l+sym_offset][i] = (((int32_t) (tmp_re*d_re[i+dt_offset] - tmp_im*d_im[i+dt_offset]))>>15);
-          y_im[l+sym_offset][i] = (((int32_t) (tmp_re*d_im[i+dt_offset] + tmp_im*d_re[i+dt_offset]))>>15);
-
+          // Calculate yn(i)
+          c16_t tmp = c16mulShift(W, rot, 15);
           // cyclic shift
-          ((int16_t *)&y_tilda_ptr[(l+sym_offset)*12+(i-(ncs_cell[ns][l]%12)+12)%12])[0] = y_re[l+sym_offset][i];
-          ((int16_t *)&y_tilda_ptr[(l+sym_offset)*12+(i-(ncs_cell[ns][l]%12)+12)%12])[1] = y_im[l+sym_offset][i];
-
+          y_tilda_ptr[(l + sym_offset) * 12 + (i - (ncs_cell[ns][l] % 12) + 12) % 12] = c16mulShift(tmp, d[i + dt_offset], 15);
           // DMRS
           m_alpha_idx = (alpha_idx * i) % 12;
           if (l==1 || l==5) {
-            ((int16_t *)&zptr[(l+sym_offset)*12+i])[0] =(((((int32_t) alphaTBL_re[m_alpha_idx]*ul_ref_sigs[u][v][0][i<<1] - (int32_t) alphaTBL_im[m_alpha_idx] * ul_ref_sigs[u][v][0][1+(i<<1)])>>15) * (int32_t)amp)>>15);
-            ((int16_t *)&zptr[(l+sym_offset)*12+i])[1] =(((((int32_t) alphaTBL_re[m_alpha_idx]*ul_ref_sigs[u][v][0][1+(i<<1)] + (int32_t) alphaTBL_im[m_alpha_idx] * ul_ref_sigs[u][v][0][i<<1])>>15) * (int32_t)amp)>>15);
+            zptr[(l + sym_offset) * 12 + i] = c16mulShift(alphaTBL[m_alpha_idx], ul_ref_sigs[u][v][0][i], 15);
           }
         }
 
@@ -795,7 +716,7 @@ void generate_pucch3x(int32_t **txdataF,
       if (l==1 || l==5 || l==8 || l==12) {
         ;
       } else {
-         pucchfmt3_Dft((int16_t*)&y_tilda_ptr[l*12],(int16_t*)&zptr[l*12]);
+        pucchfmt3_Dft(&y_tilda_ptr[l * 12], &zptr[l * 12]);
       }
     }
 

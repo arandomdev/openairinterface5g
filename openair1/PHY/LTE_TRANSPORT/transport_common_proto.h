@@ -135,10 +135,9 @@ uint8_t SE2I_TBS(float SE,
 
 int generate_srs(LTE_DL_FRAME_PARMS *frame_parms,
                  SOUNDINGRS_UL_CONFIG_DEDICATED *soundingrs_ul_config_dedicated,
-                 int *txdataF,
+                 c16_t *txdataF,
                  int16_t amp,
                  uint32_t subframe);
-
 
 /*!
   \brief This function generates the downlink reference signal for the PUSCH according to 36.211 v8.6.0. The DRS occuies the RS defined by rb_alloc and the symbols 2 and 8 for extended CP and 3 and 10 for normal CP.

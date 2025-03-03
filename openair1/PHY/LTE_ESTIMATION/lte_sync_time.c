@@ -167,9 +167,9 @@ int ru_sync_time_init(RU_t *ru) { // LTE_UE_COMMON *common_vars
   int16_t dmrs[2048];
   int16_t *dmrsp[2] = {dmrs,NULL};
   */
-  int32_t dmrs[ru->frame_parms->ofdm_symbol_size*14] __attribute__((aligned(32)));
+  c16_t dmrs[ru->frame_parms->ofdm_symbol_size * 14] __attribute__((aligned(32)));
   //int32_t *dmrsp[2] = {&dmrs[(3-ru->frame_parms->Ncp)*ru->frame_parms->ofdm_symbol_size],NULL};
-  int32_t *dmrsp[2] = {&dmrs[0],NULL};
+  c16_t *dmrsp[2] = {dmrs, NULL};
   generate_ul_ref_sigs();
   ru->dmrssync = (int16_t *)malloc16_clear(ru->frame_parms->ofdm_symbol_size*2*sizeof(int16_t));
   ru->dmrs_corr = (uint64_t *)malloc16_clear(ru->frame_parms->samples_per_tti*10*sizeof(uint64_t));

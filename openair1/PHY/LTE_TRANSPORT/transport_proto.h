@@ -556,24 +556,19 @@ void dlsch_scrambling(LTE_DL_FRAME_PARMS *frame_parms,
                       uint16_t frame,
                       uint8_t Ns);
 
-uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB,
-                 int     frame,
-                 uint8_t subframe,
-                 uint8_t shortened_format
-);
+uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int subframe, unsigned int shortened_format);
 
 uint32_t rx_pucch(PHY_VARS_eNB *phy_vars_eNB,
                   PUCCH_FMT_t fmt,
-                  uint8_t UE_id,
-                  uint16_t n1_pucch,
-                  uint16_t n2_pucch,
-                  uint8_t shortened_format,
+                  unsigned int UE_id,
+                  unsigned int n1_pucch,
+                  unsigned int n2_pucch,
+                  unsigned int shortened_format,
                   uint8_t *payload,
-                  int     frame,
-                  uint8_t subframe,
-                  uint8_t pucch1_thres,
-                  int     br_flag
-                 );
+                  int frame,
+                  unsigned int subframe,
+                  unsigned int pucch1_thres,
+                  int br_flag);
 
 /*!
   \brief Process PRACH waveform

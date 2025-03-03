@@ -268,6 +268,10 @@ extern "C" {
         .i = a.r * b.i + a.i * b.r
     };
   }
+  __attribute__((always_inline)) inline cd_t cdMulConj(const cd_t a, const cd_t b)
+  {
+    return (cd_t){.r = a.r * b.r + a.i * b.i, .i = a.r * b.i - a.i * b.r};
+  }
 
   // On N complex numbers
   //   y.r += (x * alpha.r) >> 14

@@ -66,10 +66,10 @@ int compareints (const void * a, const void * b)
 
 #define DEBUG_SRS
 int32_t generate_srs(LTE_DL_FRAME_PARMS *frame_parms,
-		     SOUNDINGRS_UL_CONFIG_DEDICATED *soundingrs_ul_config_dedicated,
-		     int32_t *txptr,
-		     int16_t amp,
-		     uint32_t subframe)
+                     SOUNDINGRS_UL_CONFIG_DEDICATED *soundingrs_ul_config_dedicated,
+                     c16_t *txptr,
+                     int16_t amp,
+                     uint32_t subframe)
 {
 
   uint16_t msrsb=0,Nb=0,nb,b,msrs0=0,k,Msc_RS,Msc_RS_idx,carrier_pos;
@@ -145,11 +145,7 @@ int32_t generate_srs(LTE_DL_FRAME_PARMS *frame_parms,
     }
 
     for (k=0; k<Msc_RS; k++) {
-      int32_t real = ((int32_t) amp * (int32_t) ul_ref_sigs[u][v][Msc_RS_idx][k<<1])     >> 15;
-      int32_t imag = ((int32_t) amp * (int32_t) ul_ref_sigs[u][v][Msc_RS_idx][(k<<1)+1]) >> 15;
-      txptr[carrier_pos] = (real&0xFFFF) + ((imag<<16)&0xFFFF0000);
-
-
+      txptr[carrier_pos] = c16mulRealShift(ul_ref_sigs[u][v][Msc_RS_idx][k], amp, 15);
       carrier_pos = carrier_pos+2;
 
       if (carrier_pos >= frame_parms->ofdm_symbol_size)
