@@ -358,3 +358,65 @@ void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc,
   rrc_gNB_send_NGAP_HANDOVER_REQUIRED(rrc, ue, neighbour_config, hoPrepInfo);
   free(hoPrepInfo);
 }
+
+extern const nr_neighbour_gnb_configuration_t *get_neighbour_by_pci(int pci);
+
+/** @brief Simulate N2 handover on the same cell */
+static bool nr_n2_trigger_intra_cell_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  struct nr_rrc_du_container_t *du = get_du_for_ue(rrc, UE->rrc_ue_id);
+  if (du == NULL) {
+    LOG_E(NR_RRC, "HO LOG: Unknown DU for ue Id: %d\n", UE->rrc_ue_id);
+    return false;
+  }
+
+  uint16_t pci = du->setup_req->cell[0].info.nr_pci;
+  LOG_E(NR_RRC, "HO LOG: Triggering Intra Cell HO for UE %d to cell %d\n", UE->rrc_ue_id, pci);
+
+  nr_neighbour_gnb_configuration_t neighbourConfig = {
+      .isIntraFrequencyNeighbour = true,
+      .gNB_ID = du->setup_req->gNB_DU_id,
+      .nrcell_id = du->setup_req->cell[0].info.nr_cellid,
+      .physicalCellId = du->setup_req->cell[0].info.nr_pci,
+      .plmn.mcc = du->setup_req->cell[0].info.plmn.mcc,
+      .plmn.mnc = du->setup_req->cell[0].info.plmn.mnc,
+      .plmn.mnc_digit_length = du->setup_req->cell[0].info.plmn.mnc_digit_length,
+      .subcarrierSpacing = du->setup_req->cell[0].info.tdd.tbw.scs,
+  };
+
+  nr_rrc_trigger_n2_ho(rrc, UE, pci, &neighbourConfig);
+  return true;
+}
+
+void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t scell_pci, uint32_t rrc_ue_id)
+{
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, rrc_ue_id);
+  if (ue_context_p == NULL) {
+    LOG_E(NR_RRC, "HO LOG: cannot find UE context for UE ID %d\n", rrc_ue_id);
+    return;
+  }
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+
+  // Do handover on the same gNB
+  if (neighbour_pci == scell_pci) {
+    nr_n2_trigger_intra_cell_ho(rrc, UE);
+    return;
+  }
+
+  LOG_E(NR_RRC, "HO LOG: Triggering HO for UE %d to neighbour cell %d\n", rrc_ue_id, neighbour_pci);
+  struct nr_rrc_du_container_t *du = get_du_for_ue(rrc, rrc_ue_id);
+  if (du == NULL) {
+    LOG_E(NR_RRC, "HO LOG: Unknown DU for ue Id: %d\n", rrc_ue_id);
+    return;
+  }
+
+  const f1ap_served_cell_info_t *scell_du = get_cell_information_by_phycellId(du->setup_req->cell[0].info.nr_pci);
+  DevAssert(scell_du);
+  const nr_neighbour_gnb_configuration_t *neighbour = get_neighbour_by_pci(neighbour_pci);
+  if (neighbour == NULL) {
+    LOG_E(NR_RRC, "N2 HO trigger failed: could not find neighbour gNB with PCI %d\n", neighbour_pci);
+    return;
+  }
+
+  nr_rrc_trigger_n2_ho(rrc, UE, scell_du->nr_pci, neighbour);
+}

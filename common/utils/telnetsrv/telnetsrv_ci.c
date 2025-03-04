@@ -38,6 +38,7 @@
 #include "openair2/LAYER2/nr_rlc/nr_rlc_ue_manager.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_entity_am.h"
 #include "openair2/LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "openair2/RRC/NR/rrc_gNB_mobility.h"
 
 #define TELNETSERVERCODE
 #include "telnetsrv.h"
@@ -72,22 +73,35 @@ int get_single_rnti(char *buf, int debug, telnet_printfunc_t prnt)
   return 0;
 }
 
-rrc_gNB_ue_context_t *get_single_rrc_ue(void)
+/** @brief Retrieve a UE context from the RRC tree. */
+rrc_gNB_ue_context_t *get_rrc_ue(int rrc_ue_id)
 {
   rrc_gNB_ue_context_t *ue = NULL;
   rrc_gNB_ue_context_t *l = NULL;
   int n = 0;
+
+  // Iterate through the RRC UE tree
   RB_FOREACH (l, rrc_nr_ue_tree_s, &RC.nrrrc[0]->rrc_ue_head) {
-    if (ue == NULL)
-      ue = l;
-    n++;
+    if (rrc_ue_id != -1) {
+      if (l != NULL && l->ue_context.rrc_ue_id == rrc_ue_id) {
+        ue = l;
+        break;
+      }
+    } else {
+      if (ue == NULL) {
+        ue = l;
+      }
+      n++;
+    }
   }
-  if (!ue) {
-    printf("could not find any UE in RRC\n");
-  }
-  if (n > 1) {
-    printf("more than one UE in RRC present\n");
-    ue = NULL;
+
+  if (rrc_ue_id == -1) {
+    if (!ue) {
+      printf("could not find any UE in RRC\n");
+    } else if (n > 1) {
+      printf("more than one UE in RRC present\n");
+      ue = NULL;
+    }
   }
 
   return ue;
@@ -99,7 +113,7 @@ int get_reestab_count(char *buf, int debug, telnet_printfunc_t prnt)
     ERROR_MSG_RET("no RRC present, cannot list counts\n");
   rrc_gNB_ue_context_t *ue = NULL;
   if (!buf) {
-    ue = get_single_rrc_ue();
+    ue = get_rrc_ue(-1);
     if (!ue)
       ERROR_MSG_RET("no single UE in RRC present\n");
   } else {
@@ -155,7 +169,7 @@ int rrc_gNB_trigger_f1_ho(char *buf, int debug, telnet_printfunc_t prnt)
     ERROR_MSG_RET("no RRC present, cannot list counts\n");
   rrc_gNB_ue_context_t *ue = NULL;
   if (!buf) {
-    ue = get_single_rrc_ue();
+    ue = get_rrc_ue(-1);
     if (!ue)
       ERROR_MSG_RET("no single UE in RRC present\n");
   } else {
@@ -168,6 +182,60 @@ int rrc_gNB_trigger_f1_ho(char *buf, int debug, telnet_printfunc_t prnt)
   gNB_RRC_UE_t *UE = &ue->ue_context;
   nr_HO_F1_trigger_telnet(RC.nrrrc[0], UE->rrc_ue_id);
   prnt("RRC F1 handover triggered for UE %u\n", UE->rrc_ue_id);
+  return 0;
+}
+
+extern void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t scell_pci, uint32_t rrc_ue_id);
+
+/** @brief Trigger N2 handover for UE
+ *  @param buf: Neighbour PCI, RRC UE ID
+ *  @param debug: Debug flag
+ *  @param prnt: Print function
+ *  @return 0 on success, -1 on failure */
+int rrc_gNB_trigger_n2_ho(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  if (!RC.nrrrc)
+    ERROR_MSG_RET("no RRC present, cannot list counts\n");
+
+  if (!buf) {
+    ERROR_MSG_RET("Please provide neighbour cell id and ue id\n");
+  } else {
+    // Parse servingCellId
+    char *token = strtok(buf, ",");
+    if (!token) {
+      ERROR_MSG_RET("Invalid input. Expected format: Neighbour PCI, SCell PCI, ueId\n");
+    }
+    uint32_t scell_pci = strtol(token, NULL, 10);
+
+    // Parse Neighbour PCI
+    token = strtok(NULL, ",");
+    if (!token) {
+      ERROR_MSG_RET("Invalid input. Expected format: Neighbour PCI, SCell PCI, ueId\n");
+    }
+    uint32_t neighbour_pci = strtol(token, NULL, 10);
+
+    // Parse ueId
+    token = strtok(NULL, ",");
+    if (!token) {
+      ERROR_MSG_RET("Missing ue id\n");
+    }
+    uint32_t ueId = strtol(token, NULL, 10);
+
+    // Retrieve UE context
+    rrc_gNB_ue_context_t *ue_p = get_rrc_ue(ueId);
+    gNB_RRC_UE_t *UE = &ue_p->ue_context;
+    if (!ue_p) {
+      ERROR_MSG_RET("UE with id %u not found\n", ueId);
+    }
+
+    // Trigger N2 handover
+    nr_HO_N2_trigger_telnet(RC.nrrrc[0], neighbour_pci, scell_pci, UE->rrc_ue_id);
+
+    // Print success message
+    prnt("RRC N2 handover triggered for UE %u with neighbour cell id %u\n",
+         ueId,
+         neighbour_pci);
+  }
   return 0;
 }
 
@@ -199,6 +267,7 @@ static telnetshell_cmddef_t cicmds[] = {
     {"force_ue_release", "[rnti(hex,opt)]", force_ue_release},
     {"force_ul_failure", "[rnti(hex,opt)]", force_ul_failure},
     {"trigger_f1_ho", "[rrc_ue_id(int,opt)]", rrc_gNB_trigger_f1_ho},
+    {"trigger_n2_ho", "[neighbour_pci(uint32_t),ueId(uint32_t)]", rrc_gNB_trigger_n2_ho},
     {"", "", NULL},
 };
 
