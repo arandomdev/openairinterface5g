@@ -114,7 +114,7 @@ void *imscope_record_thread(void *data_void_ptr)
 
   ImScopeData scope_cache[EXTRA_SCOPE_TYPES][NUM_CACHED_DATA];
   memset(scope_cache, 0, sizeof(scope_cache));
-  uint scope_cache_index[EXTRA_SCOPE_TYPES] = {0};
+  unsigned int scope_cache_index[EXTRA_SCOPE_TYPES] = {0};
   float kbytes_written = 0.0f;
   while (kbytes_written < MAX_KBYTES_WRITTEN_PER_SESSION) {
     ImScopeDumpInstruction dump = dump_instruction.load(std::memory_order::memory_order_relaxed);
@@ -147,7 +147,7 @@ void *imscope_record_thread(void *data_void_ptr)
     for (auto i = 0U; i < EXTRA_SCOPE_TYPES; i++) {
       ImScopeDataWrapper &scope_data = scope_array[i];
       if (scope_data.is_data_ready) {
-        uint cache_index = scope_cache_index[i]++ % NUM_CACHED_DATA;
+        unsigned int cache_index = scope_cache_index[i]++ % NUM_CACHED_DATA;
         ImScopeData tmp = scope_cache[i][cache_index];
         scope_cache[i][cache_index] = scope_data.data;
         scope_data.data = tmp;

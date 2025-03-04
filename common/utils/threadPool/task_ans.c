@@ -51,13 +51,13 @@
     AssertFatal(ret == 0, "sem_destroy(): ret=%d, errno=%d (%s)\n", ret, errno, strerror(errno)); \
   }
 
-void init_task_ans(task_ans_t* ans, uint num_jobs)
+void init_task_ans(task_ans_t* ans, unsigned int num_jobs)
 {
   ans->counter = num_jobs;
   seminit(ans->sem);
 }
 
-void completed_many_task_ans(task_ans_t* ans, uint num_completed_jobs)
+void completed_many_task_ans(task_ans_t* ans, unsigned int num_completed_jobs)
 {
   DevAssert(ans != NULL);
   // Using atomic counter in contention scenario to avoid locking in producers

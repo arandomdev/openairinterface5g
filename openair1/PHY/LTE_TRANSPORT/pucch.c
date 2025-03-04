@@ -101,9 +101,9 @@ static unsigned int pucchfmt3_subCarrierDeMapping(PHY_VARS_eNB *eNB, c16_t SubCa
   const unsigned int m = n3_pucch / D_NPUCCH_SF5;
 
   // Do detection
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint l = 0; l < D_NSYM1SF; l++) {
-      uint carrier_offset;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int l = 0; l < D_NSYM1SF; l++) {
+      unsigned int carrier_offset;
       if ((l<N_UL_symb) && ((m&1) == 0))
         carrier_offset = (m*6) + frame_parms->first_carrier_offset;
       else if ((l<N_UL_symb) && ((m&1) == 1))
@@ -116,10 +116,10 @@ static unsigned int pucchfmt3_subCarrierDeMapping(PHY_VARS_eNB *eNB, c16_t SubCa
       if (carrier_offset > frame_parms->ofdm_symbol_size)
         carrier_offset -= (frame_parms->ofdm_symbol_size);
 
-      uint symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
+      unsigned int symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
       c16_t *rxptr = (c16_t *)&eNB_common_vars->rxdataF[aa][symbol_offset];
 
-      for (uint k = 0; k < 12; k++, carrier_offset++) {
+      for (unsigned int k = 0; k < 12; k++, carrier_offset++) {
         SubCarrierDeMapData[aa][l][k] = rxptr[carrier_offset];
         if (carrier_offset==frame_parms->ofdm_symbol_size)
           carrier_offset = 0;
@@ -140,16 +140,16 @@ static unsigned int pucchfmt3_Baseseq_csh_remove(c16_t SubCarrierDeMapData[4][14
   int32_t     NSym1slot       = D_NSYM1SLT; // Symbol per 1slot
   int32_t     NSym1subframe   = D_NSYM1SF;  // Symbol per 1subframe
 
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) { // Antenna
-    for (uint symNo = 0; symNo < NSym1subframe; symNo++) { // Symbol
-      uint slotNo = symNo / NSym1slot;
-      uint sym = symNo % NSym1slot;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) { // Antenna
+    for (unsigned int symNo = 0; symNo < NSym1subframe; symNo++) { // Symbol
+      unsigned int slotNo = symNo / NSym1slot;
+      unsigned int sym = symNo % NSym1slot;
       int32_t n_cell_cs_div64 = (int32_t)(ncs_cell[2 * subframe + slotNo][sym] / 64.0);
       int32_t n_cell_cs_modNSC_RB = ncs_cell[2 * subframe + slotNo][sym] % 12;
       // for canceling e^(j*PI|_n_cs^cell(ns,l)/64_|/2).
       c16_t calctmp_beta = RotTBL[(n_cell_cs_div64) & 0x3];
 
-      for (uint k = 0; k < 12; k++) { // Sub Carrier
+      for (unsigned int k = 0; k < 12; k++) { // Sub Carrier
         // for canceling being cyclically shifted"(i+n_cs^cell(ns,l))".
         // e^((j*2PI(n_cs^cell(ns,l) mod N_SC)/N_SC)*k).
         c16_t calctmp_alphak = alphaTBL[(n_cell_cs_modNSC_RB * k) % 12];
@@ -204,16 +204,16 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
   //double d_theta[32]={0.0};
   //int32_t temp_theta[32][2]={0};
 
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint symNo = 0; symNo < D_NSYM1SF; symNo++) {
-      for (uint ip_ind = 0; ip_ind < D_NPUCCH_SF5 - 1; ip_ind++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
+      for (unsigned int ip_ind = 0; ip_ind < D_NPUCCH_SF5 - 1; ip_ind++) {
         IP_CsData_allsfavg[aa][symNo][ip_ind] = (c32_t){0};
       }
     }
   }
 
   // compute m[], m_self
-  for (uint i = 0; i < NUMBER_OF_UE_MAX; i++) {
+  for (unsigned int i = 0; i < NUMBER_OF_UE_MAX; i++) {
     m[i] = n3_pucch_array[i] / N_PUCCH_SF0; // N_PUCCH_SF0 = 5
 
     if(n3_pucch_array[i] == n3_pucch) {
@@ -222,8 +222,8 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
   }
 
   // compute n3_pucch_sameRB[] // Not 4 not be equally divided
-  uint same_m_number = 0;
-  for (uint i = 0; i < NUMBER_OF_UE_MAX; i++) {
+  unsigned int same_m_number = 0;
+  for (unsigned int i = 0; i < NUMBER_OF_UE_MAX; i++) {
     if(m[i] == m[m_self]) {
       n3_pucch_sameRB[same_m_number] = n3_pucch_array[i];
       same_m_number++;
@@ -231,7 +231,7 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
   }
 
   // compute n_oc1[], n_oc0[]
-  for (uint i = 0; i < same_m_number; i++) {
+  for (unsigned int i = 0; i < same_m_number; i++) {
     n_oc0[i] = n3_pucch_sameRB[i] % N_PUCCH_SF1; //N_PUCCH_SF1 = (shortened_format==0)? 5:4;
 
     if (N_PUCCH_SF1 == 5) {
@@ -242,7 +242,7 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
   }
 
   // np_n_array[][]
-  for (uint i = 0; i < same_m_number; i++) {
+  for (unsigned int i = 0; i < same_m_number; i++) {
     if (N_PUCCH_SF1 == 5) {
       np_n_array[0][i] = TBL_3_SF5_GEN_N_DASH_NS[n_oc0[i]]; //slot0
       np_n_array[1][i] = TBL_3_SF5_GEN_N_DASH_NS[n_oc1[i]]; //slot1
@@ -251,13 +251,13 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
       np_n_array[1][i] = TBL_3_SF4_GEN_N_DASH_NS[n_oc1[i]];
     }
   }
-  uint ip_ind = 0;
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint symNo = 0; symNo < D_NSYM1SF; symNo++) { // #define D_NSYM1SF       2*7
-      uint slotNo = symNo / D_NSYM1SLT;
-      uint sym = symNo % D_NSYM1SLT;
+  unsigned int ip_ind = 0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) { // #define D_NSYM1SF       2*7
+      unsigned int slotNo = symNo / D_NSYM1SLT;
+      unsigned int sym = symNo % D_NSYM1SLT;
 
-      for (uint k = 0; k < D_NSC1RB; k++) { // #define D_NSC1RB        12
+      for (unsigned int k = 0; k < D_NSC1RB; k++) { // #define D_NSC1RB        12
         // remove Base Sequence (c_r^*)*(r_l,m,m,n,k) = BsCshData
         BsCshData[aa][symNo][k] = c16MulConjShift(SubCarrierDeMapData[aa][symNo][k], ul_ref_sigs[u][v][0][k], 15);
         if(shortened_format == 1) {
@@ -293,8 +293,8 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
         // Calculated by the cyclic shift that is not used  S(ncs)_est
         ip_ind = 0;
 
-        for (uint i = 0; i < N_PUCCH_SF1; i++) {
-          for (uint j = 0; j < same_m_number; j++) { // np_n_array Loop
+        for (unsigned int i = 0; i < N_PUCCH_SF1; i++) {
+          for (unsigned int j = 0; j < same_m_number; j++) { // np_n_array Loop
             if(shortened_format == 1) {
               if(symNo < D_NSYM1SLT) { // if SF==1 slot0
                 if(TBL_3_SF4_GEN_N_DASH_NS[i] == np_n_array[0][j]) {
@@ -347,9 +347,9 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
     }
   }
   cd_t CsData_allavg[4][14] = {};
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint symNo = 0; symNo < D_NSYM1SF; symNo++) {
-      for (uint k = 0; k < D_NSC1RB; k++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
         CsData_allavg[aa][symNo].r += CsData_temp[aa][symNo][k].r;
         CsData_allavg[aa][symNo].i += CsData_temp[aa][symNo][k].i;
       }
@@ -357,16 +357,16 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
   }
 
   // Frequency deviation estimation
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint k = 0; k < 12; k++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int k = 0; k < 12; k++) {
       c16_t tmp1 = c16MulConjShift(CsData_temp[aa][1][k], CsData_temp[aa][5][k], 8);
       c16_t tmp2 = c16MulConjShift(CsData_temp[aa][8][k], CsData_temp[aa][12][k], 8);
       delta_theta[aa][k] = atan2(tmp1.i + tmp2.i, tmp1.r + tmp2.r) / 4.0;
     }
   }
 
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint k = 0; k < D_NSC1RB; k++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
       cd_t dt = {cos(delta_theta[aa][k] * 4), sin(delta_theta[aa][k] * 4)};
       cd_t tmp = cdMulConj(CsData_allavg[aa][5], dt);
       ChestValue[aa][0][k].r = (CsData_allavg[aa][1].r + tmp.r) / (2 * D_NSC1RB);
@@ -379,13 +379,13 @@ static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14]
 
   *Interpw = 0;
 
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
     if(ip_ind == 0) {//ip_ind= The total number of cyclic shift of non-use
       *Interpw = 1;
       break;
     }
 
-    for (uint i = 0; i < ip_ind; i++) {
+    for (unsigned int i = 0; i < ip_ind; i++) {
       int64_t IP_allavg = squaredMod(IP_CsData_allsfavg[aa][1][i]) >> 8;
       IP_allavg += squaredMod(IP_CsData_allsfavg[aa][5][i]) >> 8;
       IP_allavg += squaredMod(IP_CsData_allsfavg[aa][8][i]) >> 8;
@@ -403,15 +403,15 @@ static unsigned int pucchfmt3_Equalization(c16_t CshData_fmt3[4][14][12],
                                            c16_t ChestValue[4][2][12],
                                            LTE_DL_FRAME_PARMS *frame_parms)
 {
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    uint sltNo = 0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    unsigned int sltNo = 0;
 
-    for (uint symNo = 0; symNo < D_NSYM1SF; symNo++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
       if(symNo >= D_NSYM1SLT) {
         sltNo = 1;
       }
 
-      for (uint k = 0; k < D_NSC1RB; k++) {
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
         ChdetAfterValue_fmt3[aa][symNo][k] = c16MulConjShift(CshData_fmt3[aa][symNo][k], ChestValue[aa][sltNo][k], 8);
       }
     }
@@ -426,13 +426,13 @@ static unsigned int pucchfmt3_FrqDevRemove(c16_t ChdetAfterValue_fmt3[4][14][12]
                                            c16_t RemoveFrqDev_fmt3[4][2][5][12],
                                            LTE_DL_FRAME_PARMS *frame_parms)
 {
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
-      uint n = 0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+      unsigned int n = 0;
 
-      for (uint symNo1slt = 0; symNo1slt < D_NSYM1SLT; symNo1slt++) {
+      for (unsigned int symNo1slt = 0; symNo1slt < D_NSYM1SLT; symNo1slt++) {
         if(!((symNo1slt==1) || (symNo1slt==5))) {
-          for (uint k = 0; k < D_NSC1RB; k++) {
+          for (unsigned int k = 0; k < D_NSC1RB; k++) {
             cd_t calctmp = {cos(delta_theta[aa][k] * (n - 1)), sin(delta_theta[aa][k] * (n - 1))};
             cd_t tmp = {ChdetAfterValue_fmt3[aa][(sltNo * D_NSYM1SLT) + symNo1slt][k].r,
                         ChdetAfterValue_fmt3[aa][(sltNo * D_NSYM1SLT) + symNo1slt][k].i};
@@ -472,9 +472,9 @@ static unsigned int pucchfmt3_OrthSeqRemove(c16_t RemoveFrqDev_fmt3[4][2][5][12]
                                             unsigned int n3_pucch,
                                             LTE_DL_FRAME_PARMS *frame_parms)
 {
-  for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-    for (uint sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
-      uint noc, Npucch_sf;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+      unsigned int noc, Npucch_sf;
       if(shortened_format == 1) {
         if(sltNo == 0) {
           noc = n3_pucch % D_NPUCCH_SF4;
@@ -493,8 +493,8 @@ static unsigned int pucchfmt3_OrthSeqRemove(c16_t RemoveFrqDev_fmt3[4][2][5][12]
         }
       }
 
-      for (uint n = 0; n < Npucch_sf; n++) {
-        for (uint k = 0; k < D_NSC1RB; k++) {
+      for (unsigned int n = 0; n < Npucch_sf; n++) {
+        for (unsigned int k = 0; k < D_NSC1RB; k++) {
           if ((sltNo == 1) && (shortened_format == 1)) {
             Fmt3xDataRmvOrth[aa][sltNo][n][k] = c16MulConjShift(RemoveFrqDev_fmt3[aa][sltNo][n][k], TBL_3_SF4[noc][n], 15);
           } else {
@@ -514,18 +514,18 @@ static unsigned int pucchfmt3_AvgAnt(c16_t Fmt3xDataRmvOrth[4][2][5][12],
                                      unsigned int shortened_format,
                                      LTE_DL_FRAME_PARMS *frame_parms)
 {
-  for (uint sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
-    uint Npucch_sf;
+  for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+    unsigned int Npucch_sf;
     if((sltNo == 1) && (shortened_format == 1)) {
       Npucch_sf = D_NPUCCH_SF4;
     } else {
       Npucch_sf = D_NPUCCH_SF5;
     }
 
-    for (uint n = 0; n < Npucch_sf; n++) {
-      for (uint k = 0; k < D_NSC1RB; k++) {
+    for (unsigned int n = 0; n < Npucch_sf; n++) {
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
         Fmt3xDataAvgAnt[sltNo][n][k] = (c16_t){0};
-        for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
           Fmt3xDataAvgAnt[sltNo][n][k].r += Fmt3xDataRmvOrth[aa][sltNo][n][k].r / frame_parms->nb_antennas_rx;
           Fmt3xDataAvgAnt[sltNo][n][k].i += Fmt3xDataRmvOrth[aa][sltNo][n][k].i / frame_parms->nb_antennas_rx;
         }
@@ -539,18 +539,18 @@ static unsigned int pucchfmt3_AvgAnt(c16_t Fmt3xDataRmvOrth[4][2][5][12],
 /* averaging symbol */
 static unsigned int pucchfmt3_AvgSym(c16_t Fmt3xDataAvgAnt[2][5][12], c16_t Fmt3xDataAvgSym[2][12], unsigned int shortened_format)
 {
-  for (uint sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
-    uint Npucch_sf;
+  for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+    unsigned int Npucch_sf;
     if((sltNo == 1) && (shortened_format == 1)) {
       Npucch_sf = D_NPUCCH_SF4;
     } else {
       Npucch_sf = D_NPUCCH_SF5;
     }
 
-    for (uint k = 0; k < D_NSC1RB; k++) {
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
       Fmt3xDataAvgSym[sltNo][k] = (c16_t){0};
 
-      for (uint n = 0; n < Npucch_sf; n++) {
+      for (unsigned int n = 0; n < Npucch_sf; n++) {
         Fmt3xDataAvgSym[sltNo][k].r += Fmt3xDataAvgAnt[sltNo][n][k].r / Npucch_sf;
         Fmt3xDataAvgSym[sltNo][k].i += Fmt3xDataAvgAnt[sltNo][n][k].i / Npucch_sf;
       }
@@ -589,8 +589,8 @@ static unsigned int pucchfmt3_Descramble(c16_t IFFTOutData_Fmt3[2][12],
   uint32_t s1 = lte_gold_generic(&x1, &cinit, 0);
   int16_t i = 0;
 
-  for (uint m = 0; m < D_NSLT1SF; m++) {
-    for (uint k = 0; k < D_NSC1RB; k++) {
+  for (unsigned int m = 0; m < D_NSLT1SF; m++) {
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
       uint32_t s = (i < 32) ? s0 : s1;
       int16_t j = (i < 32) ? i : (i - 32);
       int16_t c = ((s >> j) & 1);
@@ -618,7 +618,7 @@ static int16_t pucchfmt3_Decode(int16_t b[48], unsigned int subframe, int16_t DT
 
   int32_t Rho_tmp = 0;
   int16_t c = 0;
-  for (uint i = 0; i < 48; i++) {
+  for (unsigned int i = 0; i < 48; i++) {
     Rho_tmp += b[i] * (1-2*chcod_tbl[c][i]);
   }
 
@@ -628,7 +628,7 @@ static int16_t pucchfmt3_Decode(int16_t b[48], unsigned int subframe, int16_t DT
   for(c=1; c<bit_pattern; c++) {
     Rho_tmp = 0;
 
-    for (uint i = 0; i < 48; i++) {
+    for (unsigned int i = 0; i < 48; i++) {
       Rho_tmp += b[i] * (1-2*chcod_tbl[c][i]);
     }
 
@@ -671,12 +671,12 @@ uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int s
   int calc_cnt = 0;
 
   // loop over 2 slots
-  for (uint n_cs_base = 0; n_cs_base < 12; n_cs_base++) {
+  for (unsigned int n_cs_base = 0; n_cs_base < 12; n_cs_base++) {
     c16_t *zptr = z;
-    for (uint ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
+    for (unsigned int ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
       //loop over symbols in slot
-      for (uint l = 0; l < N_UL_symb; l++) {
-        uint n_cs = eNB->ncs_cell[ns][l] + n_cs_base;
+      for (unsigned int l = 0; l < N_UL_symb; l++) {
+        unsigned int n_cs = eNB->ncs_cell[ns][l] + n_cs_base;
         if(((l>1)&&(l<N_UL_symb-2)) || ((ns==(1+(subframe<<1))) && (shortened_format==1)) ){
           zptr += 12;
           continue;
@@ -688,10 +688,10 @@ uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int s
           W = (c16_t){W4_nouse[l - N_UL_symb + 4], 0};
         }
 
-        uint alpha_ind = 0;
+        unsigned int alpha_ind = 0;
         // compute output sequence
 
-        for (uint n = 0; n < 12; n++) {
+        for (unsigned int n = 0; n < 12; n++) {
           // this is r_uv^alpha(n)
           c16_t tmp = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
           // this is S(ns)*w_noc(m)*r_uv^alpha(n)
@@ -705,7 +705,7 @@ uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int s
 
     const unsigned int m = 1;
 
-    uint nsymb = N_UL_symb << 1;
+    unsigned int nsymb = N_UL_symb << 1;
 
     zptr = z;
 
@@ -730,7 +730,7 @@ uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int s
         if (re_offset > frame_parms->ofdm_symbol_size)
           re_offset -= (frame_parms->ofdm_symbol_size);
 
-        uint symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
+        unsigned int symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
         c16_t *rxptr = (c16_t *)&common_vars->rxdataF[aa][symbol_offset];
 
         for (int i = 0; i < 12; i++, j++, re_offset++) {
@@ -850,7 +850,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #ifdef DEBUG_PUCCH_RX
     printf("[eNB] PUCCH: cNcs1/deltaPUCCH_Shift %d, Nprime %d, n1_pucch %d\n",thres,Nprime,n1_pucch);
 #endif
-    const uint N_UL_symb = (frame_parms->Ncp == NORMAL) ? 7 : 6;
+    const unsigned int N_UL_symb = (frame_parms->Ncp == NORMAL) ? 7 : 6;
     int16_t nprime0, nprime1;
     if (n1_pucch < thres)
       nprime0=n1_pucch;
@@ -860,8 +860,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     if (n1_pucch >= thres)
       nprime1= ((c*(nprime0+1))%((12*c/deltaPUCCH_Shift)+1))-1;
     else {
-      uint d = (frame_parms->Ncp == 0) ? 2 : 0;
-      uint h = (nprime0 + d) % (c * Nprime_div_deltaPUCCH_Shift);
+      unsigned int d = (frame_parms->Ncp == 0) ? 2 : 0;
+      unsigned int h = (nprime0 + d) % (c * Nprime_div_deltaPUCCH_Shift);
       nprime1 = (h/c) + (h%c)*Nprime_div_deltaPUCCH_Shift;
     }
 
@@ -885,17 +885,17 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     unsigned int n_oc = n_oc0;
     c16_t W = {};
     // loop over 2 slots
-    for (uint ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
-      uint S;
+    for (unsigned int ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
+      unsigned int S;
       if ((nprime&1) == 0)
         S=0;  // 1
       else
         S=1;  // j
 
       //loop over symbols in slot
-      for (uint l = 0; l < N_UL_symb; l++) {
+      for (unsigned int l = 0; l < N_UL_symb; l++) {
         // Compute n_cs (36.211 p. 18)
-        uint n_cs = eNB->ncs_cell[ns][l];
+        unsigned int n_cs = eNB->ncs_cell[ns][l];
 
         if (frame_parms->Ncp==0) { // normal CP
           n_cs = (n_cs + (nprime * deltaPUCCH_Shift + (n_oc % deltaPUCCH_Shift)) % Nprime) % 12;
@@ -903,7 +903,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
           n_cs = (n_cs + (nprime * deltaPUCCH_Shift + (n_oc >> 1)) % Nprime) % 12;
         }
 
-        uint refs = 0;
+        unsigned int refs = 0;
 
         // Comput W_noc(m) (36.211 p. 19)
         if ((ns==(1+(subframe<<1))) && (shortened_format==1)) {  // second slot and shortened format
@@ -940,10 +940,10 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #ifdef DEBUG_PUCCH_RX
         printf("[eNB] PUCCH: ncs[%d][%d]=%d, W_re %d, W_im %d, S %d, refs %d\n",ns,l,n_cs,W_re,W_im,S,refs);
 #endif
-        uint alpha_ind = 0;
+        unsigned int alpha_ind = 0;
         // compute output sequence
 
-        for (uint n = 0; n < 12; n++) {
+        for (unsigned int n = 0; n < 12; n++) {
           // this is r_uv^alpha(n)
           c16_t tmp = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
           // this is S(ns)*w_noc(m)*r_uv^alpha(n)
@@ -962,8 +962,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       n_oc  =n_oc1;
     } // ns
 
-    uint rem = ((((deltaPUCCH_Shift * Ncs1_div_deltaPUCCH_Shift) >> 3) & 7) > 0) ? 1 : 0;
-    uint m = (n1_pucch < thres) ? NRB2
+    unsigned int rem = ((((deltaPUCCH_Shift * Ncs1_div_deltaPUCCH_Shift) >> 3) & 7) > 0) ? 1 : 0;
+    unsigned int m = (n1_pucch < thres) ? NRB2
                                 : (((n1_pucch - thres) / (12 * c / deltaPUCCH_Shift)) + NRB2
                                    + ((deltaPUCCH_Shift * Ncs1_div_deltaPUCCH_Shift) >> 3) + rem);
 #ifdef DEBUG_PUCCH_RX
@@ -972,9 +972,9 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     unsigned int nsymb = N_UL_symb << 1;
     zptr = z;
     // Do detection
-    for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
       for (int j = 0, l = 0; l < nsymb; l++) {
-        uint re_offset;
+        unsigned int re_offset;
         if (br_flag > 0 ) {
           if ((m&1) == 0)
             re_offset = (m*6) + frame_parms->first_carrier_offset;
@@ -994,7 +994,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
         if (re_offset > frame_parms->ofdm_symbol_size)
           re_offset -= (frame_parms->ofdm_symbol_size);
 
-        uint symbol_offset = frame_parms->ofdm_symbol_size * l;
+        unsigned int symbol_offset = frame_parms->ofdm_symbol_size * l;
         c16_t *rxptr = (c16_t *)&common_vars->rxdataF[aa][symbol_offset];
 
         for (int i = 0; i < 12; i++, j++, re_offset++) {
@@ -1022,7 +1022,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #endif
       stat_max = 0;
 
-      for (uint phase = 0; phase < 7; phase++) {
+      for (unsigned int phase = 0; phase < 7; phase++) {
         int stat=0;
         c32_t stat0_cmul[4] = {};
         c32_t stat1_cmul[4] = {};
@@ -1055,7 +1055,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
         if (stat>stat_max) {
           stat_max = stat;
           phase_max = phase;
-          for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
             stat0_max[aa] = stat0[aa];
             stat1_max[aa] = stat1[aa];
           }
@@ -1111,7 +1111,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       LOG_D(PHY,"Doing PUCCH detection for format 1a/1b\n");
 #endif
       int stat_re=0,stat_im=0;
-      for (uint phase = 0; phase < 7; phase++) {
+      for (unsigned int phase = 0; phase < 7; phase++) {
         int stat=0;
         c32_t stat0_cumul[4] = {};
         c32_t stat1_cumul[4] = {};
@@ -1124,10 +1124,10 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
             // compute received energy first slot, seperately for data and reference
             // by coherent combining across symbols but not resource elements
             // Note: assumption is that channel is stationary over symbols in slot after CFO
-            uint off = re;
+            unsigned int off = re;
             const c16_t *cfo = (c16_t *)(frame_parms->Ncp == 0 ? &cfo_pucch_np[14 * phase] : &cfo_pucch_ep[12 * phase]);
 
-            for (uint l = 0; l < (nsymb >> 1); l++) {
+            for (unsigned int l = 0; l < (nsymb >> 1); l++) {
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               if ((l<2)||(l>(nsymb>>1) - 3)) {  //data symbols
                 stat0_cumul[aa].r += tmp.r;
@@ -1143,7 +1143,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
             // this is total energy received, summed over data and reference
             stat0[aa] += (squaredMod(stat0_cumul[aa]) + squaredMod(stat0_ref_cumul[aa]))/nsymb;
             // now second slot
-            for (uint l2 = 0, l = (nsymb >> 1); l < nsymb; l++, l2++) {
+            for (unsigned int l2 = 0, l = (nsymb >> 1); l < nsymb; l++, l2++) {
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l2], 15);
               if ((l2<2) || ((l2>(nsymb>>1) - 3)) ) {  // data symbols
                 stat1_cumul[aa].r += tmp.r;
@@ -1185,7 +1185,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       // Not 100% sure
         
       if (sigma2_dB<(dB_fixed(stat_max) - (IS_SOFTMODEM_IQPLAYER?0:pucch1_thres)) ) {//
-        uint chL = (nsymb >> 1) - 4;
+        unsigned int chL = (nsymb >> 1) - 4;
         chest_mag=0;
         const c16_t *cfo = (c16_t *)(frame_parms->Ncp == 0 ? &cfo_pucch_np[14 * phase_max] : &cfo_pucch_ep[12 * phase_max]);
         c16_t chest0[4][12];
@@ -1224,11 +1224,11 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
         // now do channel matched filter
         c32_t stat0_cumul[4] = {};
         c32_t stat1_cumul[4] = {};
-        for (uint aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
-          for (uint re = 0; re < 12; re++) {
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int re = 0; re < 12; re++) {
             // first slot, left of RS
-            for (uint l = 0; l < 2; l++) {
-              uint off = re + 12 * l;
+            for (unsigned int l = 0; l < 2; l++) {
+              unsigned int off = re + 12 * l;
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               c16_t tmp2 = c16MulConjShift(tmp, chest0[aa][re], log2_maxh);
               stat0_cumul[aa].r += tmp2.r;
@@ -1236,8 +1236,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
             }
 
             // first slot, right of RS
-            for (uint l = (nsymb >> 1) - 2; l < (nsymb >> 1); l++) {
-              uint off = re + 12 * l;
+            for (unsigned int l = (nsymb >> 1) - 2; l < (nsymb >> 1); l++) {
+              unsigned int off = re + 12 * l;
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               c16_t tmp2 = c16MulConjShift(tmp, chest0[aa][re], log2_maxh);
               stat0_cumul[aa].r += tmp2.r;
@@ -1250,8 +1250,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #endif
 
             // second slot, left of RS
-            for (uint l = 0; l < 2; l++) {
-              uint off = re + 12 * l + (nsymb >> 1) * 12;
+            for (unsigned int l = 0; l < 2; l++) {
+              unsigned int off = re + 12 * l + (nsymb >> 1) * 12;
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               c16_t tmp2 = c16MulConjShift(tmp, chest1[aa][re], log2_maxh);
               stat1_cumul[aa].r += tmp2.r;
@@ -1259,8 +1259,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
             }
 
             // second slot, right of RS
-            for (uint l = (nsymb >> 1) - 2; l < (nsymb >> 1) - 1; l++) {
-              uint off = re + 12 * l + (nsymb >> 1) * 12;
+            for (unsigned int l = (nsymb >> 1) - 2; l < (nsymb >> 1) - 1; l++) {
+              unsigned int off = re + 12 * l + (nsymb >> 1) * 12;
               c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               c16_t tmp2 = c16MulConjShift(tmp, chest1[aa][re], log2_maxh);
               stat1_cumul[aa].r += tmp2.r;

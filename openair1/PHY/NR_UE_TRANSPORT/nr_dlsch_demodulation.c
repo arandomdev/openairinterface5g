@@ -100,13 +100,13 @@ static void nr_dlsch_layer_demapping(int16_t *llr_cw[2],
                                      uint32_t length,
                                      int32_t codeword_TB0,
                                      int32_t codeword_TB1,
-                                     uint sz,
+                                     unsigned int sz,
                                      int16_t llr_layers[][sz]);
 
 /* compute LLR */
 static void nr_dlsch_llr(uint32_t rx_size_symbol,
                          int nbRx,
-                         uint sz,
+                         unsigned int sz,
                          int16_t layer_llr[][sz],
                          int32_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
                          int32_t dl_ch_mag[rx_size_symbol],
@@ -1780,7 +1780,7 @@ static void nr_dlsch_layer_demapping(int16_t *llr_cw[2],
                                      uint32_t length,
                                      int32_t codeword_TB0,
                                      int32_t codeword_TB1,
-                                     uint sz,
+                                     unsigned int sz,
                                      int16_t llr_layers[][sz])
 {
   switch (Nl) {
@@ -1815,7 +1815,7 @@ static void nr_dlsch_layer_demapping(int16_t *llr_cw[2],
 
 static void nr_dlsch_llr(uint32_t rx_size_symbol,
                          int nbRx,
-                         uint sz,
+                         unsigned int sz,
                          int16_t layer_llr[][sz],
                          int32_t rxdataF_comp[][nbRx][rx_size_symbol * NR_SYMBOLS_PER_SLOT],
                          int32_t dl_ch_mag[rx_size_symbol],

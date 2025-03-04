@@ -718,7 +718,7 @@ void nr_generate_pucch2(const PHY_VARS_NR_UE *ue,
     temp_x2 *= 14UL * nr_slot_tx + l + startingSymbolIndex + 1;
     temp_x2 *= 2UL * pucch_pdu->dmrs_scrambling_id + 1;
     temp_x2 = (temp_x2 + 2ULL * pucch_pdu->dmrs_scrambling_id) % (1UL << 31);
-    uint idxGold = startingPRB >> 2;
+    unsigned int idxGold = startingPRB >> 2;
     uint32_t *seq = gold_cache(temp_x2, idxGold + pucch_pdu->prb_size);
     int m = 0;
     for (int rb=0; rb<pucch_pdu->prb_size; rb++) {
