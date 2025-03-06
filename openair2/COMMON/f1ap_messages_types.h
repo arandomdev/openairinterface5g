@@ -92,12 +92,6 @@ typedef struct f1ap_net_config_t {
   uint16_t DUport;
 } f1ap_net_config_t;
 
-typedef struct f1ap_plmn_t {
-  uint16_t mcc;
-  uint16_t mnc;
-  uint8_t  mnc_digit_length;
-} f1ap_plmn_t;
-
 typedef struct f1ap_cp_tnl_s {
   in_addr_t tl_address; // currently only IPv4 supported
   uint16_t port;
@@ -129,7 +123,7 @@ typedef struct f1ap_tdd_info_t {
 
 typedef struct f1ap_served_cell_info_t {
   // NR CGI
-  f1ap_plmn_t plmn;
+  plmn_id_t plmn;
   uint64_t nr_cellid; // NR Global Cell Id
 
   // NR Physical Cell Ids
@@ -192,7 +186,7 @@ typedef struct f1ap_sib_msg_t {
 } f1ap_sib_msg_t;
 
 typedef struct served_cells_to_activate_s {
-  f1ap_plmn_t plmn;
+  plmn_id_t plmn;
   // NR Global Cell Id
   uint64_t nr_cellid;
   /// NRPCI [int 0..1007]
@@ -239,7 +233,7 @@ typedef struct f1ap_gnb_cu_configuration_update_acknowledge_s {
   uint16_t num_cells_failed_to_be_activated;
   struct {
     // NR CGI
-    f1ap_plmn_t plmn;
+    plmn_id_t plmn;
     uint64_t nr_cellid;
     uint16_t cause;
   } cells_failed_to_be_activated[F1AP_MAX_NB_CELLS];
@@ -256,7 +250,7 @@ typedef struct f1ap_gnb_cu_configuration_update_acknowledge_s {
   struct {
     uint32_t gNB_CU_ue_id;
     // NR CGI
-    f1ap_plmn_t ue_plmn;
+    plmn_id_t ue_plmn;
     uint64_t ue_nr_cellid;
   } dedicatedSIDeliveryNeededUEs[F1AP_MAX_NO_UE_ID];
 } f1ap_gnb_cu_configuration_update_acknowledge_t;
@@ -283,7 +277,7 @@ typedef struct f1ap_gnb_du_configuration_update_s {
   /// int cells_to_modify
   uint16_t num_cells_to_modify;
   struct {
-    f1ap_plmn_t old_plmn;
+    plmn_id_t old_plmn;
     uint64_t old_nr_cellid; // NR Global Cell Id
     f1ap_served_cell_info_t info;
     f1ap_gnb_du_system_info_t *sys_info;
@@ -293,7 +287,7 @@ typedef struct f1ap_gnb_du_configuration_update_s {
   uint16_t num_cells_to_delete;
   struct {
     // NR CGI
-    f1ap_plmn_t plmn;
+    plmn_id_t plmn;
     uint64_t nr_cellid; // NR Global Cell Id
   } cell_to_delete[F1AP_MAX_NB_CELLS];
   /// gNB-DU unique ID, at least within a gNB-CU (0 .. 2^36 - 1)
@@ -333,7 +327,7 @@ typedef struct f1ap_dl_rrc_message_s {
 
 typedef struct f1ap_initial_ul_rrc_message_s {
   uint32_t gNB_DU_ue_id;
-  f1ap_plmn_t plmn;
+  plmn_id_t plmn;
   /// nr cell id
   uint64_t nr_cellid;
   /// crnti
@@ -475,7 +469,7 @@ typedef struct f1ap_ue_context_setup_s {
   uint32_t gNB_CU_ue_id;
   uint32_t gNB_DU_ue_id;
   // SpCell Info
-  f1ap_plmn_t plmn;
+  plmn_id_t plmn;
   uint64_t nr_cellid;
   uint8_t servCellIndex;
   uint8_t *cellULConfigured;
@@ -549,7 +543,7 @@ typedef struct f1ap_paging_ind_s {
   uint16_t ueidentityindexvalue;
   uint64_t fiveg_s_tmsi;
   uint8_t  fiveg_s_tmsi_length;
-  f1ap_plmn_t plmn;
+  plmn_id_t plmn;
   uint64_t nr_cellid;
   uint8_t  paging_drx;
 } f1ap_paging_ind_t;
