@@ -3,7 +3,9 @@ handovers are supported.
 
 [[_TOC_]]
 
-# Considered setup for F1 handover
+# F1 handover
+
+## Setup assumptions
 
 We consider one CU and two DUs, connected over F1. The UE is initially
 connected over the radio interface ("Uu") to DU0. Via movement to a new
@@ -13,13 +15,13 @@ same.
 
 ![F1 Handover setup](./RRC/ho.png)
 
-# Steps to run F1 handover with OAI UE
+## Steps to run F1 handover with OAI UE
 
 Measurement reporting and processing of RRC Reconfiguration for Mobility are
 not completed at the UE. Nevertheless, it is possible to make simple handover
 tests without any radio setup, on a single PC, with the OAI UE, in RFsimulator.
 
-## Build with telnet support
+### Build with telnet support
 
 Since the UE does not support any measurement reporting, it cannot trigger a
 handover on its own; it has to be triggered manually through telnet. Thus,
@@ -27,7 +29,7 @@ build both gNB and UE as well as activate the build of telnet to that purpose:
 
     ./build_oai --ninja --nrUE --gNB --build-lib telnetsrv
 
-## Run the setup
+### Run the setup
 
 This tutorial assumes you have a core network running; [refer to the
 corresponding tutorial](./NR_SA_Tutorial_OAI_CN5G.md) if this is not the case
@@ -90,7 +92,7 @@ A number of remarks:
 1. In some cases, if the RFsim server is at the UE, the whole system can block;
    in this case, stop UE and all DUs and restart (the CU can keep running).
 
-## Additional information to the manual HO trigger
+### Additional information to the manual HO trigger
 
 You can trigger the handover manually by logging in through telnet:
 
@@ -113,7 +115,7 @@ and you have to manually type the CU UE ID. You can see a list of all UEs in
 the file `nrRRC_stats.log` that is printed periodically in the working
 directory of the CU.
 
-# Steps to run F1 handover with COTS UE
+## Steps to run F1 handover with COTS UE
 
 You can do handover across DUs with a COTS UE. Note that these DUs should be
 separated by at least multiple meters to ensure that the UE will receive
@@ -126,7 +128,7 @@ For UEs, we verified Quectel modules and iPhones. Note, though, that not all
 phones might work; for instance, we did not achieve handovers with a OnePlus
 Nord, yet.
 
-## Steps
+### Steps
 
 First, make sure that you can run both DUs with the CU independently. Use the
 same radio hardware for both radios to ensure that both cells can be received
@@ -167,7 +169,7 @@ through measurements telling the CU that one DU is stronger than others.
 Hence, "forcing" a handover just means that you manually trigger the handover,
 instead of waiting for UE measurement report.)
 
-## Example neighbour configuration
+### Example neighbour configuration
 
 Below is an example neighbour configuration. It is based on this DU information
 gathered from `nrRRC_stats.log` at the CU:
@@ -247,13 +249,13 @@ nr_measurement_configuration = {
 };
 ```
 
-# Handovers triggers and NTN
+## Handovers triggers and NTN
 
 Typically, in terrestrial networks, channel measurements as well as criteria
 such as load in base stations, is used to determine when and where to handover
 a UE.
 
-## NTN
+### NTN
 
 Doppler spreading and time selectivity of the channel are already a challenge
 for conventional terrestrial networks. However, in the context of
@@ -308,7 +310,7 @@ are as follows:
   which sends the preamble. However, UEs with GNSS support are required to
   perform this method.
 
-## Simple location/time-based trigger
+### Simple location/time-based trigger
 
 A location-based handover trigger, somewhat aligned with 3GPP Rel.17, taking
 advantage of deterministic satellite movement, can be implemented whereby it is
@@ -327,3 +329,65 @@ while true; do
   sleep 15
 done
 ```
+
+# N2 Handover
+
+## Setup assumptions
+
+An N2 handover involves the transfer of a UE from one gNB to another via the 5G core network. Unlike F1 handover, where the CU handles the process internally between its DUs, N2 handover requires signaling through the AMF, making it a core-network-based handover.
+
+We assume:
+
+* Two independent gNBs connected to the same 5GC via N2 interface.
+* A UE initially connected to gNB-PCI0, which will be handed over to gNB-PCI1.
+* Handover is triggered by either by decision based measurement event (e.g. A3) or telnet command.
+
+## Steps to run N2 handover with OAI UE
+
+### 1. Build and run the OAI setup
+
+Similarly to F1 handover, UE does not support any measurement reporting and handover is triggered by
+telnet command. Therefore, ensure that both gNBs and UE are built with telnet support:
+
+```sh
+./build_oai --ninja --nrUE --gNB --build-lib telnetsrv
+```
+
+Run the 5G Core Network if not already running. See [OAI CN5G tutorial](./NR_SA_Tutorial_OAI_CN5G.md).
+
+### 2. Start the first gNB (gNB-PCI0)
+
+e.g.
+
+```sh
+sudo ./nr-softmodem -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.conf --telnetsrv --telnetsrv.shrmod ci --gNBs.[0].min_rxtxtime 6 --rfsim --rfsimulator.serveraddr 127.0.0.1
+```
+
+### 3. Start the UE
+
+e.g.
+
+```sh
+sudo ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --uicc0.imsi 001010000000001 -O ../../../ci-scripts/conf_files/nrue.uicc.conf --rfsimulator.serveraddr server
+```
+
+Ensure the UE successfully registers with the network.
+
+### 4. Start the second gNB (gNB PCI1)
+
+e.g.
+
+```sh
+sudo ./nr-softmodem -O ../../../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.106prb.rfsim.pci1.conf --sa --rfsim --telnetsrv --telnetsrv.shrmod ci --gNBs.[0].min_rxtxtime 6 --rfsimulator.serveraddr 127.0.0.1
+```
+
+### 5. Trigger the N2 handover
+
+From gNB-PCI0, use the following command:
+
+```sh
+echo ci trigger_n2_ho 1,1 | nc 127.0.0.1 9090 && echo
+```
+where the input parameters correspond to the PCI of the neighbor call and the RRC ID of the UE.
+
+This will initiate the N2 handover on the source gNB.
