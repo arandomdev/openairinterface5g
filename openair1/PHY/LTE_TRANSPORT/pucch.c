@@ -1113,10 +1113,10 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       int stat_re=0,stat_im=0;
       for (unsigned int phase = 0; phase < 7; phase++) {
         int stat=0;
-        c32_t stat0_cumul[4] = {};
-        c32_t stat1_cumul[4] = {};
-        c32_t stat0_ref_cumul[4] = {};
-        c32_t stat1_ref_cumul[4] = {};
+        c64_t stat0_cumul[4] = {};
+        c64_t stat1_cumul[4] = {};
+        c64_t stat0_ref_cumul[4] = {};
+        c64_t stat1_ref_cumul[4] = {};
         uint32_t stat0[4]={};
         uint32_t stat1[4]={};
         for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
