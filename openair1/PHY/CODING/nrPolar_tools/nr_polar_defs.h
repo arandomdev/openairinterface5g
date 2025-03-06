@@ -295,7 +295,7 @@ static inline void nr_polar_deinterleaver(uint8_t *input, uint8_t *output, uint1
 static inline void nr_polar_rm_deinterleaving_lut(uint16_t *out, const int E)
 {
   int16_t in[E];
-  for (unsigned int i = 0; i < E; i++)
+  for (int i = 0; i < E; i++)
     in[i] = i;
   int T = ceil((sqrt(8 * E + 1) - 1) / 2);
   int v_tab[T][T];
