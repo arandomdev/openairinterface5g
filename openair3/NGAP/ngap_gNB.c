@@ -334,6 +334,57 @@ void ngap_gNB_init(void) {
   itti_mark_task_ready(TASK_NGAP);
 }
 
+static int ngap_gNB_handover_failure(instance_t instance, const ngap_handover_failure_t *msg)
+{
+  ngap_gNB_ue_context_t *ue_context_p = NULL;
+  uint8_t *buffer = NULL;
+  uint32_t length;
+
+  /* Retrieve the NGAP gNB instance associated with Mod_id */
+  ngap_gNB_instance_t *ngap_gNB_instance_p = ngap_gNB_get_instance(instance);
+  DevAssert(msg != NULL);
+  DevAssert(ngap_gNB_instance_p != NULL);
+
+  NGAP_NGAP_PDU_t *pdu = encode_ng_handover_failure(msg);
+  if (!pdu) {
+    NGAP_ERROR("Failed to encode NG Handover Failure\n");
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, pdu);
+    return -1;
+  }
+
+  ngap_gNB_amf_data_t *ngap_amf_data_p = ngap_gNB_get_AMF_from_instance(ngap_gNB_instance_p);
+
+  if ((ue_context_p = ngap_get_ue_context_from_amf_ue_ngap_id(msg->amf_ue_ngap_id)) == NULL) {
+    NGAP_WARN("Failed to find ue context associated with amf_ue_ngap_id: %ld\n", msg->amf_ue_ngap_id);
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, pdu);
+    return -1;
+  }
+
+  if (ngap_gNB_encode_pdu(pdu, &buffer, &length) < 0) {
+    NGAP_ERROR("Failed to encode HANDOVER FAILURE MESSAGE\n");
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, pdu);
+    return -1;
+  }
+
+  if (ue_context_p != NULL) {
+    //  UE associated signalling -> use the allocated stream
+    ngap_gNB_itti_send_sctp_data_req(ngap_gNB_instance_p->instance,
+                                     ue_context_p->amf_ref->assoc_id,
+                                     buffer,
+                                     length,
+                                     ue_context_p->tx_stream);
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, &pdu);
+
+    return 0;
+  }
+
+  /*In this case there is no ue context since HO REQ might be failed at preprocessing stage itself.
+   * so sctp message send to AMF based on its assoc_id  */
+  ngap_gNB_itti_send_sctp_data_req(ngap_gNB_instance_p->instance, ngap_amf_data_p->assoc_id, buffer, length, 0);
+
+  return 0;
+}
+
 void *ngap_gNB_process_itti_msg(void *notUsed) {
   MessageDef *received_msg = NULL;
   int         result;
@@ -418,6 +469,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed) {
 
       case NGAP_HANDOVER_REQUIRED:
         ngap_handover_required(instance, &NGAP_HANDOVER_REQUIRED(received_msg));
+        break;
+
+      case NGAP_HANDOVER_FAILURE:
+        ngap_gNB_handover_failure(instance, &NGAP_HANDOVER_FAILURE(received_msg));
         break;
 
       default:

@@ -36,6 +36,8 @@
 #include "openair3/SECU/key_nas_deriver.h"
 #include "openair2/RRC/NR/rrc_gNB_NGAP.h"
 
+#define MAX_UINT32_RANGE 0xFFFFFFFF
+
 typedef enum { HO_CTX_BOTH, HO_CTX_SOURCE, HO_CTX_TARGET } ho_ctx_type_t;
 static nr_handover_context_t *alloc_ho_ctx(ho_ctx_type_t type)
 {
@@ -344,6 +346,26 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
   }
 
   nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
+}
+
+/** @brief Callback function to trigger NG Handover Failure on the target gNB,
+ *         to inform the AMF that the preparation of resources has failed (e.g. unsatisfied criteria,
+ *         gNB is already loaded). This message represents an Unsuccessful Outcome of the Handover Resource Allocation
+ *  @note: As HO Failure may trigger even at preprocessing of AMF message[HO REQ], at that time target gNB
+ *         have not created the UE context. In such case as part API call need to fill the ho_amf_ue_id from ho
+ *         request structure to proceed the HO Failure, rest of the scenario it should be 0xFFFFFFFFFFFFFFFF. */
+void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg)
+{
+  LOG_I(NR_RRC, "Triggering N2 Handover Failure\n");
+  rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, msg);
+
+  if (gnb_ue_id != MAX_UINT32_RANGE) {
+    LOG_I(NR_RRC, "Send UE Context Release for gnb_ue_id %d\n", gnb_ue_id);
+    rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, gnb_ue_id);
+    rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_REQ(rrc->module_id, ue_context_p, msg->cause);
+  }
+
+  return;
 }
 
 /** @brief Trigger N2 handover on source gNB:

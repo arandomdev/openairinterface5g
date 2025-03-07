@@ -66,6 +66,8 @@
 #define NGAP_PDUSESSION_MODIFY_REQ(mSGpTR)              (mSGpTR)->ittiMsg.ngap_pdusession_modify_req
 #define NGAP_PAGING_IND(mSGpTR)                 (mSGpTR)->ittiMsg.ngap_paging_ind
 #define NGAP_HANDOVER_REQUIRED(mSGpTR)           (mSGpTR)->ittiMsg.ngap_handover_required
+#define NGAP_HANDOVER_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.ngap_handover_failure
+
 #define NGAP_UE_CONTEXT_RELEASE_REQ(mSGpTR)     (mSGpTR)->ittiMsg.ngap_ue_release_req
 #define NGAP_PDUSESSION_RELEASE_COMMAND(mSGpTR)      (mSGpTR)->ittiMsg.ngap_pdusession_release_command
 #define NGAP_PDUSESSION_RELEASE_RESPONSE(mSGpTR)     (mSGpTR)->ittiMsg.ngap_pdusession_release_resp
@@ -622,6 +624,14 @@ typedef struct {
   uint8_t nb_of_pdusessions;
   pdusession_resource_t pdusessions[NGAP_MAX_PDUSESSION];
 } ngap_handover_required_t;
+
+/* 3GPP TS 38.413 9.2.3.6 */
+typedef struct {
+  // AMF UE NGAP ID (M)
+  uint64_t amf_ue_ngap_id;
+  // Cause (M)
+  ngap_cause_t cause;
+} ngap_handover_failure_t;
 
 typedef struct ngap_ue_cap_info_ind_s {
   uint32_t  gNB_ue_ngap_id;
