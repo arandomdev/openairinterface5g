@@ -80,12 +80,6 @@ static void ldpc8blocks(void *p)
   stop_meas(&nrLDPC_TB_encoding_parameters->segments[impp->macro_num * 8].ts_ldpc_encode);
   // Compute where to place in output buffer that is concatenation of all segments
 
-
-  if (impp->F>0) {
-      // writing into positions d[k-2Zc] as in clause 5.3.2 step 2) in 38.212
-      memset(&d[impp->K - impp->F - 2 * impp->Zc], NR_NULL, impp->F);
-  }
-
 #ifdef DEBUG_LDPC_ENCODING
   LOG_D(PHY, "rvidx in encoding = %d\n", nrLDPC_TB_encoding_parameters->rv_index);
 #endif
