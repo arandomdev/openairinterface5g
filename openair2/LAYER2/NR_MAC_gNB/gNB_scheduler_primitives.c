@@ -2478,15 +2478,24 @@ void reset_srs_stats(NR_UE_info_t *UE) {
 
 /* @brief returns a new UE allocated instance.
  *
- * It will be typically added to the access_ue_list, but this is not in this
- * function to allow error handling outside (e.g., if list is full). Remove
- * with delete_nr_ue_data().  */
+ * It will be typically added to the access_ue_list, but not always (e.g.,
+ * phytest mode), so this is not done in this function (and also, to allow
+ * error handling). Remove with delete_nr_ue_data().  */
 NR_UE_info_t *get_new_nr_ue_inst(uid_allocator_t *uia, rnti_t rnti, NR_CellGroupConfig_t *CellGroup)
 {
+  uid_t uid = uid_linear_allocator_new(uia);
+  /* if the UE list is full, we should reject the UE with an RRC reject
+   * message, but we do not have this functionality. To keep it simple, do not
+   * create a UE context here, so we can print an error message. */
+  if (uid >= MAX_MOBILES_PER_GNB) {
+    uid_linear_allocator_free(uia, uid);
+    return NULL;
+  }
+
   NR_UE_info_t *UE = calloc_or_fail(1, sizeof(NR_UE_info_t));
   UE->rnti = rnti;
   UE->CellGroup = CellGroup;
-  UE->uid = uid_linear_allocator_new(uia);
+  UE->uid = uid;
   UE->ra = calloc(1, sizeof(*UE->ra));
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   sched_ctrl->ta_update = 31;
@@ -2569,6 +2578,17 @@ bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
     NR_SCHED_UNLOCK(&UE_info->mutex);
     return false;
   }
+  /* @francesco here was a check as below, but add_UE_to_list() should already
+   * return false if it's full
+  int i;
+  for(i = 0; i < MAX_MOBILES_PER_GNB; i++) {
+    if (UE_info->connected_ue_list[i] == NULL) {
+      UE_info->connected_ue_list[i] = UE;
+      break;
+    }
+  }
+  AssertFatal(i < MAX_MOBILES_PER_GNB, "No place for UE in connected list. We shouldn't get here bur reject before\n");
+  */
 
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   sched_ctrl->dl_max_mcs = 28; /* do not limit MCS for individual UEs */
@@ -3305,6 +3325,22 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   /* activate SRB0 */
   if (!nr_rlc_activate_srb0(UE->rnti, UE, send_initial_ul_rrc_message))
     return false;
+
+  /* @francesco: sure that this is necessary? we should not even have added the
+   * UE to begin with?
+  if (UE->uid >= MAX_MOBILES_PER_GNB) {
+    // we can allocate only MAX_MOBILES_PER_GNB
+    // TODO send reject
+    uid_linear_allocator_free(&mac->UE_info.uid_allocator, UE->uid);
+    // verify if we can allocate a new ID within the limits
+    int uid = uid_linear_allocator_new(&mac->UE_info.uid_allocator);
+    if (uid >= MAX_MOBILES_PER_GNB) {
+      uid_linear_allocator_free(&mac->UE_info.uid_allocator, uid);
+      return false;
+    } else
+      UE->uid = uid;
+  }
+  */
 
   /* create this UE's initial CellGroup */
   int CC_id = 0;
