@@ -2180,7 +2180,11 @@ void nr_check_Msg4_MsgB_Ack(module_id_t module_id, frame_t frame, slot_t slot, N
     int delay = nr_mac_get_reconfig_delay_slots(UE->current_UL_BWP.scs);
     gNB_MAC_INST *nr_mac = RC.nrmac[module_id];
     nr_mac_interrupt_ue_transmission(nr_mac, UE, UE->interrupt_action, delay);
-    transition_ra_connected_nr_ue(nr_mac, UE);
+    if (!transition_ra_connected_nr_ue(nr_mac, UE)) {
+      LOG_E(NR_MAC, "cannot add UE %04x: list is full\n", UE->rnti);
+      delete_nr_ue_data(UE, NULL, &nr_mac->UE_info.uid_allocator);
+      return;
+    }
     if (sched_ctrl->retrans_dl_harq.head >= 0) {
       remove_nr_list(&sched_ctrl->retrans_dl_harq, current_harq_pid);
     }

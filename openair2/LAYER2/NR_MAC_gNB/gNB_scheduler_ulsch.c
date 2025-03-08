@@ -762,7 +762,11 @@ static void nr_rx_ra_sdu(const module_id_t mod_id,
     reset_dl_harq_list(UE_scheduling_control);
     reset_ul_harq_list(UE_scheduling_control);
     process_addmod_bearers_cellGroupConfig(&UE->UE_sched_ctrl, UE->CellGroup->rlc_BearerToAddModList);
-    transition_ra_connected_nr_ue(mac, UE);
+    if (!transition_ra_connected_nr_ue(mac, UE)) {
+      LOG_E(NR_MAC, "cannot add UE %04x: list is full\n", UE->rnti);
+      delete_nr_ue_data(UE, NULL, &mac->UE_info.uid_allocator);
+      return;
+    }
   } else {
     LOG_D(NR_MAC, "[RAPROC] Received %s:\n", ra->ra_type == RA_2_STEP ? "MsgA-PUSCH" : "Msg3");
     for (uint32_t k = 0; k < sdu_len; k++) {

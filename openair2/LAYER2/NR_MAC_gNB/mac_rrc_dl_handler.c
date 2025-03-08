@@ -479,6 +479,18 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
     LOG_E(NR_MAC, "UE list full while creating new UE\n");
     return NULL;
   }
+  /* also here: should already have been handled by add_new_UE_RA()
+  NR_UE_info_t *UE = mac->UE_info.access_ue_list[idx];
+  init_ue_inst(&mac->UE_info, UE);
+  if (UE->uid >= MAX_MOBILES_PER_GNB) {
+    // we can allocate only MAX_MOBILES_PER_GNB
+    uid_linear_allocator_free(&mac->UE_info.uid_allocator, UE->uid);
+    remove_UE_from_list(NR_NB_RA_PROC_MAX, mac->UE_info.access_ue_list, rnti);
+    free_and_zero(UE);
+    return NULL;
+  }
+  UE->rnti = rnti;
+  */
 
   f1_ue_data_t new_ue_data = {.secondary_ue = cu_id};
   bool success = du_add_f1_ue_data(rnti, &new_ue_data);

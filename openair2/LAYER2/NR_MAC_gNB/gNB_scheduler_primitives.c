@@ -2569,6 +2569,17 @@ bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
     NR_SCHED_UNLOCK(&UE_info->mutex);
     return false;
   }
+  /* @francesco here was a check as below, but add_UE_to_list() should already
+   * return false if it's full
+  int i;
+  for(i = 0; i < MAX_MOBILES_PER_GNB; i++) {
+    if (UE_info->connected_ue_list[i] == NULL) {
+      UE_info->connected_ue_list[i] = UE;
+      break;
+    }
+  }
+  AssertFatal(i < MAX_MOBILES_PER_GNB, "No place for UE in connected list. We shouldn't get here bur reject before\n");
+  */
 
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   sched_ctrl->dl_max_mcs = 28; /* do not limit MCS for individual UEs */
@@ -3305,6 +3316,22 @@ bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   /* activate SRB0 */
   if (!nr_rlc_activate_srb0(UE->rnti, UE, send_initial_ul_rrc_message))
     return false;
+
+  /* @francesco: sure that this is necessary? we should not even have added the
+   * UE to begin with?
+  if (UE->uid >= MAX_MOBILES_PER_GNB) {
+    // we can allocate only MAX_MOBILES_PER_GNB
+    // TODO send reject
+    uid_linear_allocator_free(&mac->UE_info.uid_allocator, UE->uid);
+    // verify if we can allocate a new ID within the limits
+    int uid = uid_linear_allocator_new(&mac->UE_info.uid_allocator);
+    if (uid >= MAX_MOBILES_PER_GNB) {
+      uid_linear_allocator_free(&mac->UE_info.uid_allocator, uid);
+      return false;
+    } else
+      UE->uid = uid;
+  }
+  */
 
   /* create this UE's initial CellGroup */
   int CC_id = 0;
