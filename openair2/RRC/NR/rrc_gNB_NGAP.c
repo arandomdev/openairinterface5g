@@ -213,6 +213,16 @@ void rrc_gNB_send_NGAP_NAS_FIRST_REQ(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, NR_RRC
           req->ue_identity.guami.amf_set_id,
           req->ue_identity.guami.amf_region_id,
           req->ue_identity.guami.amf_pointer);
+    // PLMN Identity
+    if (r_amf->plmn_Identity) {
+      char mnc_str[r_amf->plmn_Identity->mnc.list.count + 1];
+      for (int i = 0; i < r_amf->plmn_Identity->mnc.list.count; i++) {
+        mnc_str[i] = *r_amf->plmn_Identity->mnc.list.array[i];
+      }
+      mnc_str[r_amf->plmn_Identity->mnc.list.count] = '\0';
+      LOG_D(NGAP, "PLMN identity with MNC %s in the registeredAMF is present for RNTI %04x\n", mnc_str, UE->rnti);
+    }
+
   }
 
   itti_send_msg_to_task(TASK_NGAP, rrc->module_id, message_p);
