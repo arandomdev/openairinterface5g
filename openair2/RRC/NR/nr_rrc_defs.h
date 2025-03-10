@@ -245,7 +245,7 @@ typedef struct gNB_RRC_UE_s {
   pdusession_t *initial_pdus;
 
   /* Nas Pdu */
-  ngap_pdu_t nas_pdu;
+  byte_array_t nas_pdu;
 
 } gNB_RRC_UE_t;
 

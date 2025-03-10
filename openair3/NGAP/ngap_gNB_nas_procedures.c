@@ -59,13 +59,13 @@
 #include "s1ap_messages_types.h"
 #include "xer_encoder.h"
 
-static void allocCopy(OCTET_STRING_t *out, ngap_pdu_t in)
+static void allocCopy(OCTET_STRING_t *out, const byte_array_t in)
 {
-  if (in.length) {
-    out->buf = malloc(in.length);
-    memcpy(out->buf, in.buffer, in.length);
+  if (in.len) {
+    out->buf = malloc_or_fail(in.len);
+    memcpy(out->buf, in.buf, in.len);
   }
-  out->size = in.length;
+  out->size = in.len;
 }
 
 static void allocAddrCopy(BIT_STRING_t *out, transport_layer_addr_t in)
@@ -438,8 +438,8 @@ int ngap_gNB_nas_uplink(instance_t instance, ngap_uplink_nas_t *ngap_uplink_nas_
     ie->id = NGAP_ProtocolIE_ID_id_NAS_PDU;
     ie->criticality = NGAP_Criticality_reject;
     ie->value.present = NGAP_UplinkNASTransport_IEs__value_PR_NAS_PDU;
-    ie->value.choice.NAS_PDU.buf = ngap_uplink_nas_p->nas_pdu.buffer;
-    ie->value.choice.NAS_PDU.size = ngap_uplink_nas_p->nas_pdu.length;
+    ie->value.choice.NAS_PDU.buf = ngap_uplink_nas_p->nas_pdu.buf;
+    ie->value.choice.NAS_PDU.size = ngap_uplink_nas_p->nas_pdu.len;
   }
   /* mandatory */
   {
@@ -534,8 +534,8 @@ int ngap_gNB_nas_non_delivery_ind(instance_t instance,
     ie->id = NGAP_ProtocolIE_ID_id_NAS_PDU;
     ie->criticality = NGAP_Criticality_ignore;
     ie->value.present = NGAP_NASNonDeliveryIndication_IEs__value_PR_NAS_PDU;
-    ie->value.choice.NAS_PDU.buf = ngap_nas_non_delivery_ind->nas_pdu.buffer;
-    ie->value.choice.NAS_PDU.size = ngap_nas_non_delivery_ind->nas_pdu.length;
+    ie->value.choice.NAS_PDU.buf = ngap_nas_non_delivery_ind->nas_pdu.buf;
+    ie->value.choice.NAS_PDU.size = ngap_nas_non_delivery_ind->nas_pdu.len;
   }
   /* mandatory */
   {
@@ -863,8 +863,8 @@ int ngap_gNB_ue_capabilities(instance_t instance, ngap_ue_cap_info_ind_t *ue_cap
     ie->id = NGAP_ProtocolIE_ID_id_UERadioCapability;
     ie->criticality = NGAP_Criticality_ignore;
     ie->value.present = NGAP_UERadioCapabilityInfoIndicationIEs__value_PR_UERadioCapability;
-    ie->value.choice.UERadioCapability.buf = ue_cap_info_ind_p->ue_radio_cap.buffer;
-    ie->value.choice.UERadioCapability.size = ue_cap_info_ind_p->ue_radio_cap.length;
+    ie->value.choice.UERadioCapability.buf = ue_cap_info_ind_p->ue_radio_cap.buf;
+    ie->value.choice.UERadioCapability.size = ue_cap_info_ind_p->ue_radio_cap.len;
   }
   /* optional */
   //NGAP_UERadioCapabilityForPaging TBD

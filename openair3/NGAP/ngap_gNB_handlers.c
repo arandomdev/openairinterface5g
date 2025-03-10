@@ -53,13 +53,13 @@
 #include "oai_asn1.h"
 #include "queue.h"
 
-static void allocCopy(ngap_pdu_t *out, OCTET_STRING_t in)
+static void allocCopy(byte_array_t *out, const OCTET_STRING_t in)
 {
   if (in.size) {
-    out->buffer = malloc(in.size);
-    memcpy(out->buffer, in.buf, in.size);
+    out->buf = malloc_or_fail(in.size);
+    memcpy(out->buf, in.buf, in.size);
   }
-  out->length = in.size;
+  out->len = in.size;
 }
 
 char *ngap_direction2String(int ngap_dir) {
