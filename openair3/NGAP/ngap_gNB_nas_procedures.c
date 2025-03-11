@@ -58,15 +58,6 @@
 #include "s1ap_messages_types.h"
 #include "xer_encoder.h"
 
-static void allocCopy(OCTET_STRING_t *out, ngap_pdu_t in)
-{
-  if (in.length) {
-    out->buf = malloc(in.length);
-    memcpy(out->buf, in.buffer, in.length);
-  }
-  out->size = in.length;
-}
-
 static void allocAddrCopy(BIT_STRING_t *out, transport_layer_addr_t in)
 {
   if (in.length) {
@@ -204,7 +195,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     ie->id = NGAP_ProtocolIE_ID_id_NAS_PDU;
     ie->criticality = NGAP_Criticality_reject;
     ie->value.present = NGAP_InitialUEMessage_IEs__value_PR_NAS_PDU;
-    allocCopy(&ie->value.choice.NAS_PDU, UEfirstReq->nas_pdu);
+    ngap_pdu_to_octet_string(&ie->value.choice.NAS_PDU, UEfirstReq->nas_pdu);
   }
 
   /* mandatory */
@@ -1226,7 +1217,7 @@ int ngap_gNB_pdusession_release_resp(instance_t instance, ngap_pdusession_releas
     for (i = 0; i < pdusession_release_resp_p->nb_of_pdusessions_released; i++) {
       asn1cSequenceAdd(ie->value.choice.PDUSessionResourceReleasedListRelRes.list, NGAP_PDUSessionResourceReleasedItemRelRes_t, item);
       item->pDUSessionID = pdusession_release_resp_p->pdusession_release[i].pdusession_id;
-      allocCopy(&item->pDUSessionResourceReleaseResponseTransfer, pdusession_release_resp_p->pdusession_release[i].data);
+      ngap_pdu_to_octet_string(&item->pDUSessionResourceReleaseResponseTransfer, pdusession_release_resp_p->pdusession_release[i].data);
       NGAP_DEBUG("pdusession_release_resp: pdusession ID %ld\n", item->pDUSessionID);
     }
   }

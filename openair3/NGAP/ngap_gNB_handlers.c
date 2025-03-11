@@ -52,15 +52,6 @@
 #include "oai_asn1.h"
 #include "queue.h"
 
-static void allocCopy(ngap_pdu_t *out, OCTET_STRING_t in)
-{
-  if (in.size) {
-    out->buffer = malloc(in.size);
-    memcpy(out->buffer, in.buf, in.size);
-  }
-  out->length = in.size;
-}
-
 char *ngap_direction2String(int ngap_dir) {
   static char *ngap_direction_String[] = {
     "", /* Nothing */
@@ -752,9 +743,9 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
       msg->pdusession_param[i].pdusession_id = item_p->pDUSessionID;
       msg->pdusession_param[i].nssai = decode_ngap_nssai(&item_p->s_NSSAI);
       if (item_p->nAS_PDU) {
-        allocCopy(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
+        octet_string_to_ngap_pdu(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
       }
-      allocCopy(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
+      octet_string_to_ngap_pdu(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
     }
   }
 
@@ -794,7 +785,7 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
                                  NGAP_ProtocolIE_ID_id_NAS_PDU, false);
 
   if (ie)
-    allocCopy(&msg->nas_pdu, ie->value.choice.NAS_PDU);
+    octet_string_to_ngap_pdu(&msg->nas_pdu, ie->value.choice.NAS_PDU);
 
   itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
 
@@ -931,8 +922,8 @@ static int ngap_gNB_handle_pdusession_setup_request(sctp_assoc_t assoc_id, uint3
     // S-NSSAI
     msg->pdusession_setup_params[i].nssai = decode_ngap_nssai(&item_p->s_NSSAI);
 
-    allocCopy(&msg->pdusession_setup_params[i].nas_pdu, *item_p->pDUSessionNAS_PDU);
-    allocCopy(&msg->pdusession_setup_params[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
+    octet_string_to_ngap_pdu(&msg->pdusession_setup_params[i].nas_pdu, *item_p->pDUSessionNAS_PDU);
+    octet_string_to_ngap_pdu(&msg->pdusession_setup_params[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
   }
     itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
 
@@ -1109,8 +1100,8 @@ static int ngap_gNB_handle_pdusession_modify_request(sctp_assoc_t assoc_id, uint
 
     // check for the NAS PDU
     if (item_p->nAS_PDU != NULL && item_p->nAS_PDU->size > 0) {
-      allocCopy(&msg->pdusession_modify_params[i].nas_pdu, *item_p->nAS_PDU);
-      allocCopy(&msg->pdusession_modify_params[i].pdusessionTransfer, item_p->pDUSessionResourceModifyRequestTransfer);
+      octet_string_to_ngap_pdu(&msg->pdusession_modify_params[i].nas_pdu, *item_p->nAS_PDU);
+      octet_string_to_ngap_pdu(&msg->pdusession_modify_params[i].pdusessionTransfer, item_p->pDUSessionResourceModifyRequestTransfer);
     } else {
       LOG_W(NGAP, "received pdu session modify with void content for UE %u, pdu session %lu\n", msg->gNB_ue_ngap_id, item_p->pDUSessionID);
       continue;
@@ -1186,7 +1177,7 @@ static int ngap_gNB_handle_pdusession_release_command(sctp_assoc_t assoc_id, uin
                              NGAP_ProtocolIE_ID_id_NAS_PDU, false);
 
   if (ie)
-    allocCopy(&msg->nas_pdu, ie->value.choice.NAS_PDU);
+    octet_string_to_ngap_pdu(&msg->nas_pdu, ie->value.choice.NAS_PDU);
 
   /* id-PDUSessionResourceToReleaseListRelCmd */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_PDUSessionResourceReleaseCommandIEs_t, ie, container,
@@ -1198,7 +1189,7 @@ static int ngap_gNB_handle_pdusession_release_command(sctp_assoc_t assoc_id, uin
     NGAP_PDUSessionResourceToReleaseItemRelCmd_t *item_p;
     item_p = ie->value.choice.PDUSessionResourceToReleaseListRelCmd.list.array[i];
     msg->pdusession_release_params[i].pdusession_id = item_p->pDUSessionID;
-    allocCopy(&msg->pdusession_release_params[i].data, item_p->pDUSessionResourceReleaseCommandTransfer);
+    octet_string_to_ngap_pdu(&msg->pdusession_release_params[i].data, item_p->pDUSessionResourceReleaseCommandTransfer);
   }
 
   itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
