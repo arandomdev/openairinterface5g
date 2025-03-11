@@ -67,6 +67,7 @@
 #define NGAP_PAGING_IND(mSGpTR)                 (mSGpTR)->ittiMsg.ngap_paging_ind
 #define NGAP_HANDOVER_REQUIRED(mSGpTR)           (mSGpTR)->ittiMsg.ngap_handover_required
 #define NGAP_HANDOVER_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.ngap_handover_failure
+#define NGAP_HANDOVER_REQUEST(mSGpTR) (mSGpTR)->ittiMsg.ngap_handover_request
 
 #define NGAP_UE_CONTEXT_RELEASE_REQ(mSGpTR)     (mSGpTR)->ittiMsg.ngap_ue_release_req
 #define NGAP_PDUSESSION_RELEASE_COMMAND(mSGpTR)      (mSGpTR)->ittiMsg.ngap_pdusession_release_command
@@ -632,6 +633,43 @@ typedef struct {
   // Cause (M)
   ngap_cause_t cause;
 } ngap_handover_failure_t;
+
+typedef struct {
+  // Next-Hop NH
+  uint8_t next_hop[SECURITY_KEY_LENGTH];
+  // Next Hop Chaining Count
+  uint8_t next_hop_chain_count;
+} ngap_security_context_t;
+
+/* 3GPP TS 38.413 9.2.3.4 */
+typedef struct {
+  // AMF UE NGAP ID
+  uint64_t amf_ue_ngap_id;
+  // Handover Type
+  ho_type_t ho_type;
+  // Cause
+  ngap_cause_t cause;
+  // PDU Session Resource Setup List
+  uint8_t nb_of_pdusessions;
+  pdusession_t pduSessionResourceSetupList[NGAP_MAX_PDUSESSION];
+  // Source to Target Transparent Container contents
+  uint64_t nr_cell_id;
+  byte_array_t ue_ho_prep_info;
+  byte_array_t ue_cap;
+  // UE Aggregate Maximum Bit Rate
+  ngap_ambr_t ue_ambr;
+  // GUAMI
+  ngap_guami_t guami;
+  // Allowed NSSAI
+  uint8_t nb_allowed_nssais;
+  nssai_t allowed_nssai[8];
+  // UE Security Capabilities
+  ngap_security_capabilities_t security_capabilities;
+  // Security Context
+  ngap_security_context_t security_context;
+  // Mobility Restriction List
+  ngap_mobility_restriction_t *mobility_restriction;
+} ngap_handover_request_t;
 
 typedef struct ngap_ue_cap_info_ind_s {
   uint32_t  gNB_ue_ngap_id;

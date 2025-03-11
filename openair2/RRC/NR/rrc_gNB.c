@@ -412,6 +412,12 @@ static void activate_srb(gNB_RRC_UE_t *UE, int srb_id)
   freeSRBlist(list);
 }
 
+void activate_srbs(gNB_RRC_UE_t *UE)
+{
+  activate_srb(UE, 1);
+  activate_srb(UE, 2);
+}
+
 //-----------------------------------------------------------------------------
 static void rrc_gNB_generate_RRCSetup(instance_t instance,
                                       rnti_t rnti,
@@ -2771,6 +2777,10 @@ void *rrc_gnb_task(void *args_p) {
 
       case NGAP_PAGING_IND:
         rrc_gNB_process_PAGING_IND(msg_p, instance);
+        break;
+
+      case NGAP_HANDOVER_REQUEST:
+        rrc_gNB_process_Handover_Request(RC.nrrrc[instance], instance, &NGAP_HANDOVER_REQUEST(msg_p));
         break;
 
       default:

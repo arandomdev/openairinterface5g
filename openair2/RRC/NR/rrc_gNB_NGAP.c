@@ -82,6 +82,8 @@
 #include "rrc_messages_types.h"
 #include "s1ap_messages_types.h"
 #include "uper_encoder.h"
+#include "rrc_gNB_mobility.h"
+#include "rrc_gNB_du.h"
 
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
@@ -96,6 +98,8 @@ static const uint16_t NGAP_ENCRYPTION_NEA3_MASK = 0x2000;
 static const uint16_t NGAP_INTEGRITY_NIA1_MASK = 0x8000;
 static const uint16_t NGAP_INTEGRITY_NIA2_MASK = 0x4000;
 static const uint16_t NGAP_INTEGRITY_NIA3_MASK = 0x2000;
+
+#define MAX_UINT32_RANGE 0xFFFFFFFF
 
 #define INTEGRITY_ALGORITHM_NONE NR_IntegrityProtAlgorithm_nia0
 
@@ -121,6 +125,21 @@ static void set_UE_security_key(gNB_RRC_UE_t *UE, uint8_t *security_key_pP)
   }
   ascii_buffer[2 * 1] = '\0';
 
+  LOG_I(NR_RRC, "[UE %x] Saved security key %s\n", UE->rnti, ascii_buffer);
+}
+
+static void process_gNB_kgnb_star(gNB_RRC_UE_t *UE, const uint16_t pci, const NR_ARFCN_ValueNR_t absoluteFrequencySSB)
+{
+  char ascii_buffer[65];
+  uint8_t i;
+
+  nr_derive_key_ng_ran_star(pci, absoluteFrequencySSB, UE->nh, UE->kgnb);
+
+  for (i = 0; i < 32; i++) {
+    sprintf(&ascii_buffer[2 * i], "%02X", UE->kgnb[i]);
+  }
+
+  ascii_buffer[2 * i] = '\0';
   LOG_I(NR_RRC, "[UE %x] Saved security key %s\n", UE->rnti, ascii_buffer);
 }
 
@@ -1193,6 +1212,72 @@ void rrc_gNB_send_NGAP_HANDOVER_FAILURE(gNB_RRC_INST *rrc, ngap_handover_failure
   MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_HANDOVER_FAILURE);
   NGAP_HANDOVER_FAILURE(msg_p) = *msg;
   itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
+}
+
+/** @brief Process NG Handover Request message (8.4.2.2 3GPP TS 38.413) */
+int rrc_gNB_process_Handover_Request(gNB_RRC_INST *rrc, instance_t instance, ngap_handover_request_t *msg)
+{
+  LOG_I(NR_RRC, "Received Handover Request for nRCellIdentity: %lu \n", msg->nr_cell_id);
+  struct nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, msg->nr_cell_id);
+  if (du == NULL) {
+    /* Cell Not Found! Return HO Request Failure*/
+    LOG_E(RRC, "Failed to process Handover Request: no DU found with nRCellIdentity %lu \n", msg->nr_cell_id);
+    ngap_handover_failure_t fail = {
+        .amf_ue_ngap_id = msg->amf_ue_ngap_id,
+        .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+        .cause.value = NGAP_CAUSE_RADIO_NETWORK_RADIO_RESOURCES_NOT_AVAILABLE,
+    };
+    rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, &fail);
+    return -1;
+  }
+
+  // Create UE context
+  sctp_assoc_t curr_assoc_id = du->assoc_id;
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_create_ue_context(curr_assoc_id, UINT16_MAX, rrc, UINT64_MAX, UINT32_MAX);
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+
+  // Store IDs in UE context
+  UE->amf_ue_ngap_id = msg->amf_ue_ngap_id;
+  UE->ue_guami.mcc = msg->guami.mcc;
+  UE->ue_guami.mnc = msg->guami.mnc;
+  UE->ue_guami.mnc_len = msg->guami.mnc_len;
+  UE->ue_guami.amf_region_id = msg->guami.amf_region_id;
+  UE->ue_guami.amf_set_id = msg->guami.amf_set_id;
+  UE->ue_guami.amf_pointer = msg->guami.amf_pointer;
+  UE->ue_ho_prep_info = copy_byte_array(msg->ue_ho_prep_info);
+  // store the received UE Security Capabilities in the UE context
+  free(UE->ue_cap_buffer.buf);
+  UE->ue_cap_buffer = copy_byte_array(msg->ue_cap);
+
+  /* store the received Security Context in the UE context
+     and take it into use as defined in TS 33.501 */
+  set_UE_security_algos(rrc, UE, &msg->security_capabilities);
+  UE->nh_ncc = msg->security_context.next_hop_chain_count;
+  memcpy(UE->nh, msg->security_context.next_hop, SECURITY_KEY_LENGTH);
+  // Reset KgNB
+  memset(UE->kgnb, 0, SECURITY_KEY_LENGTH);
+  // Derive KgNB*
+  const f1ap_served_cell_info_t *cell_info = &du->setup_req->cell[0].info;
+  uint32_t ssb_arfcn = get_ssb_arfcn(du);
+  process_gNB_kgnb_star(UE, cell_info->nr_pci, ssb_arfcn);
+  UE->as_security_active = true;
+
+  // Activate SRBs
+  activate_srbs(UE);
+
+  /* PDU Session Resource Setup List IE processing:
+     behave the same as defined in the PDU Session Resource Setup procedure */
+  if (!trigger_bearer_setup(rrc, UE, msg->nb_of_pdusessions, msg->pduSessionResourceSetupList, msg->ue_ambr.br_dl)) {
+    LOG_E(NR_RRC, " HO LOG: PDU Session Resource Transfer IE ASN decode fail. Failed to establish PDU session: Release the UE \n");
+    ngap_handover_failure_t fail = {
+        .amf_ue_ngap_id = msg->amf_ue_ngap_id,
+        .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+        .cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM,
+    };
+    rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, &fail);
+  }
+
+  return 0;
 }
 
 /*

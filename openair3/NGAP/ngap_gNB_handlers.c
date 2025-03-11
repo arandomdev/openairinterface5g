@@ -44,7 +44,9 @@
 #include "ngap_common.h"
 #include "ngap_gNB_decoder.h"
 #include "ngap_gNB_defs.h"
+#include "ngap_gNB_nnsf.h"
 #include "ngap_gNB_management_procedures.h"
+#include "ngap_gNB_mobility_management.h"
 #include "ngap_gNB_nas_procedures.h"
 #include "ngap_gNB_trace.h"
 #include "ngap_gNB_ue_context.h"
@@ -666,6 +668,43 @@ static int ngap_gNB_handle_error_indication(sctp_assoc_t assoc_id, uint32_t stre
   return 0;
 }
 
+/** @brief Handler for NGAP Handover Request message (AMF -> target NG-RAN)
+ *        Decode the NGAP message and transfer to RRC */
+static int ngap_gNB_handle_handover_request(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
+{
+  DevAssert(pdu != NULL);
+
+  ngap_gNB_amf_data_t *amf_desc_p = ngap_gNB_get_AMF(NULL, assoc_id, 0);
+  if (amf_desc_p == NULL) {
+    NGAP_ERROR("[SCTP %u] Received Handover Request for non existing AMF context\n", assoc_id);
+    return -1;
+  }
+  NGAP_INFO("[SCTP %u] Received NG Handover Request for AMF %s\n", assoc_id, amf_desc_p->amf_name);
+
+  MessageDef *message_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_HANDOVER_REQUEST);
+  ngap_handover_request_t *msg = &NGAP_HANDOVER_REQUEST(message_p);
+  memset(msg, 0, sizeof(*msg));
+
+  if (decode_ng_handover_request(msg, pdu) < 0) {
+    NGAP_ERROR("Failed to decode NG HANDOVER REQUEST\n");
+    ngap_handover_failure_t fail = {
+        .amf_ue_ngap_id = msg->amf_ue_ngap_id,
+        .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+        .cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM,
+    };
+    NGAP_INFO("Send NG Handover Failure message (amf_ue_ngap_id %ld) with cause %d \n ", fail.amf_ue_ngap_id, fail.cause.value);
+    MessageDef *msg_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_HANDOVER_FAILURE);
+    NGAP_HANDOVER_FAILURE(msg_p) = fail;
+    itti_send_msg_to_task(TASK_NGAP, amf_desc_p->ngap_gNB_instance->instance, msg_p);
+    return -1;
+  }
+
+  NGAP_INFO("HO LOG: Handover Request from AMF UE NGAP ID %lu received by target CU-CP \n", msg->amf_ue_ngap_id);
+  itti_send_msg_to_task(TASK_RRC_GNB, amf_desc_p->ngap_gNB_instance->instance, message_p);
+
+  return 0;
+}
+
 static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
 {
   int i;
@@ -1230,7 +1269,7 @@ const ngap_message_decoded_callback ngap_messages_callback[][3] = {
     {0, 0, 0}, /* HandoverCancel */
     {0, 0, 0}, /* HandoverNotification */
     {0, 0, 0}, /* HandoverPreparation */
-    {0, 0, 0}, /* HandoverResourceAllocation */
+    {ngap_gNB_handle_handover_request, 0, 0}, /* HandoverResourceAllocation */
     {ngap_gNB_handle_initial_context_request, 0, 0}, /* InitialContextSetup */
     {0, 0, 0}, /* InitialUEMessage */
     {0, 0, 0}, /* LocationReportingControl */
