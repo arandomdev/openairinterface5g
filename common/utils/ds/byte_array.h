@@ -38,7 +38,7 @@ typedef struct {
 } byte_array_32_t;
 
 byte_array_t copy_byte_array(byte_array_t src);
-void free_byte_array(byte_array_t ba);
+void free_byte_array(byte_array_t* ba);
 bool eq_byte_array(const byte_array_t* m0, const byte_array_t* m1);
 
 byte_array_t cp_str_to_ba(const char* str);
