@@ -34,9 +34,11 @@ byte_array_t copy_byte_array(byte_array_t src)
   return dst;
 }
 
-void free_byte_array(byte_array_t ba)
+void free_byte_array(byte_array_t* ba)
 {
-  free(ba.buf);
+  free(ba->buf);
+  ba->buf = NULL;
+  ba->len = 0;
 }
 
 bool eq_byte_array(const byte_array_t* m0, const byte_array_t* m1)
