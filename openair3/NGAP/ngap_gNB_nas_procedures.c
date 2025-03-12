@@ -58,16 +58,6 @@
 #include "s1ap_messages_types.h"
 #include "xer_encoder.h"
 
-static void allocAddrCopy(BIT_STRING_t *out, transport_layer_addr_t in)
-{
-  if (in.length) {
-    out->buf = malloc(in.length);
-    memcpy(out->buf, in.buffer, in.length);
-    out->size = in.length;
-    out->bits_unused = 0;
-  }
-}
-
 //------------------------------------------------------------------------------
 int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEfirstReq)
 //------------------------------------------------------------------------------
@@ -629,7 +619,7 @@ int ngap_gNB_initial_ctxt_resp(instance_t instance, ngap_initial_context_setup_r
 
       asn1cCalloc(pdusessionTransfer.dLQosFlowPerTNLInformation.uPTransportLayerInformation.choice.gTPTunnel, tmp);
       GTP_TEID_TO_ASN1(initial_ctxt_resp_p->pdusessions[i].gtp_teid, &tmp->gTP_TEID);
-      allocAddrCopy(&tmp->transportLayerAddress, initial_ctxt_resp_p->pdusessions[i].gNB_addr);
+      tnl_to_bitstring(&tmp->transportLayerAddress, initial_ctxt_resp_p->pdusessions[i].gNB_addr);
 
       NGAP_DEBUG("initial_ctxt_resp_p: pdusession ID %ld, gnb_addr %d.%d.%d.%d, SIZE %ld, TEID %u\n",
                  item->pDUSessionID,
@@ -944,7 +934,7 @@ int ngap_gNB_pdusession_setup_resp(instance_t instance, ngap_pdusession_setup_re
       pdusessionTransfer.dLQosFlowPerTNLInformation.uPTransportLayerInformation.present = NGAP_UPTransportLayerInformation_PR_gTPTunnel;
       asn1cCalloc(pdusessionTransfer.dLQosFlowPerTNLInformation.uPTransportLayerInformation.choice.gTPTunnel, tmp);
       GTP_TEID_TO_ASN1(pdusession->gtp_teid, &tmp->gTP_TEID);
-      allocAddrCopy(&tmp->transportLayerAddress, pdusession->gNB_addr);
+      tnl_to_bitstring(&tmp->transportLayerAddress, pdusession->gNB_addr);
       NGAP_DEBUG("pdusession_setup_resp_p: pdusession ID %ld, gnb_addr %d.%d.%d.%d, SIZE %ld, TEID %u\n",
                  item->pDUSessionID,
                  tmp->transportLayerAddress.buf[0],
