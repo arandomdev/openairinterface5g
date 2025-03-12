@@ -385,6 +385,53 @@ static int ngap_gNB_handover_failure(instance_t instance, const ngap_handover_fa
   return 0;
 }
 
+static int ngap_gNB_handover_request_acknowledge(instance_t instance, ngap_handover_request_ack_t *msg)
+{
+  uint8_t *buffer = NULL;
+  uint32_t length;
+
+  /* Retrieve the NGAP gNB instance associated with Mod_id */
+  ngap_gNB_instance_t *ngap = ngap_gNB_get_instance(instance);
+
+  // First, create and store NGAP UE context
+  ngap_gNB_ue_context_t ue_context_p = {
+      .amf_ref = ngap_gNB_get_AMF_from_instance(ngap),
+      .gNB_ue_ngap_id = msg->gNB_ue_ngap_id,
+      .amf_ue_ngap_id = msg->amf_ue_ngap_id,
+      .gNB_instance = ngap,
+      .ue_state = NGAP_UE_CONNECTED,
+  };
+  if (ue_context_p.amf_ref == NULL) {
+    NGAP_ERROR("Failed to fetch AMF for current NGAP instance\n");
+    return -1;
+  }
+  ngap_create_ue_context(&ue_context_p);
+
+  DevAssert(msg != NULL);
+  DevAssert(ngap != NULL);
+
+  NGAP_NGAP_PDU_t *pdu = encode_ng_handover_request_ack(msg);
+  if (!pdu) {
+    NGAP_ERROR("Failed to encode NG Handover Request Acknowledge\n");
+    return -1;
+  }
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1))
+    xer_fprint(stdout, &asn_DEF_NGAP_NGAP_PDU, pdu);
+
+  if (ngap_gNB_encode_pdu(pdu, &buffer, &length) < 0) {
+    NGAP_ERROR("Failed to encode Handover Request Acknowledge message\n");
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, pdu);
+    return -1;
+  }
+
+  /* UE associated signalling -> use the allocated stream */
+  ngap_gNB_itti_send_sctp_data_req(ngap->instance, ue_context_p.amf_ref->assoc_id, buffer, length, ue_context_p.tx_stream);
+  NGAP_INFO("Sent Handover Request Acknowledge to AMF\n");
+
+  return 0;
+}
+
 void *ngap_gNB_process_itti_msg(void *notUsed) {
   MessageDef *received_msg = NULL;
   int         result;
@@ -473,6 +520,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed) {
 
       case NGAP_HANDOVER_FAILURE:
         ngap_gNB_handover_failure(instance, &NGAP_HANDOVER_FAILURE(received_msg));
+        break;
+
+      case NGAP_HANDOVER_REQUEST_ACKNOWLEDGE:
+        ngap_gNB_handover_request_acknowledge(instance, &NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(received_msg));
         break;
 
       default:

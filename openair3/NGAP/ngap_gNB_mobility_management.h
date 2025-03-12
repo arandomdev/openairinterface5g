@@ -29,5 +29,6 @@
 NGAP_NGAP_PDU_t *encode_ng_handover_required(const ngap_handover_required_t *msg);
 NGAP_NGAP_PDU_t *encode_ng_handover_failure(const ngap_handover_failure_t *msg);
 int decode_ng_handover_request(ngap_handover_request_t *out, const NGAP_NGAP_PDU_t *pdu);
+NGAP_NGAP_PDU_t *encode_ng_handover_request_ack(ngap_handover_request_ack_t *msg);
 
 #endif /* NGAP_GNB_MOBILITY_MANAGEMENT_H_ */

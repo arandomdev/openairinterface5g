@@ -1387,6 +1387,44 @@ void rrc_gNB_send_NGAP_UE_CAPABILITIES_IND(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, 
     LOG_I(NR_RRC,"Send message to ngap: NGAP_UE_CAPABILITIES_IND\n");
 }
 
+void rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, byte_array_t *ho_command)
+{
+  LOG_D(NR_RRC, "Sending Handover Request Acknowledge\n");
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_HANDOVER_REQUEST_ACKNOWLEDGE);
+  ngap_handover_request_ack_t *msg = &NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(msg_p);
+  memset(msg, 0, sizeof(*msg));
+
+  // RAN UE NGAP ID
+  msg->gNB_ue_ngap_id = UE->rrc_ue_id;
+  // AMF UE NGAP ID
+  msg->amf_ue_ngap_id = UE->amf_ue_ngap_id;
+  // PDU Session Resource Admitted List
+  msg->nb_of_pdusessions = UE->nb_of_pdusessions;
+  for (int i = 0; i < UE->nb_of_pdusessions; i++) {
+    rrc_pdu_session_param_t *session = &UE->pduSession[i];
+    session->status = PDU_SESSION_STATUS_ESTABLISHED;
+    // PDU Session ID
+    msg->pdusessions[i].pdu_session_id = session->param.pdusession_id;
+    // Handover Request Acknowledge Transfer
+    ho_request_ack_transfer_t *transfer = &msg->pdusessions[i].ack_transfer;
+    transfer->gtp_teid = session->param.gNB_teid_N3;
+    memcpy(transfer->gNB_addr.buffer, session->param.gNB_addr_N3.buffer, session->param.gNB_addr_N3.length);
+    transfer->gNB_addr.length = session->param.gNB_addr_N3.length;
+    transfer->nb_of_qos_flow = session->param.nb_qos;
+    for (int q = 0; q < transfer->nb_of_qos_flow; q++) {
+      transfer->qos_setup_list[q].qfi = session->param.qos[q].qfi;
+      transfer->qos_setup_list[q].qos_flow_mapping_ind = QOSFLOW_MAPPING_INDICATION_DL;
+    }
+  }
+  // Target to Source Transparent Container
+  msg->target2source.buffer = calloc_or_fail(1, ho_command->len);
+  memcpy(msg->target2source.buffer, ho_command->buf, ho_command->len);
+  msg->target2source.length = ho_command->len;
+
+  itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
+}
+
 void rrc_gNB_send_NGAP_PDUSESSION_RELEASE_RESPONSE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
 {
   int pdu_sessions_released = 0;

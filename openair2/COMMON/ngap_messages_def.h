@@ -76,6 +76,7 @@ MESSAGE_DEF(NGAP_PATH_SWITCH_REQ_ACK       , MESSAGE_PRIORITY_MED, ngap_path_swi
 MESSAGE_DEF(NGAP_PDUSESSION_MODIFICATION_IND    , MESSAGE_PRIORITY_MED, ngap_pdusession_modification_ind_t    , ngap_pdusession_modification_ind)
 MESSAGE_DEF(NGAP_HANDOVER_REQUIRED, MESSAGE_PRIORITY_MED, ngap_handover_required_t, ngap_handover_required)
 MESSAGE_DEF(NGAP_HANDOVER_FAILURE, MESSAGE_PRIORITY_MED, ngap_handover_failure_t, ngap_handover_failure)
+MESSAGE_DEF(NGAP_HANDOVER_REQUEST_ACKNOWLEDGE, MESSAGE_PRIORITY_MED, ngap_handover_request_ack_t, ngap_handover_request_ack)
 
 /* NGAP -> RRC messages */
 MESSAGE_DEF(NGAP_DOWNLINK_NAS              , MESSAGE_PRIORITY_MED, ngap_downlink_nas_t              , ngap_downlink_nas )

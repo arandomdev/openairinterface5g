@@ -354,7 +354,8 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
  *         to trigger the Handover Request Acknowledge towards the AMF */
 static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t *rrc_reconf_buf, uint32_t rrc_reconf_len)
 {
-  // TODO
+  byte_array_t ba = {.buf = rrc_reconf_buf, .len = rrc_reconf_len};
+  rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(rrc, UE, &ba);
 }
 
 /** @brief This callback is used by the target gNB
