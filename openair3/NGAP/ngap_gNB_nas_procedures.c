@@ -157,19 +157,13 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     return -1;
   }
 
-  /* The gNB should allocate a unique gNB UE NGAP ID for this UE. The value
-   * will be used for the duration of the connectivity.
-   */
-  struct ngap_gNB_ue_context_s *ue_desc_p = calloc(1, sizeof(*ue_desc_p));
-  DevAssert(ue_desc_p != NULL);
-  /* Keep a reference to the selected AMF */
-  ue_desc_p->amf_ref       = amf_desc_p;
-  ue_desc_p->gNB_ue_ngap_id = UEfirstReq->gNB_ue_ngap_id;
-  ue_desc_p->gNB_instance  = instance_p;
-  ue_desc_p->selected_plmn_identity = UEfirstReq->selected_plmn_identity;
-
-  // insert in master table
-  ngap_store_ue_context(ue_desc_p);
+  /* Create and store NGAP UE context */
+  ngap_gNB_ue_context_t ue_desc_p = {
+      .amf_ref = amf_desc_p,
+      .gNB_ue_ngap_id = UEfirstReq->gNB_ue_ngap_id,
+      .gNB_instance = instance_p,
+      .selected_plmn_identity = UEfirstReq->selected_plmn_identity,
+  };
 
   /* mandatory */
   {
@@ -177,7 +171,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     ie->id = NGAP_ProtocolIE_ID_id_RAN_UE_NGAP_ID;
     ie->criticality = NGAP_Criticality_reject;
     ie->value.present = NGAP_InitialUEMessage_IEs__value_PR_RAN_UE_NGAP_ID;
-    ie->value.choice.RAN_UE_NGAP_ID = ue_desc_p->gNB_ue_ngap_id;
+    ie->value.choice.RAN_UE_NGAP_ID = ue_desc_p.gNB_ue_ngap_id;
   }
   /* mandatory */
   {
@@ -203,16 +197,16 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     MACRO_GNB_ID_TO_CELL_IDENTITY(instance_p->gNB_id,
                                   0, // Cell ID
                                   &userinfo_nr_p->nR_CGI.nRCellIdentity);
-    MCC_MNC_TO_TBCD(instance_p->plmn[ue_desc_p->selected_plmn_identity].mcc,
-                    instance_p->plmn[ue_desc_p->selected_plmn_identity].mnc,
-                    instance_p->plmn[ue_desc_p->selected_plmn_identity].mnc_digit_length,
+    MCC_MNC_TO_TBCD(instance_p->plmn[ue_desc_p.selected_plmn_identity].mcc,
+                    instance_p->plmn[ue_desc_p.selected_plmn_identity].mnc,
+                    instance_p->plmn[ue_desc_p.selected_plmn_identity].mnc_digit_length,
                     &userinfo_nr_p->nR_CGI.pLMNIdentity);
 
     /* Set TAI */
     INT24_TO_OCTET_STRING(instance_p->tac, &userinfo_nr_p->tAI.tAC);
-    MCC_MNC_TO_PLMNID(instance_p->plmn[ue_desc_p->selected_plmn_identity].mcc,
-                      instance_p->plmn[ue_desc_p->selected_plmn_identity].mnc,
-                      instance_p->plmn[ue_desc_p->selected_plmn_identity].mnc_digit_length,
+    MCC_MNC_TO_PLMNID(instance_p->plmn[ue_desc_p.selected_plmn_identity].mcc,
+                      instance_p->plmn[ue_desc_p.selected_plmn_identity].mnc,
+                      instance_p->plmn[ue_desc_p.selected_plmn_identity].mnc_digit_length,
                       &userinfo_nr_p->tAI.pLMNIdentity);
   }
 
@@ -255,7 +249,7 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
   }
 
   /* Update the current NGAP UE state */
-  ue_desc_p->ue_state = NGAP_UE_WAITING_CSR;
+  ue_desc_p.ue_state = NGAP_UE_WAITING_CSR;
   /* Assign a stream for this UE :
    * From 3GPP 38.412 7)Transport layers:
    *  Within the SCTP association established between one AMF and gNB pair:
@@ -274,10 +268,13 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
     amf_desc_p->nextstream += 1;
   }
 
-  ue_desc_p->tx_stream = amf_desc_p->nextstream;
+  ue_desc_p.tx_stream = amf_desc_p->nextstream;
+
+  /* Create and store UE context */
+  ngap_create_ue_context(&ue_desc_p);
+
   /* Send encoded message over sctp */
-  ngap_gNB_itti_send_sctp_data_req(instance_p->instance, amf_desc_p->assoc_id,
-                                   buffer, length, ue_desc_p->tx_stream);
+  ngap_gNB_itti_send_sctp_data_req(instance_p->instance, amf_desc_p->assoc_id, buffer, length, ue_desc_p.tx_stream);
 
   return 0;
 }
