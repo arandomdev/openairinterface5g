@@ -129,7 +129,11 @@ static void ldpc8blocks(void *p)
   uint8_t e2[E2] __attribute__((aligned(64)));
   uint8_t f2[E2+64] __attribute__((aligned(64)));
   bzero(e, E);
-  if (Eshift) bzero(e2,E2);
+  bzero(f, E + 64);
+  if (Eshift) {
+    bzero(e2, E2);
+    bzero(f2, E2 + 64);
+  }
   start_meas(&nrLDPC_TB_encoding_parameters->segments[macro_segment].ts_rate_match);
   nr_rate_matching_ldpc(Tbslbrm,
                         impp->BG,
