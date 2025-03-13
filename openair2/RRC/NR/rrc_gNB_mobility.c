@@ -228,7 +228,6 @@ static void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_
       .plmn.mnc_digit_length = rrc->configuration.mnc_digit_length[0],
       .nr_cellid = rrc->nr_cellid, // TODO target cell ID
       .servCellId = 0, // TODO: correct value?
-      .ReconfigComplOutcome = RRCreconf_success,
       .transm_action_ind = &transmission_action_indicator,
   };
   deliver_ue_ctxt_modification_data_t data = {.rrc = rrc,
