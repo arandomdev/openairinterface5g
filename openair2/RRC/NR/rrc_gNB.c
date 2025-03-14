@@ -2444,6 +2444,13 @@ void rrc_gNB_process_e1_bearer_context_setup_resp(e1ap_bearer_setup_resp_t *resp
     }
   }
 
+  // If HO Preparation Info is stored, N2 handover is ongoing
+  if (!UE->ho_context && UE->ue_ho_prep_info.buf) {
+    LOG_I(NR_RRC, "Received Bearer Context Setup Response for UE %d with valid HO Context\n", UE->rrc_ue_id);
+    nr_rrc_trigger_n2_ho_target(rrc, UE);
+    return;
+  }
+
   /* Instruction towards the DU for DRB configuration and tunnel creation */
   f1ap_drb_to_be_setup_t drbs[32]; // maximum DRB can be 32
   int nb_drb = fill_drb_to_be_setup_from_e1_resp(rrc, UE, resp->pduSession, resp->numPDUSessions, drbs);

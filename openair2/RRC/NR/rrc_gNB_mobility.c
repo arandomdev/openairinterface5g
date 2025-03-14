@@ -113,7 +113,8 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
                                  byte_array_t *ho_prep_info,
                                  ho_req_ack_t ack,
                                  ho_success_t success,
-                                 ho_cancel_t cancel)
+                                 ho_cancel_t cancel,
+                                 ho_failure_t failure)
 {
   DevAssert(rrc != NULL);
   DevAssert(ue != NULL);
@@ -142,6 +143,7 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
   // response
   ho_ctx->target->ho_req_ack = ack;
   ho_ctx->target->ho_success = success;
+  ho_ctx->target->ho_failure = failure;
 
   const f1_ue_data_t ue_data = cu_get_f1_ue_data(ue->rrc_ue_id);
   if (source_du != NULL) {
@@ -313,7 +315,7 @@ void nr_rrc_trigger_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, nr_rrc_du_contain
   ho_success_t success = nr_rrc_f1_ho_complete;
   ho_cancel_t cancel = nr_rrc_cancel_f1_ho;
   byte_array_t hpi = {.buf = buf, .len = size};
-  nr_initiate_handover(rrc, ue, source_du, target_du, &hpi, ack, success, cancel);
+  nr_initiate_handover(rrc, ue, source_du, target_du, &hpi, ack, success, cancel, NULL);
 }
 
 void nr_rrc_finalize_ho(gNB_RRC_UE_t *ue)
@@ -348,6 +350,27 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
   nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
 }
 
+/** @brief This callback is used by the target gNB
+ *         to trigger the Handover Request Acknowledge towards the AMF */
+static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t *rrc_reconf_buf, uint32_t rrc_reconf_len)
+{
+  // TODO
+}
+
+/** @brief This callback is used by the target gNB
+ *         to trigger the Handover Notify towards the AMF */
+static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  // TODO
+}
+
+/** @brief This callback is used by the source gNB to inform the AMF
+ *         about the cancellation of an ongoing handover */
+static void nr_rrc_n2_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  // TODO 3GPP TS 38.413: 8.4.5, 9.2.3.11
+}
+
 /** @brief Callback function to trigger NG Handover Failure on the target gNB,
  *         to inform the AMF that the preparation of resources has failed (e.g. unsatisfied criteria,
  *         gNB is already loaded). This message represents an Unsuccessful Outcome of the Handover Resource Allocation
@@ -366,6 +389,65 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_f
   }
 
   return;
+}
+
+struct NR_UE_NR_Capability *get_ue_nr_capability(int rnti, uint8_t *buf, uint32_t len)
+{
+  if (buf == NULL || len == 0)
+    return NULL;
+
+  NR_UE_CapabilityRAT_ContainerList_t *clist = NULL;
+  asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_UE_CapabilityRAT_ContainerList, (void **)&clist, buf, len, 0, 0);
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_MAC, "cannot decode UE capability container list of UE RNTI %04x, ignoring capabilities\n", rnti);
+    return NULL;
+  }
+
+  NR_UE_NR_Capability_t *cap = NULL;
+  for (int i = 0; i < clist->list.count; i++) {
+    const NR_UE_CapabilityRAT_Container_t *c = clist->list.array[i];
+    if (cap != NULL || c->rat_Type != NR_RAT_Type_nr) {
+      LOG_W(NR_MAC, "UE RNTI %04x: ignoring capability of type %ld\n", rnti, c->rat_Type);
+      continue;
+    }
+
+    asn_dec_rval_t dec_rval = uper_decode(NULL,
+                                          &asn_DEF_NR_UE_NR_Capability,
+                                          (void **)&cap,
+                                          c->ue_CapabilityRAT_Container.buf,
+                                          c->ue_CapabilityRAT_Container.size,
+                                          0,
+                                          0);
+    if (dec_rval.code != RC_OK) {
+      LOG_W(NR_MAC, "cannot decode NR UE capabilities of UE RNTI %04x, ignoring NR capability\n", rnti);
+      cap = NULL;
+      continue;
+    }
+  }
+  return cap;
+}
+
+/** @brief Trigger N2 Handover on the target gNB:
+ *         1) set up callbacks
+ *         2) initiate N2 handover on target NG-RAN, which triggers the set up
+ *            of HO context and UE Context Setup procedures */
+void nr_rrc_trigger_n2_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue)
+{
+  ho_req_ack_t ack = nr_rrc_n2_ho_acknowledge;
+  ho_success_t success = nr_rrc_n2_ho_complete;
+  ho_cancel_t cancel = nr_rrc_n2_ho_cancel;
+  ho_failure_t failure = nr_rrc_n2_ho_failure;
+
+  const nr_rrc_du_container_t *target_du = get_du_for_ue(rrc, ue->rrc_ue_id);
+  nr_initiate_handover(rrc, ue, NULL, target_du, &ue->ue_ho_prep_info, ack, success, cancel, failure);
+
+  if (!ue->UE_Capability_nr) {
+    NR_UE_NR_Capability_t *ue_cap = NULL;
+    ue_cap = get_ue_nr_capability(ue->rnti, ue->ue_cap_buffer.buf, ue->ue_cap_buffer.len);
+    ue->UE_Capability_nr = ue_cap;
+    ue->UE_Capability_size = ue->ue_cap_buffer.len;
+  }
+
 }
 
 /** @brief Trigger N2 handover on source gNB:

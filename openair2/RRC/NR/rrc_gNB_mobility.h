@@ -52,6 +52,7 @@ typedef struct nr_ho_source_cu {
 /* acknowledgement of handover request. buf+len is the RRC Reconfiguration */
 typedef void (*ho_req_ack_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, uint8_t *buf, uint32_t len);
 typedef void (*ho_success_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
+typedef void (*ho_failure_t)(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg);
 
 typedef struct nr_ho_target_cu {
   /// pointer to the (target) DU structure
@@ -66,6 +67,8 @@ typedef struct nr_ho_target_cu {
   ho_req_ack_t ho_req_ack;
   /// function pointer to announce handover success
   ho_success_t ho_success;
+  /// function pointer to announce the handover failure
+  ho_failure_t ho_failure;
 } nr_ho_target_cu_t;
 
 typedef struct nr_handover_context_s {
@@ -81,5 +84,7 @@ void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc,
                           gNB_RRC_UE_t *ue,
                           int serving_pci,
                           const nr_neighbour_gnb_configuration_t *neighbour_config);
+
+void nr_rrc_trigger_n2_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
 
 #endif /* RRC_GNB_MOBILITY_H_ */
