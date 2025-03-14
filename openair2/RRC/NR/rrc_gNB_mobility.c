@@ -396,7 +396,7 @@ static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_
  *         to trigger the Handover Notify towards the AMF */
 static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 {
-  // TODO
+  rrc_gNB_send_NGAP_HANDOVER_NOTIFY(rrc, UE);
 }
 
 /** @brief This callback is used by the source gNB to inform the AMF

@@ -432,6 +432,51 @@ static int ngap_gNB_handover_request_acknowledge(instance_t instance, ngap_hando
   return 0;
 }
 
+static int ngap_gNB_handover_notify(instance_t instance, const ngap_handover_notify_t *msg)
+{
+  LOG_D(NGAP, "Encode NGAP Handover Notify\n");
+  ngap_gNB_ue_context_t *ue_context_p = NULL;
+  uint8_t *buffer = NULL;
+  uint32_t length;
+
+  /* Retrieve the NGAP gNB instance associated with Mod_id */
+  ngap_gNB_instance_t *ngap_gNB_instance_p = ngap_gNB_get_instance(instance);
+  DevAssert(msg != NULL);
+  DevAssert(ngap_gNB_instance_p != NULL);
+
+  if ((ue_context_p = ngap_get_ue_context(msg->gNB_ue_ngap_id)) == NULL) {
+    NGAP_ERROR("Failed to find ue context associated with gNB ue ngap id: 0x%08x\n", msg->gNB_ue_ngap_id);
+    return -1;
+  }
+
+  if (ue_context_p->gNB_ue_ngap_id != msg->gNB_ue_ngap_id) {
+    NGAP_ERROR("Uknown gNB_ue_ngap_id %d in Handover Notify\n", msg->gNB_ue_ngap_id);
+    return -1;
+  }
+
+  if (ue_context_p->amf_ue_ngap_id != msg->amf_ue_ngap_id) {
+    NGAP_ERROR("Uknown amf_ue_ngap_id %ld in Handover Notify\n", msg->amf_ue_ngap_id);
+    return -1;
+  }
+
+  NGAP_NGAP_PDU_t *pdu = encode_ng_handover_notify(msg);
+
+  if (ngap_gNB_encode_pdu(pdu, &buffer, &length) < 0) {
+    NGAP_ERROR("Failed to encode NG Handover Notify message\n");
+    ASN_STRUCT_FREE(asn_DEF_NGAP_NGAP_PDU, pdu);
+    return -1;
+  }
+
+  /* UE associated signalling -> use the allocated stream */
+  ngap_gNB_itti_send_sctp_data_req(ngap_gNB_instance_p->instance,
+                                   ue_context_p->amf_ref->assoc_id,
+                                   buffer,
+                                   length,
+                                   ue_context_p->tx_stream);
+
+  return 0;
+}
+
 void *ngap_gNB_process_itti_msg(void *notUsed) {
   MessageDef *received_msg = NULL;
   int         result;
@@ -524,6 +569,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed) {
 
       case NGAP_HANDOVER_REQUEST_ACKNOWLEDGE:
         ngap_gNB_handover_request_acknowledge(instance, &NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(received_msg));
+        break;
+
+      case NGAP_HANDOVER_NOTIFY:
+        ngap_gNB_handover_notify(instance, &NGAP_HANDOVER_NOTIFY(received_msg));
         break;
 
       default:

@@ -1448,6 +1448,35 @@ void rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(gNB_RRC_INST *rrc, gNB_RRC_U
   itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
 }
 
+/** @brief Prepare NG Handover Notify message and inform NGAP */
+void rrc_gNB_send_NGAP_HANDOVER_NOTIFY(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  LOG_I(NR_RRC, "Triggering NGAP Handover Notify\n");
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_HANDOVER_NOTIFY);
+  // ngap_gNB_instance_t *ngap = ngap_gNB_get_instance(rrc->module_id);
+  // ngap_gNB_ue_context_t *ue_context_p = NULL;
+  // if ((ue_context_p = ngap_get_ue_context(UE->rrc_ue_id)) == NULL) {
+  //   /* The context for this gNB ue ngap id doesn't exist in the map of gNB UEs */
+  //   LOG_W(NGAP, "Failed to find ue context associated with gNB ue ngap id: 0x%08x\n", UE->rrc_ue_id);
+  //   return;
+  // }
+  ngap_handover_notify_t *ho_notify = &NGAP_HANDOVER_NOTIFY(msg_p);
+  memset(ho_notify, 0, sizeof(*ho_notify));
+  nr_rrc_du_container_t *du = get_du_by_cell_id(rrc, rrc->nr_cellid);
+
+  ho_notify->gNB_ue_ngap_id = UE->rrc_ue_id;
+  ho_notify->amf_ue_ngap_id = UE->amf_ue_ngap_id;
+  ho_notify->user_info.nrCellIdentity = rrc->nr_cellid;
+  ho_notify->user_info.target_ng_ran.tac = *du->setup_req->cell->info.tac;
+  ho_notify->user_info.target_ng_ran.targetgNBId = rrc->node_id;
+  ho_notify->user_info.target_ng_ran.plmn_identity.mcc = du->setup_req->cell->info.plmn.mcc;
+  ho_notify->user_info.target_ng_ran.plmn_identity.mnc = du->setup_req->cell->info.plmn.mnc;
+  ho_notify->user_info.target_ng_ran.plmn_identity.mnc_digit_length = du->setup_req->cell->info.plmn.mnc_digit_length;
+
+  itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
+}
+
 void rrc_gNB_send_NGAP_PDUSESSION_RELEASE_RESPONSE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
 {
   int pdu_sessions_released = 0;
