@@ -1634,6 +1634,10 @@ static void handle_rrcSetupComplete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const N
     }
   }
 
+#ifdef E2_AGENT
+  signal_ue_id(UE, UL_DCCH_NR_RRC_CLASS, 3);
+#endif
+
   rrc_gNB_process_RRCSetupComplete(rrc, UE, setup_complete->criticalExtensions.choice.rrcSetupComplete);
   return;
 }
