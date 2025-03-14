@@ -877,11 +877,6 @@ bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t
     return false;
   }
   configure_UE_BWP(nrmac, nrmac->common_channels[0].ServingCellConfigCommon, UE, false, -1, -1);
-  if (CellGroup->spCellConfig && CellGroup->spCellConfig->reconfigurationWithSync
-      && CellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated
-      && CellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra) {
-    nr_mac_prepare_ra_ue(RC.nrmac[0], UE);
-  }
   process_addmod_bearers_cellGroupConfig(&UE->UE_sched_ctrl, CellGroup->rlc_BearerToAddModList);
   AssertFatal(CellGroup->rlc_BearerToReleaseList == NULL, "cannot release bearers while adding new UEs\n");
   NR_SCHED_UNLOCK(&nrmac->sched_lock);
