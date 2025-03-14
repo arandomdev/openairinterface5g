@@ -54,4 +54,6 @@ void ngap_pdu_to_octet_string(OCTET_STRING_t *out, ngap_pdu_t in);
 
 void tnl_to_bitstring(BIT_STRING_t *out, const transport_layer_addr_t in);
 
+void bitstring_to_tnl(transport_layer_addr_t *out, const BIT_STRING_t in);
+
 #endif /* NGAP_GNB_MANAGEMENT_PROCEDURES_H_ */

@@ -100,4 +100,6 @@ int rrc_gNB_process_Handover_Request(gNB_RRC_INST *rrc, instance_t instance, nga
 
 void rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, byte_array_t *ho_command);
 
+void rrc_gNB_process_HandoverCommand(gNB_RRC_INST *rrc, const ngap_handover_command_t *msg);
+
 #endif

@@ -184,4 +184,6 @@ int16_t get_HandoverPreparationInformation(const gNB_RRC_UE_t *ue_p,
                                            byte_array_t *buffer,
                                            int scell_pci);
 
+int doRRCReconfiguration_from_HandoverCommand(byte_array_t *ba, const uint8_t *pdu, const uint32_t len);
+
 #endif  /* __RRC_NR_MESSAGES_ASN1_MSG__H__ */

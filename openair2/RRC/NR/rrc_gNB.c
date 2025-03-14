@@ -94,6 +94,7 @@
 #include "xer_encoder.h"
 #include "E1AP/lib/e1ap_bearer_context_management.h"
 #include "E1AP/lib/e1ap_interface_management.h"
+#include "NR_HandoverCommand.h"
 
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
@@ -2818,6 +2819,10 @@ void *rrc_gnb_task(void *args_p) {
 
       case NGAP_HANDOVER_REQUEST:
         rrc_gNB_process_Handover_Request(RC.nrrrc[instance], instance, &NGAP_HANDOVER_REQUEST(msg_p));
+        break;
+
+      case NGAP_HANDOVER_COMMAND:
+        rrc_gNB_process_HandoverCommand(RC.nrrrc[instance], &NGAP_HANDOVER_COMMAND(msg_p));
         break;
 
       default:
