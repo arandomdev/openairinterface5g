@@ -656,7 +656,7 @@ retrieve_ldpc_enc_op(struct rte_bbdev_enc_op **ops,
     int E_sum = 0;
     int bit_offset = 0;
     int byte_offset = 0;
-    p_out = nrLDPC_slot_encoding_parameters->TBs[h].segments[0].output;
+    p_out = nrLDPC_slot_encoding_parameters->TBs[h].output;
     for (unsigned int i = 0; i < nrLDPC_slot_encoding_parameters->TBs[h].C; ++i) {
       struct rte_bbdev_op_data *output = &ops[j]->ldpc_enc.output;
       struct rte_mbuf *m = output->data;
