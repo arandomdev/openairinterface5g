@@ -573,6 +573,13 @@ static void rrc_gNB_generate_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_
 
   LOG_UE_DL_EVENT(ue_p, "Generate RRCReconfiguration (bytes %d, xid %d)\n", size, xid);
   nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DL_SCH_LCID_DCCH, buffer, size);
+
+#ifdef E2_AGENT
+  const uint32_t rrc_msg_id = 1; // TS 38.331, section 6.2.1 ("DL-DCCH-Message")
+  byte_array_t buffer_ba = {.len = size};
+  buffer_ba.buf = buffer;
+  signal_rrc_msg(DL_DCCH_NR_RRC_CLASS, rrc_msg_id, buffer_ba);
+#endif
 }
 
 void rrc_gNB_modify_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p)
@@ -1729,6 +1736,13 @@ static int rrc_gNB_decode_dcch(gNB_RRC_INST *rrc, const f1ap_ul_rrc_message_t *m
   }
 
   if (ul_dcch_msg->message.present == NR_UL_DCCH_MessageType_PR_c1) {
+#ifdef E2_AGENT
+    // 38.331 Sec 6.2.1: message index of UL-DCCH-Message
+    const uint32_t rrc_msg_id = ul_dcch_msg->message.choice.c1->present;
+    byte_array_t buffer_ba = {.len = msg->rrc_container_length};
+    buffer_ba.buf = msg->rrc_container;
+    signal_rrc_msg(UL_DCCH_NR_RRC_CLASS, rrc_msg_id, buffer_ba);
+#endif
     switch (ul_dcch_msg->message.choice.c1->present) {
       case NR_UL_DCCH_MessageType__c1_PR_NOTHING:
         LOG_I(NR_RRC, "Received PR_NOTHING on UL-DCCH-Message\n");
