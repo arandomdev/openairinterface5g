@@ -578,8 +578,7 @@ int nfapi_nr_vnf_config_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_con
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
-#ifndef ENABLE_WLS
-
+#if !defined(ENABLE_WLS) && !defined(ENABLE_AERIAL)
 	nfapi_vnf_phy_info_t* phy = nfapi_vnf_phy_info_list_find(config, req->header.phy_id);
 
 	if(phy == NULL)

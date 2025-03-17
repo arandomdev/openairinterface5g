@@ -47,6 +47,7 @@ typedef struct {
   uint32_t message_length;
 } fapi_phy_api_msg;
 
+int aerial_pack_and_send_p5_msg(void *vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t *msg, uint32_t msg_len);
 int aerial_send_P5_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_nr_p4_p5_message_header_t *header);
 int aerial_send_P7_msg(void *packedBuf, uint32_t packedMsgLength, nfapi_nr_p7_message_header_t *header);
 int aerial_send_P7_msg_with_data(void *packedBuf,
