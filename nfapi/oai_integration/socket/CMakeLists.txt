@@ -1,6 +1,7 @@
 if ( NOT OAI_WLS ) # Not WLS, means its SOCKET-based comms, maybe add a flag specific for UDP
     add_library(nfapi_socket_lib
             socket_pnf.c
+            socket_vnf.c
             socket_common.c
     )
 

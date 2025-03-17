@@ -2221,7 +2221,7 @@ void vnf_dispatch_p7_message(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf_p7)
 	}
 }
 
-void vnf_nr_dispatch_p7_message(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf_p7)
+void vnf_nr_handle_p7_message(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf_p7)
 {
 	nfapi_nr_p7_message_header_t header;
 
@@ -2418,196 +2418,6 @@ void vnf_handle_p7_message(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf_p7)
 	}
 }
 
-void vnf_nr_handle_p7_message(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf_p7) 
-{
-	nfapi_nr_p7_message_header_t messageHeader;
-
-	// validate the input params
-	if(pRecvMsg == NULL || recvMsgLen < 4 || vnf_p7 == NULL)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "vnf_handle_p7_message: invalid input params (%p %d %p)\n", pRecvMsg, recvMsgLen, vnf_p7);
-		return;
-	}
-
-	// unpack the message header
-	if (vnf_p7->_public.hdr_unpack_func(pRecvMsg, recvMsgLen, &messageHeader, sizeof(nfapi_nr_p7_message_header_t), &vnf_p7->_public.codec_config) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "Unpack message header failed, ignoring\n");
-		return;
-	}
-
-	if(vnf_p7->_public.checksum_enabled)
-	{
-		uint32_t checksum = nfapi_nr_p7_calculate_checksum(pRecvMsg, recvMsgLen);
-		if(checksum != messageHeader.checksum)
-		{
-			NFAPI_TRACE(NFAPI_TRACE_ERROR, "Checksum verification failed %d %d msg:%d len:%d\n", checksum, messageHeader.checksum, messageHeader.message_id, recvMsgLen);
-			return;
-		}
-	}
-
-	uint8_t m = NFAPI_P7_GET_MORE(messageHeader.m_segment_sequence);
-	uint8_t segment_num = NFAPI_P7_GET_SEGMENT(messageHeader.m_segment_sequence);
-	uint8_t sequence_num = NFAPI_P7_GET_SEQUENCE(messageHeader.m_segment_sequence);
-
-
-	if(m == 0 && segment_num == 0)
-	{
-		// we have a complete message
-		// ensure the message is sensible
-		if (recvMsgLen < 8 || pRecvMsg == NULL)
-		{
-			NFAPI_TRACE(NFAPI_TRACE_WARN, "Invalid message size: %d, ignoring\n", recvMsgLen);
-			return;
-		}
-
-		//vnf_dispatch_p7_message(&messageHeader, pRecvMsg, recvMsgLen, vnf_p7);
-		vnf_nr_dispatch_p7_message(pRecvMsg, recvMsgLen, vnf_p7);
-	}
-	else
-	{
-		nfapi_vnf_p7_connection_info_t* phy = vnf_p7_connection_info_list_find(vnf_p7, messageHeader.phy_id);
-
-		if(phy)
-		{
-			vnf_p7_rx_message_t* rx_msg = vnf_p7_rx_reassembly_queue_add_segment(vnf_p7, &(phy->reassembly_queue), sequence_num, segment_num, m, pRecvMsg, recvMsgLen);
-
-			if(rx_msg->num_segments_received == rx_msg->num_segments_expected)
-			{
-				// send the buffer on
-				uint16_t i = 0;
-				uint16_t length = 0;
-				for(i = 0; i < rx_msg->num_segments_expected; ++i)
-				{
-					length += rx_msg->segments[i].length - (i > 0 ? NFAPI_NR_P7_HEADER_LENGTH : 0);
-				}
-
-				if(phy->reassembly_buffer_size < length)
-				{
-					vnf_p7_free(vnf_p7, phy->reassembly_buffer);
-					phy->reassembly_buffer = 0;
-				}
-
-				if(phy->reassembly_buffer == 0)
-				{
-					NFAPI_TRACE(NFAPI_TRACE_NOTE, "Resizing VNF_P7 Reassembly buffer %d->%d\n", phy->reassembly_buffer_size, length);
-					phy->reassembly_buffer = (uint8_t*)vnf_p7_malloc(vnf_p7, length);
-
-					if(phy->reassembly_buffer == 0)
-					{
-						NFAPI_TRACE(NFAPI_TRACE_NOTE, "Failed to allocate VNF_P7 reassemby buffer len:%d\n", length);
-						return;
-					}
-                                       memset(phy->reassembly_buffer, 0, length);
-					phy->reassembly_buffer_size = length;
-				}
-
-				uint16_t offset = 0;
-				for(i = 0; i < rx_msg->num_segments_expected; ++i)
-				{
-					if(i == 0)
-					{
-						memcpy(phy->reassembly_buffer, rx_msg->segments[i].buffer, rx_msg->segments[i].length);
-						offset += rx_msg->segments[i].length;
-					}
-					else
-					{
-						memcpy(phy->reassembly_buffer + offset, rx_msg->segments[i].buffer + NFAPI_NR_P7_HEADER_LENGTH, rx_msg->segments[i].length - NFAPI_NR_P7_HEADER_LENGTH);
-						offset += rx_msg->segments[i].length - NFAPI_NR_P7_HEADER_LENGTH;
-					}
-				}
-
-
-				//pnf_dispatch_p7_message(pnf_p7->reassemby_buffer, length, pnf_p7, rx_msg->rx_hr_time);
-				vnf_nr_dispatch_p7_message(phy->reassembly_buffer, length , vnf_p7);
-
-
-				// delete the structure
-				vnf_p7_rx_reassembly_queue_remove_msg(vnf_p7, &(phy->reassembly_queue), rx_msg);
-			}
-
-      // see corresponding comment in pnf_nr_handle_p7_message() [same commit]
-			vnf_p7_rx_reassembly_queue_remove_old_msgs(vnf_p7, &(phy->reassembly_queue), 10000);
-		}
-		else
-		{
-
-			NFAPI_TRACE(NFAPI_TRACE_INFO, "Unknown phy id %d\n", messageHeader.phy_id);
-		}
-	}
-}
-
-int vnf_nr_p7_read_dispatch_message(vnf_p7_t* vnf_p7)
-{
-	int recvfrom_result = 0;
-	struct sockaddr_in remote_addr;
-	socklen_t remote_addr_size = sizeof(remote_addr);
-
-	do
-	{
-		// peek the header
-		uint8_t header_buffer[NFAPI_NR_P7_HEADER_LENGTH];
-		recvfrom_result = recvfrom(vnf_p7->socket, header_buffer, NFAPI_NR_P7_HEADER_LENGTH, MSG_DONTWAIT | MSG_PEEK, (struct sockaddr*)&remote_addr, &remote_addr_size);
-
-		if(recvfrom_result > 0)
-		{
-			// get the segment size
-			nfapi_nr_p7_message_header_t header;
-			if(vnf_p7->_public.hdr_unpack_func(header_buffer, NFAPI_NR_P7_HEADER_LENGTH, &header, sizeof(header), 0) < 0)
-			{
-				NFAPI_TRACE(NFAPI_TRACE_ERROR, "Unpack message header failed, ignoring\n");
-				return -1;
-			}
-
-			// resize the buffer if we have a large segment
-			if(header.message_length > vnf_p7->rx_message_buffer_size)
-			{
-				NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d\n", header.message_length); 
-				vnf_p7->rx_message_buffer = realloc(vnf_p7->rx_message_buffer, header.message_length);
-				vnf_p7->rx_message_buffer_size = header.message_length;
-			}
-
-			// read the segment
-			recvfrom_result = recvfrom(vnf_p7->socket, vnf_p7->rx_message_buffer, header.message_length, MSG_WAITALL | MSG_TRUNC, (struct sockaddr*)&remote_addr, &remote_addr_size);
-			NFAPI_TRACE(NFAPI_TRACE_DEBUG, "recvfrom_result = %d from %s():%d\n", recvfrom_result, __FUNCTION__, __LINE__);
-
-			// todo : how to handle incomplete readfroms, need some sort of buffer/select
-
-			if (recvfrom_result > 0)
-			{
-				if (recvfrom_result != header.message_length)
-				{
-					NFAPI_TRACE(NFAPI_TRACE_ERROR, "(%d) Received unexpected number of bytes. %d != %d",
-						    __LINE__, recvfrom_result, header.message_length);
-					break;
-				}
-				NFAPI_TRACE(NFAPI_TRACE_DEBUG, "Calling vnf_nr_handle_p7_message from %d\n", __LINE__);
-				vnf_nr_handle_p7_message(vnf_p7->rx_message_buffer, recvfrom_result, vnf_p7);
-				return 0;
-			}
-			else
-			{
-				NFAPI_TRACE(NFAPI_TRACE_ERROR, "recvfrom failed %d %d\n", recvfrom_result, errno);
-			}
-		}
-
-		if(recvfrom_result == -1)
-		{
-			if(errno == EAGAIN || errno == EWOULDBLOCK)
-			{
-				// return to the select
-				//NFAPI_TRACE(NFAPI_TRACE_WARN, "%s recvfrom would block :%d\n", __FUNCTION__, errno);
-			}
-			else
-			{
-				NFAPI_TRACE(NFAPI_TRACE_WARN, "%s recvfrom failed errno:%d\n", __FUNCTION__, errno);
-			}
-		}
-	}
-	while(recvfrom_result > 0);
-
-	return 0;
-}
 
 int vnf_p7_read_dispatch_message(vnf_p7_t* vnf_p7)
 {
@@ -2653,7 +2463,7 @@ int vnf_p7_read_dispatch_message(vnf_p7_t* vnf_p7)
 						    __LINE__, recvfrom_result, header.message_length);
 					break;
 				}
-				NFAPI_TRACE(NFAPI_TRACE_INFO, "Calling vnf_nr_handle_p7_message from %d\n", __LINE__);
+				NFAPI_TRACE(NFAPI_TRACE_INFO, "Calling vnf_nr_reassemble_p7_message from %d\n", __LINE__);
 				vnf_handle_p7_message(vnf_p7->rx_message_buffer, recvfrom_result, vnf_p7);
 				return 0;
 			}

@@ -18,23 +18,18 @@
  * For more information about the OpenAirInterface (OAI) Software Alliance:
  *      contact@openairinterface.org
  */
-#ifndef SOCKET_COMMON_H
-#define SOCKET_COMMON_H
 
-#define _GNU_SOURCE  /* required for pthread_getname_np */
-#include <errno.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <netinet/in.h>
-#include <netinet/sctp.h>
-#include <assertions.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <pthread.h>
-#include <netdb.h>
 
-int socket_send_p5_msg(const int sctp, const int socket, const void* remote_addr, const void* msg, const uint32_t len, const uint16_t stream);
-int socket_send_p7_msg(const int socket, const void* remote_addr, const void* msg, const uint32_t len);
-
-#endif //SOCKET_COMMON_H
+#ifndef SOCKET_VNF_H
+#define SOCKET_VNF_H
+#include "socket_common.h"
+#include "vnf.h"
+#include "vnf_p7.h"
+#include "nr_fapi_p5.h"
+#include "nr_nfapi_p7.h"
+#include "nr_fapi_p7.h"
+int vnf_pack_and_send_p5_msg(void* vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len);
+int vnf_pack_and_send_p7_msg(void* vnf_p7_ptr, nfapi_nr_p7_message_header_t* header);
+void vnf_start_p5_thread(void *ptr);
+void *vnf_nr_start_p7_thread(void *ptr) ;
+#endif //SOCKET_VNF_H
