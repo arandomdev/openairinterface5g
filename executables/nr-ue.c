@@ -105,7 +105,7 @@ static void *NRUE_phy_stub_standalone_pnf_task(void *arg);
 static void start_process_slot_tx(void* arg) {
   notifiedFIFO_elt_t *newTx = arg;
   nr_rxtx_thread_data_t *curMsgTx = NotifiedFifoData(newTx);
-  pushNotifiedFIFO(&curMsgTx->UE->ul_actor.fifo, newTx);
+  pushNotifiedFIFO(&curMsgTx->UE->ul_actors[curMsgTx->proc.nr_slot_tx % NUM_UL_ACTORS].fifo, newTx);
 }
 
 static size_t dump_L1_UE_meas_stats(PHY_VARS_NR_UE *ue, char *output, size_t max_len)
@@ -522,9 +522,6 @@ static void RU_write(nr_rxtx_thread_data_t *rxtxD, bool sl_tx_action)
 
   int tmp = openair0_write_reorder(&UE->rfdevice, writeTimestamp, txp, writeBlockSize, fp->nb_antennas_tx, flags);
   AssertFatal(tmp == writeBlockSize, "");
-
-  for (int i = 0; i < fp->nb_antennas_tx; i++)
-    memset(txp[i], 0, writeBlockSize);
 }
 
 void processSlotTX(void *arg)
@@ -557,6 +554,7 @@ void processSlotTX(void *arg)
         UE->if_inst->sl_indication(&sl_indication);
         stop_meas(&UE->ue_ul_indication_stats);
       }
+      dynamic_barrier_join(rxtxD->next_barrier);
 
       if (phy_data.sl_tx_action) {
 
@@ -583,12 +581,14 @@ void processSlotTX(void *arg)
         UE->if_inst->ul_indication(&ul_indication);
         stop_meas(&UE->ue_ul_indication_stats);
       }
+      dynamic_barrier_join(rxtxD->next_barrier);
 
       phy_procedures_nrUE_TX(UE, proc, &phy_data);
     }
+  } else {
+    dynamic_barrier_join(rxtxD->next_barrier);
   }
   RU_write(rxtxD, sl_tx_action);
-  dynamic_barrier_join(rxtxD->next_barrier);
   TracyCZoneEnd(ctx);
 }
 
@@ -628,7 +628,9 @@ static int handle_sync_req_from_mac(PHY_VARS_NR_UE *UE)
     for (int i = 0; i < NUM_DL_ACTORS; i++) {
       flush_actor(UE->dl_actors + i);
     }
-    flush_actor(&UE->ul_actor);
+    for (int i = 0; i < NUM_UL_ACTORS; i++) {
+      flush_actor(UE->ul_actors + i);
+    }
 
     clean_UE_harq(UE);
     UE->is_synchronized = 0;
@@ -1154,7 +1156,6 @@ void *UE_thread(void *arg)
     curMsgTx->proc.timestamp_tx = writeTimestamp;
     curMsgTx->UE = UE;
     curMsgTx->proc.nr_slot_tx_offset = nr_slot_tx_offset;
-
     int slot = curMsgTx->proc.nr_slot_tx;
     int slot_and_frame = slot + curMsgTx->proc.frame_tx * UE->frame_parms.slots_per_frame;
     int next_tx_slot_and_frame = absolute_slot + duration_rx_to_tx + 1;
