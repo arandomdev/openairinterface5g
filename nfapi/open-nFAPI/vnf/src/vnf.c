@@ -29,7 +29,6 @@
 #include "nfapi_nr_interface_scf.h"
 #ifdef ENABLE_AERIAL
 #include "nfapi/oai_integration/aerial/fapi_nvIPC.h"
-#include "nfapi/oai_integration/aerial/fapi_vnf_p5.h"
 #include "nr_fapi_p5.h"
 #endif
 #ifdef ENABLE_WLS
@@ -1435,51 +1434,34 @@ static int vnf_send_p5_msg(vnf_t *vnf, nfapi_vnf_pnf_info_t *pnf, const void *ms
 	return 0;
 }
 
-int vnf_nr_pack_and_send_p5_message(void* vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len)
+int vnf_nr_pack_and_send_p5_message(void *vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t *msg, uint32_t msg_len)
 {
-  vnf_t* vnf = (vnf_t*)vnf_ptr;
-	nfapi_vnf_pnf_info_t* pnf = nfapi_vnf_pnf_list_find(&(vnf->_public), p5_idx);
-	
-	if(pnf)
-	{
-		// pack the message for transmission
-		int packedMessageLength = 0;
-    if (NFAPI_MODE == NFAPI_MODE_AERIAL) {
-#ifdef ENABLE_AERIAL
-      // In case it is a FAPI message, create 2 messages, one with nFAPI header for OAI PNF and one with no nFAPI header for Aerial
-      // L1
-      // create FAPI tx_buffer
-      uint8_t tx_messagebufferFAPI[sizeof(vnf->tx_message_buffer)];
-      int packedMessageLengthFAPI = -1;
-      packedMessageLengthFAPI =
-          fapi_nr_p5_message_pack(msg, msg_len, tx_messagebufferFAPI, sizeof(tx_messagebufferFAPI), &vnf->_public.codec_config);
-      return aerial_send_P5_msg(tx_messagebufferFAPI, packedMessageLengthFAPI, msg);
-#else
-      return 0;
-#endif
-    } else {
-      packedMessageLength = nfapi_nr_p5_message_pack(msg,
-                                                     msg_len,
-                                                     vnf->tx_message_buffer,
-                                                     sizeof(vnf->tx_message_buffer),
-                                                     &vnf->_public.codec_config);
+  vnf_t *vnf = (vnf_t *)vnf_ptr;
+  nfapi_vnf_pnf_info_t *pnf = nfapi_vnf_pnf_list_find(&(vnf->_public), p5_idx);
 
-      if (packedMessageLength < 0) {
-        NFAPI_TRACE(NFAPI_TRACE_ERROR, "nfapi_nr_p5_message_pack failed with return %d\n", packedMessageLength);
-        return -1;
-      }
-      // printf("msg id = 0x%02x, entire message length: %d\n", msg->message_id, packedMessageLength);
-      // for (int i = 0; i < packedMessageLength; i++) {
-      //   printf(" msg->msg_buf[%d] = 0x%02x\n", i, ((uint8_t *) vnf->tx_message_buffer)[i]);
-      // }
+  if (pnf) {
+    // pack the message for transmission
+    int packedMessageLength = 0;
+    packedMessageLength = nfapi_nr_p5_message_pack(msg,
+                                                   msg_len,
+                                                   vnf->tx_message_buffer,
+                                                   sizeof(vnf->tx_message_buffer),
+                                                   &vnf->_public.codec_config);
 
-      return vnf_send_p5_msg(vnf, pnf, vnf->tx_message_buffer, packedMessageLength, 0);
+    if (packedMessageLength < 0) {
+      NFAPI_TRACE(NFAPI_TRACE_ERROR, "nfapi_nr_p5_message_pack failed with return %d\n", packedMessageLength);
+      return -1;
     }
+    // printf("msg id = 0x%02x, entire message length: %d\n", msg->message_id, packedMessageLength);
+    // for (int i = 0; i < packedMessageLength; i++) {
+    //   printf(" msg->msg_buf[%d] = 0x%02x\n", i, ((uint8_t *) vnf->tx_message_buffer)[i]);
+    // }
+
+    return vnf_send_p5_msg(vnf, pnf, vnf->tx_message_buffer, packedMessageLength, 0);
   } else {
     NFAPI_TRACE(NFAPI_TRACE_INFO, "%s() cannot find pnf info for p5_idx:%d\n", __FUNCTION__, p5_idx);
     return -1;
   }
-
 }
 
 
