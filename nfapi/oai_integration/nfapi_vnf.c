@@ -1622,6 +1622,47 @@ int nr_start_resp_cb(nfapi_vnf_config_t *config, int p5_idx, nfapi_nr_start_resp
   return 0;
 }
 
+static char* error_ind_code_to_str(nfapi_nr_phy_notifications_errors_e error_code)
+{
+  switch (error_code) {
+    case NFAPI_NR_PHY_API_MSG_OK:
+      return "NFAPI_NR_PHY_API_MSG_OK";
+    case NFAPI_NR_PHY_API_MSG_INVALID_STATE:
+      return "NFAPI_NR_PHY_API_MSG_INVALID_STATE";
+      break;
+    case NFAPI_NR_PHY_API_MSG_INVALID_CONFIG:
+      return "NFAPI_NR_PHY_API_MSG_INVALID_CONFIG";
+      break;
+    case NFAPI_NR_PHY_API_SFN_OUT_OF_SYNC:
+      return "NFAPI_NR_PHY_API_SFN_OUT_OF_SYNC";
+      break;
+    case NFAPI_NR_PHY_API_MSG_SLOR_ERR:
+      return "NFAPI_NR_PHY_API_MSG_SLOR_ERR";
+      break;
+    case NFAPI_NR_PHY_API_MSG_BCH_MISSING:
+      return "NFAPI_NR_PHY_API_MSG_BCH_MISSING";
+      break;
+    case NFAPI_NR_PHY_API_MSG_INVALID_SFN:
+      return "NFAPI_NR_PHY_API_MSG_INVALID_SFN";
+      break;
+    case NFAPI_NR_PHY_API_MSG_UL_DCI_ERR:
+      return "NFAPI_NR_PHY_API_MSG_UL_DCI_ERR";
+      break;
+    case NFAPI_NR_PHY_API_MSG_TX_ERR:
+      return "NFAPI_NR_PHY_API_MSG_TX_ERR";
+      break;
+  }
+  return "UNKNOWN_ERROR";
+}
+
+int nr_error_ind_cb(nfapi_vnf_config_t *config, int p5_idx, nfapi_nr_error_indication_scf_t *resp) {
+  NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Received NFAPI_NR_PHY_MSG_TYPE_ERROR_INDICATION idx:%d phy_id:%d\n", p5_idx, resp->header.phy_id);
+  NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Previous message 0x%02x resulted in an error on the PNF \n", resp->message_id);
+  NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Received error code 0x%02x (%s)\n", resp->error_code, error_ind_code_to_str(resp->error_code));
+  // TODO: add error handling to the VNF instead of only reporting the received error
+  return 0;
+}
+
 int vendor_ext_cb(nfapi_vnf_config_t *config, int p5_idx, void *msg)
 {
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] %s\n", __FUNCTION__);
@@ -1762,6 +1803,7 @@ void configure_nr_nfapi_vnf(eth_params_t params)
   config->nr_param_resp = &nr_param_resp_cb;
   config->nr_config_resp = &nr_config_resp_cb;
   config->nr_start_resp = &nr_start_resp_cb;
+  config->nr_error_ind = &nr_error_ind_cb;
   config->vendor_ext = &vendor_nr_ext_cb;
   config->user_data = &vnf;
   // To allow custom vendor extentions to be added to nfapi
