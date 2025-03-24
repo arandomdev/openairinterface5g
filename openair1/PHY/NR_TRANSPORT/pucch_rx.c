@@ -974,7 +974,7 @@ void nr_decode_pucch2(PHY_VARS_gNB *gNB,
   pucch2_lev /= Prx * nb_symbols;
   int pucch2_levdB = dB_fixed(pucch2_lev);
   int scaling = max((log2_approx64(pucch2_lev) >> 1) - 8, 0);
-  LOG_D(NR_PHY,
+  LOG_I(NR_PHY,
         "%d.%d Decoding pucch2 for %d symbols, %d PRB, nb_harq %d, nb_sr %d, nb_csi %d/%d, pucch2_lev %d dB (scaling %d)\n",
         frame,
         slot,
@@ -1297,7 +1297,7 @@ void nr_decode_pucch2(PHY_VARS_gNB *gNB,
   } else
     LOG_D(PHY, "PUCCH not processed: nb_bit %d decoderState %d\n", nb_bit, decoderState);
 
-  LOG_D(PHY, "UCI decoderState %d, payload[0] %llu\n", decoderState, (unsigned long long)decodedPayload[0]);
+  LOG_I(PHY, "UCI decoderState %d nb_bit %d, payload[0] %llu\n", decoderState, nb_bit, (unsigned long long)decodedPayload[0]);
 
   // estimate CQI for MAC (from antenna port 0 only)
   // TODO this computation is wrong -> to be ignored at MAC for now

@@ -521,7 +521,7 @@ static int evaluate_ri_report(uint8_t *payload,
      if ((ri_restriction >> i) & 0x01) {
        if(count == ri_index) {
          sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.ri = i;
-         LOG_D(MAC,"CSI Reported Rank %d\n", i + 1);
+         LOG_I(MAC,"CSI Reported Rank %d (%d bits)\n", i + 1, ri_bitlen);
          return i;
        }
        count++;
@@ -550,7 +550,7 @@ static void evaluate_cqi_report(uint8_t *payload,
   // NR_CSI_ReportConfig__cqi_Table_table3	= 2
   sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.cqi_table = cqi_Table;
   sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_1tb = temp_cqi;
-  LOG_D(MAC,"Wide-band CQI for the first TB %d\n", temp_cqi);
+  LOG_I(MAC,"Wide-band CQI (%d bits) for the first TB %d\n", cqi_bitlen, temp_cqi);
   if (cqi_bitlen > 4) {
     temp_cqi = pickandreverse_bits(payload, 4, cumul_bits);
     sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.wb_cqi_2tb = temp_cqi;
@@ -577,10 +577,12 @@ static uint8_t evaluate_pmi_report(uint8_t *payload,
   sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x1 = pickandreverse_bits(payload, x1_bitlen, starting_bit);
   starting_bit += x1_bitlen;
   sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x2 = pickandreverse_bits(payload, x2_bitlen, starting_bit);
-  LOG_D(NR_MAC,
-        "PMI Report: X1 %d X2 %d\n",
+  LOG_I(NR_MAC,
+        "PMI Report: X1 %d (%d bits) X2 %d (%d bits)\n",
         sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x1,
-        sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x2);
+        x1_bitlen,
+        sched_ctrl->CSI_report.cri_ri_li_pmi_cqi_report.pmi_x2,
+        x2_bitlen);
 
   return x1_bitlen + x2_bitlen;
 }
