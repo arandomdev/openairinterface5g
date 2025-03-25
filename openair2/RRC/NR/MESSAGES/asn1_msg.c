@@ -730,6 +730,43 @@ static NR_RRCReconfiguration_IEs_t *build_RRCReconfiguration_IEs(const RRCReconf
   return ie;
 }
 
+static int16_t do_HO_RRCReconfiguration(RRCReconfigurationParams_t *params)
+{
+  NR_RRCReconfiguration_IEs_t *ie = build_RRCReconfiguration_IEs(params, true);
+
+  // Create the standalone RRCReconfiguration message
+  NR_RRCReconfiguration_t rrcReconf = {0};
+  rrcReconf.rrc_TransactionIdentifier = params->transaction_id;
+  rrcReconf.criticalExtensions.present = NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration;
+  rrcReconf.criticalExtensions.choice.rrcReconfiguration = ie;
+
+  // Encode the message
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_RRCReconfiguration, NULL, &rrcReconf, params->buffer.buf, params->buffer.len);
+  if (enc_rval.encoded <= 0) {
+    LOG_E(NR_RRC, "ASN1 message encoding failed (%s, %lu)\n", enc_rval.failed_type->name, enc_rval.encoded);
+    ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_RRCReconfiguration, &rrcReconf);
+    return -1;
+  }
+
+  // don't free what we did not allocate, so set fields with pointers to NULL
+  // if memory comes from outside
+  ie->measConfig = NULL;
+  if (ie->radioBearerConfig) {
+    ie->radioBearerConfig->srb_ToAddModList = NULL;
+    ie->radioBearerConfig->drb_ToAddModList = NULL;
+    ie->radioBearerConfig->srb3_ToRelease = NULL;
+    ie->radioBearerConfig->drb_ToReleaseList = NULL;
+  }
+  if (ie->nonCriticalExtension)
+    ie->nonCriticalExtension->dedicatedNAS_MessageList = NULL;
+
+  // Cleanup
+  ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_RRCReconfiguration, &rrcReconf);
+  LOG_D(NR_RRC, "RRCReconfiguration: Encoded %zd bits (%zd bytes)\n", enc_rval.encoded, (enc_rval.encoded + 7) / 8);
+
+  return ((enc_rval.encoded + 7) / 8);
+}
+
 int do_RRCReconfiguration(const RRCReconfigurationParams_t *params)
 {
   NR_RRCReconfiguration_IEs_t *ie = build_RRCReconfiguration_IEs(params, false);
@@ -1380,6 +1417,104 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
   asn1cSeqAdd(&mc->quantityConfig->quantityConfigNR_List->list, qcnr);
 
   return mc;
+}
+
+/** @brief HandoverPreparationInformation message (11.2.2 of TS 38.331)
+ *         1) generate RRCReconfiguration to be transferred
+ *         2) encodes UE Capabilities from UE Context
+ *         3) encodes AS context
+ *         4) generates HO Preparation Info */
+int16_t get_HandoverPreparationInformation(const gNB_RRC_UE_t *ue_p,
+                                           NR_SRB_ToAddModList_t *SRBs,
+                                           NR_DRB_ToAddModList_t *DRBs,
+                                           byte_array_t *buffer,
+                                           int scell_pci)
+{
+  uint8_t rrc_reconfiguration_buffer[NR_RRC_BUF_SIZE] = {0};
+
+  NR_SecurityConfig_t *sec = calloc_or_fail(1, sizeof(*sec));
+  sec->keyToUse = calloc_or_fail(1, sizeof(*sec->keyToUse));
+  *sec->keyToUse = NR_SecurityConfig__keyToUse_master;
+  sec->securityAlgorithmConfig = calloc_or_fail(1, sizeof(*sec->securityAlgorithmConfig));
+  struct NR_SecurityAlgorithmConfig *alg = sec->securityAlgorithmConfig;
+  alg->cipheringAlgorithm = ue_p->ciphering_algorithm;
+  alg->integrityProtAlgorithm = calloc_or_fail(1, sizeof(*alg->integrityProtAlgorithm));
+  *alg->integrityProtAlgorithm = ue_p->integrity_algorithm;
+
+  RRCReconfigurationParams_t params = {.buffer.buf = rrc_reconfiguration_buffer,
+                                       .buffer.len = sizeof(rrc_reconfiguration_buffer),
+                                       .transaction_id = 0,
+                                       .srb_config_list = SRBs,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = NULL,
+                                       .cell_group_config = ue_p->masterCellGroup,
+                                       .security_config = sec,
+                                       .meas_config = ue_p->measConfig,
+                                       .dedicated_nas_message_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc};
+
+  /* encode RRCReconfiguration */
+  int reconfigSize = do_HO_RRCReconfiguration(&params);
+
+  /* Prepare handoverPreparationInformation IEs */
+  NR_HandoverPreparationInformation_t hoPrepInfo = {0};
+  hoPrepInfo.criticalExtensions.present = NR_HandoverPreparationInformation__criticalExtensions_PR_c1;
+  asn1cCalloc(hoPrepInfo.criticalExtensions.choice.c1, c1);
+  c1->present = NR_HandoverPreparationInformation__criticalExtensions__c1_PR_handoverPreparationInformation;
+  NR_HandoverPreparationInformation_IEs_t *ie = calloc_or_fail(1, sizeof(*ie));
+
+  /* Decode stored NR_UE_CapabilityRAT_ContainerList and add to IEs */
+  NR_UE_CapabilityRAT_ContainerList_t *clist = NULL;
+  asn_dec_rval_t dec_rval = uper_decode(NULL,
+                                        &asn_DEF_NR_UE_CapabilityRAT_ContainerList,
+                                        (void **)&clist,
+                                        ue_p->ue_cap_buffer.buf,
+                                        ue_p->ue_cap_buffer.len,
+                                        0,
+                                        0);
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_RRC,
+          "HO LOG: cannot decode UE capability container list of UE RNTI %04x for HO Required, ignoring capabilities\n",
+          ue_p->rnti);
+    return 0;
+  }
+
+  ie->ue_CapabilityRAT_List = *clist;
+
+  /* sourceConfig: radio resource configuration as used in the source cell */
+  asn1cCalloc(ie->sourceConfig, sourceConfig);
+  OCTET_STRING_fromBuf(&sourceConfig->rrcReconfiguration, (const char *)rrc_reconfiguration_buffer, reconfigSize);
+
+  /* AS Context */
+  if (scell_pci != -1) {
+    asn1cCalloc(ie->as_Context, as_Context);
+    as_Context->reestablishmentInfo = calloc_or_fail(1, sizeof(*as_Context->reestablishmentInfo));
+    NR_ReestablishmentInfo_t *reestablishmentInfo = as_Context->reestablishmentInfo;
+    reestablishmentInfo->sourcePhysCellId = scell_pci;
+    reestablishmentInfo->targetCellShortMAC_I.buf = calloc_or_fail(1, sizeof(uint8_t) * 2);
+    reestablishmentInfo->targetCellShortMAC_I.buf[0] = 0x08;
+    reestablishmentInfo->targetCellShortMAC_I.buf[1] = 0x32;
+    reestablishmentInfo->targetCellShortMAC_I.size = 2;
+  }
+
+  /* Fill handoverPreparationInformation */
+  c1->choice.handoverPreparationInformation = ie;
+
+  if (LOG_DEBUGFLAG(DEBUG_ASN1))
+    xer_fprint(stdout, &asn_DEF_NR_HandoverPreparationInformation, (void *)&hoPrepInfo);
+
+  /* encode */
+  asn_enc_rval_t enc_rval = uper_encode_to_buffer(&asn_DEF_NR_HandoverPreparationInformation, NULL, &hoPrepInfo, buffer->buf, buffer->len);
+  AssertFatal(enc_rval.encoded > 0, "ASN1 message encoding failed (%s, %lu)!\n", enc_rval.failed_type->name, enc_rval.encoded);
+  ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NR_HandoverPreparationInformation, &hoPrepInfo);
+  LOG_D(NR_RRC,
+        "HO LOG: Handover Preparation for UE %lu Encoded %zd bits (%zd bytes)\n",
+        ue_p->amf_ue_ngap_id,
+        enc_rval.encoded,
+        (enc_rval.encoded + 7) / 8);
+
+  return ((enc_rval.encoded + 7) / 8);
 }
 
 void free_MeasConfig(NR_MeasConfig_t *mc)

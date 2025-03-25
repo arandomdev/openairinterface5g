@@ -191,27 +191,12 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
   rrc->mac_rrc.ue_context_setup_request(target_du->assoc_id, &ue_context_setup_req);
 }
 
-/*
-void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc, int nr_cgi, uint8_t *ho_prep_info, uint32_t *ho_prep_len, void *pdu_session)
-{
-  // call from outside (via NGAP message), with the request for handover for a
-  // (any) UE. This handler should, in order:
-  //
-  // 1. look up the target DU =du= via get_du_by_cell_id(nr_cgi)
-  //    (and reject the request if it can't find the DU)
-  // 2. create a context for a new UE =UE=, based on pdu_session information
-  // 3. call nr_initiate_handover(rrc, UE, NULL, du, ho_prep_info, ho_prep_len);
-  //
-  // after success of the DU, send the result via =success_ptr= to the source
-  // CU.
-}
-*/
-
 typedef struct deliver_ue_ctxt_modification_data_t {
   gNB_RRC_INST *rrc;
   f1ap_ue_context_modif_req_t *modification_req;
   sctp_assoc_t assoc_id;
 } deliver_ue_ctxt_modification_data_t;
+
 static void rrc_deliver_ue_ctxt_modif_req(void *deliver_pdu_data, ue_id_t ue_id, int srb_id, char *buf, int size, int sdu_id)
 {
   DevAssert(deliver_pdu_data != NULL);
@@ -359,4 +344,17 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
   }
 
   nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
+}
+
+/** @brief Trigger N2 handover on source gNB:
+ *         1) Prepare RRC Container with HandoverPreparationInformation message
+ *         2) send NGAP Handover Required message */
+void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc,
+                          gNB_RRC_UE_t *ue,
+                          int serving_pci,
+                          const nr_neighbour_gnb_configuration_t *neighbour_config)
+{
+  byte_array_t *hoPrepInfo = rrc_gNB_generate_HandoverPreparationInformation(ue, serving_pci);
+  rrc_gNB_send_NGAP_HANDOVER_REQUIRED(rrc, ue, neighbour_config, hoPrepInfo);
+  free(hoPrepInfo);
 }

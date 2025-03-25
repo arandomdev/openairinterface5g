@@ -127,7 +127,7 @@ static void clear_nas_pdu(ngap_pdu_t *pdu)
   pdu->length = 0;
 }
 
-static void freeDRBlist(NR_DRB_ToAddModList_t *list)
+void freeDRBlist(NR_DRB_ToAddModList_t *list)
 {
   //ASN_STRUCT_FREE(asn_DEF_NR_DRB_ToAddModList, list);
   return;
@@ -349,7 +349,7 @@ static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, uint8_t reestablis
   return list;
 }
 
-static NR_DRB_ToAddModList_t *createDRBlist(gNB_RRC_UE_t *ue, bool reestablish)
+NR_DRB_ToAddModList_t *createDRBlist(gNB_RRC_UE_t *ue, bool reestablish)
 {
   NR_DRB_ToAddMod_t *DRB_config = NULL;
   NR_DRB_ToAddModList_t *DRB_configList = CALLOC(sizeof(*DRB_configList), 1);
@@ -370,7 +370,7 @@ static NR_DRB_ToAddModList_t *createDRBlist(gNB_RRC_UE_t *ue, bool reestablish)
   return DRB_configList;
 }
 
-static void freeSRBlist(NR_SRB_ToAddModList_t *l)
+void freeSRBlist(NR_SRB_ToAddModList_t *l)
 {
   if (l) {
     for (int i = 0; i < l->list.count; i++)
@@ -1307,6 +1307,33 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
   measurementReport->criticalExtensions.choice.measurementReport = NULL;
 }
 
+#define N2_HO_PREP_INFO_BUFFER_SIZE 8192
+
+/** @brief Generate the HandoverPreparationInformation to be carried
+ * in the RRC Container (9.3.1.29 of 3GPP TS 38.413) of the Source
+ * NG-RAN Node to Target NG-RAN Node Transparent Container IE */
+byte_array_t *rrc_gNB_generate_HandoverPreparationInformation(gNB_RRC_UE_t *ue, int serving_pci)
+{
+  uint8_t buffer[N2_HO_PREP_INFO_BUFFER_SIZE];
+  byte_array_t ba = {.buf = buffer, .len = sizeof(buffer)};
+
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue, false);
+  NR_DRB_ToAddModList_t *DRBs = createDRBlist(ue, false);
+  size_t size = get_HandoverPreparationInformation(ue, SRBs, DRBs, &ba, serving_pci);
+  freeSRBlist(SRBs);
+  freeDRBlist(DRBs);
+
+  if (!size) {
+    LOG_E(NR_RRC, "HandoverPreparationInformation generation failed for UE %d\n", ue->rrc_ue_id);
+    return NULL;
+  }
+
+  byte_array_t *hoPrepInfo = malloc_or_fail(size);
+  hoPrepInfo->buf = buffer;
+  hoPrepInfo->len = size;
+  return hoPrepInfo;
+}
+
 static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportConfigNR_t *report, NR_MeasurementReport_t *measurementReport)
 {
   NR_EventTriggerConfig_t *event_triggered = report->reportType.choice.eventTriggered;
@@ -1314,6 +1341,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
   int servingCellRSRP = 0;
   int neighbourCellRSRP = 0;
   int scell_pci = -1;
+  int best_rsrp = -10000;
 
   switch (event_triggered->eventId.present) {
     case NR_EventTriggerConfig__eventId_PR_eventA2:
@@ -1349,6 +1377,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
       for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
         const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
         const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
+        gNB_RRC_INST *rrc = RC.nrrrc[0];
 
         // TS 138 133 Table 10.1.6.1-1: SS-RSRP and CSI-RSRP measurement report mapping
         const struct NR_MeasResultNR__measResult__cellResults *cellResults = &(meas_result_neigh_cell->measResult.cellResults);
@@ -1373,14 +1402,20 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
           // No F1 connection but static neighbour configuration is available
           const nr_a3_event_t *a3_event_configuration = get_a3_configuration(neighbour->physicalCellId);
           // Additional check - This part can be modified according to additional cell specific Handover Margin
+          // a3-Offset: The actual value is field value * 0.5 dB.
           if (a3_event_configuration
-              && ((a3_event_configuration->a3_offset + a3_event_configuration->hysteresis)
+              && (((a3_event_configuration->a3_offset * 0.5) + a3_event_configuration->hysteresis)
                   < (neighbourCellRSRP - servingCellRSRP))) {
+            if (neighbourCellRSRP > best_rsrp) {
+              // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
+              best_rsrp = neighbourCellRSRP;
+              LOG_I(NR_RRC, "HO LOG: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
+              nr_rrc_trigger_n2_ho(rrc, ue, scell_pci, neighbour);
+            }
             LOG_D(NR_RRC, "HO LOG: Trigger N2 HO for the neighbour gnb: %u cell: %lu\n", neighbour->gNB_ID, neighbour->nrcell_id);
           }
         } else if (neigh_cell && neighbour) {
           /* we know the cell and are connected to the DU! */
-          gNB_RRC_INST *rrc = RC.nrrrc[0];
           nr_rrc_du_container_t *source_du = get_du_by_cell_id(rrc, serving_cell->nr_cellid);
           DevAssert(source_du);
           nr_rrc_du_container_t *target_du = get_du_by_cell_id(rrc, neigh_cell->nr_cellid);
@@ -1389,7 +1424,6 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
           LOG_W(NR_RRC, "UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", ue->rrc_ue_id, neighbour_pci);
         }
       }
-
     } break;
     default:
       LOG_D(NR_RRC, "NR_EventTriggerConfig__eventId_PR_NOTHING or Other event report\n");

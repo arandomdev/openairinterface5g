@@ -169,4 +169,10 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
 void free_MeasConfig(NR_MeasConfig_t *mc);
 int do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi);
 
+int16_t get_HandoverPreparationInformation(const gNB_RRC_UE_t *ue_p,
+                                           NR_SRB_ToAddModList_t *SRBs,
+                                           NR_DRB_ToAddModList_t *DRBs,
+                                           byte_array_t *buffer,
+                                           int scell_pci);
+
 #endif  /* __RRC_NR_MESSAGES_ASN1_MSG__H__ */
