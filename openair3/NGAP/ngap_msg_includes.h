@@ -71,5 +71,13 @@
 #include "NGAP_UnsuccessfulOutcome.h"
 #include "NGAP_UserLocationInformationNR.h"
 #include "NGAP_asn_constant.h"
+#include "NGAP_PDUSessionResourceItemHORqd.h"
+#include "NGAP_PDUSessionResourceInformationItem.h"
+#include "NGAP_QosFlowInformationItem.h"
+#include "NGAP_LastVisitedCellItem.h"
+#include "NGAP_LastVisitedNGRANCellInformation.h"
+#include "NGAP_PDUSessionResourceInformationList.h"
+#include "NGAP_HandoverRequiredTransfer.h"
+#include "NGAP_SourceNGRANNode-ToTargetNGRANNode-TransparentContainer.h"
 
 #endif // NGAP_MSG_INCLUDES_H

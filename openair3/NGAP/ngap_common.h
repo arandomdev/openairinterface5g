@@ -91,6 +91,8 @@ ngap_ambr_t decode_ngap_UEAggregateMaximumBitRate(const NGAP_UEAggregateMaximumB
 nssai_t decode_ngap_nssai(const NGAP_S_NSSAI_t *in);
 ngap_security_capabilities_t decode_ngap_security_capabilities(const NGAP_UESecurityCapabilities_t *in);
 ngap_mobility_restriction_t decode_ngap_mobility_restriction(const NGAP_MobilityRestrictionList_t *in);
+void encode_ngap_target_id(NGAP_HandoverRequiredIEs_t *out, const target_ran_node_id_t *in);
+void encode_ngap_nr_cgi(NGAP_NR_CGI_t *out, const ngap_plmn_identity_t *plmn, const uint32_t cell_id);
 
 /** @}*/
 
