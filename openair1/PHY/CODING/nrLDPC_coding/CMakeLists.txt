@@ -1,3 +1,6 @@
 add_subdirectory(nrLDPC_coding_segment)
 add_subdirectory(nrLDPC_coding_xdma)
 add_subdirectory(nrLDPC_coding_t2)
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+  add_subdirectory(nrLDPC_coding_armral)
+endif()
