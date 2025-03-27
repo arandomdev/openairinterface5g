@@ -880,7 +880,7 @@ static void _nr_rx_sdu(const module_id_t gnb_mod_idP,
         reset_dl_harq_list(UE_scheduling_control);
         reset_ul_harq_list(UE_scheduling_control);
         process_addmod_bearers_cellGroupConfig(&UE->UE_sched_ctrl, UE->CellGroup->rlc_BearerToAddModList);
-        add_connected_nr_ue(gNB_mac, UE);
+        transition_ra_connected_nr_ue(gNB_mac, UE);
       } else {
         LOG_D(NR_MAC, "[RAPROC] Received %s:\n", ra->ra_type == RA_2_STEP ? "MsgA-PUSCH" : "Msg3");
         for (uint32_t k = 0; k < sdu_lenP; k++) {

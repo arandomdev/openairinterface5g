@@ -2476,18 +2476,19 @@ void reset_srs_stats(NR_UE_info_t *UE) {
   }
 }
 
-void init_ue_inst(NR_UEs_t *UE_info, NR_UE_info_t *UE)
+/* @brief returns a new UE allocated instance.
+ *
+ * It is not added to any list. Remove with delete_nr_ue_data(). */
+NR_UE_info_t *get_new_nr_ue_inst(uid_allocator_t *uia, rnti_t rnti, NR_CellGroupConfig_t *CellGroup)
 {
+  NR_UE_info_t *UE = calloc_or_fail(1, sizeof(NR_UE_info_t));
+  UE->rnti = rnti;
+  UE->CellGroup = CellGroup;
+  UE->uid = uid_linear_allocator_new(uia);
   UE->ra = calloc(1, sizeof(*UE->ra));
-  UE->uid = uid_linear_allocator_new(&UE_info->uid_allocator);
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
-  memset(sched_ctrl, 0, sizeof(*sched_ctrl));
   sched_ctrl->ta_update = 31;
-  // initialize UE BWP information
-  NR_UE_DL_BWP_t *dl_bwp = &UE->current_DL_BWP;
-  memset(dl_bwp, 0, sizeof(*dl_bwp));
-  NR_UE_UL_BWP_t *ul_bwp = &UE->current_UL_BWP;
-  memset(ul_bwp, 0, sizeof(*ul_bwp));
+
   /* set illegal time domain allocation to force recomputation of all fields */
   sched_ctrl->sched_pdsch.time_domain_allocation = -1;
   sched_ctrl->sched_pusch.time_domain_allocation = -1;
@@ -2502,25 +2503,52 @@ void init_ue_inst(NR_UEs_t *UE_info, NR_UE_info_t *UE)
 
   // initialize LCID structure
   seq_arr_init(&sched_ctrl->lc_config, sizeof(nr_lc_config_t));
+  return UE;
+}
+
+bool add_UE_to_list(int list_size, NR_UE_info_t *list[list_size], NR_UE_info_t *UE)
+{
+  for (int i = 0; i < list_size; i++) {
+    if (!list[i]) {
+      list[i] = UE;
+      return true;
+    }
+  }
+  return false;
 }
 
 NR_UE_info_t *remove_UE_from_list(int list_size, NR_UE_info_t *list[list_size], rnti_t rnti)
 {
-  NR_UE_info_t *prev_UE = NULL;
-  for (int i = list_size; i > 0; i--) {
-    if (list[i - 1]) {
-      NR_UE_info_t *curr_UE = list[i - 1];
-      list[i - 1] = prev_UE;
-      prev_UE = curr_UE;
-      if (curr_UE->rnti == rnti)
-        return curr_UE;
-    }
+  for (int i = 0; i < list_size; i++) {
+    NR_UE_info_t *curr_UE = list[i];
+    if (curr_UE->rnti != rnti)
+      continue;
+
+    /* remove this UE from the list, return the pointer */
+    memmove(&list[i], &list[i+1], sizeof(list[0]) * (list_size - i - 1));
+    list[list_size - 1] = NULL;
+    return curr_UE;
   }
   LOG_E(NR_MAC, "UE %04x to be removed not found in list\n", rnti);
   return NULL;
 }
 
-//------------------------------------------------------------------------------
+/** @brief Transitions a UE from access list to connected list (i.e., the RA
+ * list to the "normal" UE context list. */
+bool transition_ra_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
+{
+  NR_UEs_t *UE_info = &nr_mac->UE_info;
+
+  // remove UE from initial access list (moved to connected mode)
+  NR_UE_info_t *r = remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, UE->rnti);
+  DevAssert(r == UE); /* sanity check: we should have removed the current UE ptr from list */
+
+  return add_connected_nr_ue(nr_mac, UE);
+}
+
+/** @brief Add a UE to the list of UEs in * connected mode.
+ *
+ * To remove the UE, use mac_remove_nr_ue(). */
 bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
 {
   LOG_I(NR_MAC, "Adding new UE context with RNTI 0x%04x\n", UE->rnti);
@@ -2528,22 +2556,14 @@ bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
   dump_nr_list(UE_info->connected_ue_list);
 
   NR_SCHED_LOCK(&UE_info->mutex);
-  int i;
-  for(i = 0; i < MAX_MOBILES_PER_GNB; i++) {
-    if (UE_info->connected_ue_list[i] == NULL) {
-      UE_info->connected_ue_list[i] = UE;
-      break;
-    }
-  }
-  if (i == MAX_MOBILES_PER_GNB) {
+
+  bool success = add_UE_to_list(MAX_MOBILES_PER_GNB, UE_info->connected_ue_list, UE);
+  if (!success) {
     LOG_E(NR_MAC,"Try to add UE %04x but the list is full\n", UE->rnti);
-    nr_release_ra_UE(nr_mac, UE->rnti);
+    delete_nr_ue_data(UE, NULL, &UE_info->uid_allocator);
     NR_SCHED_UNLOCK(&UE_info->mutex);
     return false;
   }
-
-  // remove UE from initial access list (moved to connected mode)
-  remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, UE->rnti);
 
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   sched_ctrl->dl_max_mcs = 28; /* do not limit MCS for individual UEs */

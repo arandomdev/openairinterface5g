@@ -469,20 +469,16 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
 {
   int CC_id = 0;
   rnti_t rnti;
-  int idx = find_free_UE_RA(mac, -1);
-  if (idx == -1) {
-    LOG_E(NR_MAC, "UE list full while creating new UE\n");
-    return NULL;
-  }
-
-
   bool found = nr_mac_get_new_rnti(&mac->UE_info, &rnti);
   if (!found)
     return NULL;
 
-  NR_UE_info_t *UE = mac->UE_info.access_ue_list[idx];
-  init_ue_inst(&mac->UE_info, UE);
-  UE->rnti = rnti;
+  NR_UE_info_t *UE = get_new_nr_ue_inst(&mac->UE_info.uid_allocator, rnti, NULL);
+  if (!add_new_UE_RA(mac, UE)) {
+    delete_nr_ue_data(UE, /*not used*/ NULL, &mac->UE_info.uid_allocator);
+    LOG_E(NR_MAC, "UE list full while creating new UE\n");
+    return NULL;
+  }
 
   f1_ue_data_t new_ue_data = {.secondary_ue = cu_id};
   bool success = du_add_f1_ue_data(rnti, &new_ue_data);
