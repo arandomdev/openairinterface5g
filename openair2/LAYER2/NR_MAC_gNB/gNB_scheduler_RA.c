@@ -635,6 +635,19 @@ int nr_fill_successrar(const NR_UE_sched_ctrl_t *ue_sched_ctl,
   return mac_pdu_length;
 }
 
+/** @brief find UE with RA process for given preamble */
+static NR_UE_info_t *get_existing_ra(gNB_MAC_INST *nr_mac, uint16_t preamble_index)
+{
+  UE_iterator(nr_mac->UE_info.access_ue_list, UE) {
+    NR_RA_t *ra = UE->ra;
+    for (int i = 0; i < ra->preambles.num_preambles; ++i) {
+      if (ra->preambles.preamble_list[i] == preamble_index)
+        return UE;
+    }
+  }
+  return NULL;
+}
+
 /** @brief add UE to list of UEs doing RA.
  *
  * Remove with nr_release_ra_UE(). */
@@ -689,20 +702,33 @@ void nr_initiate_ra_proc(module_id_t module_idP,
   gNB_MAC_INST *nr_mac = RC.nrmac[module_idP];
   NR_SCHED_LOCK(&nr_mac->sched_lock);
 
-  rnti_t rnti;
-  bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, &rnti);
-  if (!rnti_found) {
-    LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
+  /* check if preamble exists (NSA, HO cases) */
+  NR_UE_info_t *UE = get_existing_ra(nr_mac, preamble_index);
+  if (get_softmodem_params()->nsa && !UE) {
+    /* we are in NSA, but no UE has been configured => we ignore it */
+    LOG_W(NR_MAC, "random access with preamble %d: no pre-configured RA process found\n", preamble_index);
     NR_SCHED_UNLOCK(&nr_mac->sched_lock);
     return;
   }
 
-  NR_UE_info_t *UE = get_new_nr_ue_inst(&nr_mac->UE_info.uid_allocator, rnti, NULL);
-  if (!add_new_UE_RA(nr_mac, UE)) {
-    LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
-    delete_nr_ue_data(UE, NULL, &nr_mac->UE_info.uid_allocator);
-    NR_SCHED_UNLOCK(&nr_mac->sched_lock);
-    return;
+  if (!UE) {
+    /* in CBRA: we don't know this UE yet. There might be CFRA (e.g., HO IN SA)
+     * where we know the UE */
+    rnti_t rnti;
+    bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, &rnti);
+    if (!rnti_found) {
+      LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
+      NR_SCHED_UNLOCK(&nr_mac->sched_lock);
+      return;
+    }
+
+    UE = get_new_nr_ue_inst(&nr_mac->UE_info.uid_allocator, rnti, NULL);
+    if (!add_new_UE_RA(nr_mac, UE)) {
+      LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
+      delete_nr_ue_data(UE, NULL, &nr_mac->UE_info.uid_allocator);
+      NR_SCHED_UNLOCK(&nr_mac->sched_lock);
+      return;
+    }
   }
 
   NR_RA_t *ra = UE->ra;
