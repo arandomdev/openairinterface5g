@@ -108,6 +108,36 @@ can proceed as follows:
 Note: all L1-specific options have to be passed to the PNF, and remaining
 options to the VNF.
 
+## Transport mechanisms between VNF and PNF
+Currently, the VNF/PNF split support 2 transport mechanisms between each other: 
+- Socket communication (either regular, or SCTP), this is the default
+  - The socket type may be changed by editing nfapi_pnf_config_create() and nfapi_vnf_config_create(), in both of which ```_this->sctp = <value, 0 or 1>;``` indicate whether SCTP or regular sockets are to be used
+    - Note: The value of ```_this->sctp``` **must** be the same on the VNF and PNF.
+- Intel WLS Lib, which uses DPDK to achieve a shared memory communication between components.
+
+Furthermore, the VNF supports an additional communication method, nvIPC, which is used exclusively for the NVIDIA Aerial L1, (refer to [this document](./Aerial_FAPI_Split_Tutorial.md) for more information).
+
+The change between transport mechanisms is done at compilation time:
+- No changes to the `build_oai` call are required in order to select socket communication, as it is the default.
+- In order to select WLS as the transport mechanism between VNF and PNF, use `-t WLS` as a parameter of `build_oai`, an example is given below:
+  ```
+  ./build_oai -t WLS -w USRP --gNB --nrUE --ninja -C
+  ```
+  Before the first compilation with WLS support, the [WLS library](https://docs.o-ran-sc.org/projects/o-ran-sc-o-du-phy/en/latest/wls-lib.html) must first be compiled and installed to the system.
+  
+  The WLS library has a few dependencies:
+  - DPDK, specifically version 20.11.3.
+  - libelf-dev 
+  - libhugetlbfs-dev
+
+  Additionally, a patch needs to be applied to the WLS lib Makefile in order for the shared library and headers to be installed into the system, the necessary patch is available [here](../cmake_targets/tools/install_wls_lib.patch)
+  
+  In order to compile and install WLS, the following commands are used:
+  ```
+  WIRELESS_SDK_TOOLCHAIN=gcc WIRELESS_SDK_TARGET_ISA=avx2 make
+  sudo WIRELESS_SDK_TOOLCHAIN=gcc WIRELESS_SDK_TARGET_ISA=avx2 make install
+  ```
+
 # nFAPI logging system
 
 nFAPI has its own logging system, independent of OAI's. It can be activated by
