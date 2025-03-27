@@ -635,32 +635,12 @@ int nr_fill_successrar(const NR_UE_sched_ctrl_t *ue_sched_ctl,
   return mac_pdu_length;
 }
 
-static bool ra_contains_preamble(const NR_RA_t *ra, rnti_t rnti, uint16_t preamble_index)
+/** @brief add UE to list of UEs doing RA.
+ *
+ * Remove with nr_release_ra_UE(). */
+bool add_new_UE_RA(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
 {
-  for (int j = 0; j < ra->preambles.num_preambles; j++) {
-    // check if the preamble received correspond to one of the listed or configured preambles
-    if (preamble_index == ra->preambles.preamble_list[j]) {
-      if (rnti == 0 && get_softmodem_params()->nsa)
-        continue;
-      return true;
-    }
-  }
-  return false;
-}
-
-int find_free_UE_RA(gNB_MAC_INST *nr_mac, uint16_t preamble_index)
-{
-  for (int i = 0; i < NR_NB_RA_PROC_MAX; i++) {
-    NR_UE_info_t *curr_UE = nr_mac->UE_info.access_ue_list[i];
-    if (curr_UE && curr_UE->ra && ra_contains_preamble(curr_UE->ra, curr_UE->rnti, preamble_index))
-      return i;
-    if (!curr_UE) {
-      NR_UE_info_t *new_UE = calloc(1, sizeof(NR_UE_info_t));
-      nr_mac->UE_info.access_ue_list[i] = new_UE;
-      return i;
-    }
-  }
-  return -1;
+  return add_UE_to_list(NR_NB_RA_PROC_MAX, nr_mac->UE_info.access_ue_list, UE);
 }
 
 static uint8_t nr_get_msg3_tpc(uint32_t preamble_power)
@@ -709,27 +689,20 @@ void nr_initiate_ra_proc(module_id_t module_idP,
   gNB_MAC_INST *nr_mac = RC.nrmac[module_idP];
   NR_SCHED_LOCK(&nr_mac->sched_lock);
 
-  int ue_idx = find_free_UE_RA(nr_mac, preamble_index);
-  if (ue_idx == -1) {
-    LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
+  rnti_t rnti;
+  bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, &rnti);
+  if (!rnti_found) {
+    LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
     NR_SCHED_UNLOCK(&nr_mac->sched_lock);
-    VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_INITIATE_RA_PROC, 0);
     return;
   }
 
-  NR_UE_info_t *UE = nr_mac->UE_info.access_ue_list[ue_idx];
-  if (UE->rnti == 0) { // This condition allows for the usage of a preconfigured rnti for the CFRA
-    rnti_t rnti;
-    bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, &rnti);
-    if (!rnti_found) {
-      LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
-      free_and_zero(nr_mac->UE_info.access_ue_list[ue_idx]);
-      NR_SCHED_UNLOCK(&nr_mac->sched_lock);
-      return;
-    } else {
-      UE->rnti = rnti;
-      init_ue_inst(&nr_mac->UE_info, UE);
-    }
+  NR_UE_info_t *UE = get_new_nr_ue_inst(&nr_mac->UE_info.uid_allocator, rnti, NULL);
+  if (!add_new_UE_RA(nr_mac, UE)) {
+    LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
+    delete_nr_ue_data(UE, NULL, &nr_mac->UE_info.uid_allocator);
+    NR_SCHED_UNLOCK(&nr_mac->sched_lock);
+    return;
   }
 
   NR_RA_t *ra = UE->ra;
@@ -2180,7 +2153,7 @@ void nr_check_Msg4_MsgB_Ack(module_id_t module_id, frame_t frame, slot_t slot, N
     int delay = nr_mac_get_reconfig_delay_slots(UE->current_UL_BWP.scs);
     gNB_MAC_INST *nr_mac = RC.nrmac[module_id];
     nr_mac_interrupt_ue_transmission(nr_mac, UE, UE->interrupt_action, delay);
-    add_connected_nr_ue(nr_mac, UE);
+    transition_ra_connected_nr_ue(nr_mac, UE);
     if (sched_ctrl->retrans_dl_harq.head >= 0) {
       remove_nr_list(&sched_ctrl->retrans_dl_harq, current_harq_pid);
     }
@@ -2310,24 +2283,20 @@ static void nr_fill_rar(uint8_t Mod_idP, NR_UE_info_t *UE, uint8_t *dlsch_buffer
   ra->msg3_TPC = 1;
 }
 
+/** @brief remove the UE with RNTI rnti from list of UEs doing RA.
+ *
+ * The corresponding function to add is add_new_UE_RA(). */
 void nr_release_ra_UE(gNB_MAC_INST *mac, rnti_t rnti)
 {
   NR_UEs_t *UE_info = &mac->UE_info;
   NR_SCHED_LOCK(&UE_info->mutex);
-  UE_iterator(UE_info->access_ue_list, UE) {
-    if (UE->rnti == rnti)
-      break;
-  }
-
-  if (!UE) {
-    LOG_W(NR_MAC,"Call to del rnti %04x, but not existing\n", rnti);
-    NR_SCHED_UNLOCK(&UE_info->mutex);
-    return;
-  }
-
-  remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, UE->rnti);
+  NR_UE_info_t *UE = remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, rnti);
   NR_SCHED_UNLOCK(&UE_info->mutex);
-  delete_nr_ue_data(UE, mac->common_channels, &UE_info->uid_allocator);
+  if (UE) {
+    delete_nr_ue_data(UE, mac->common_channels, &UE_info->uid_allocator);
+  } else {
+    LOG_W(NR_MAC,"Call to del rnti %04x, but not existing\n", rnti);
+  }
 }
 
 void nr_schedule_RA(module_id_t module_idP,

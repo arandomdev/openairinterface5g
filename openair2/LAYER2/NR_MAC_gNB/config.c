@@ -868,13 +868,11 @@ bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, uint32_t rnti, NR_CellGroupConfig_t
   DevAssert(get_softmodem_params()->phy_test);
   NR_SCHED_LOCK(&nrmac->sched_lock);
 
-  NR_UE_info_t *UE = calloc(1, sizeof(*UE));
-  init_ue_inst(&nrmac->UE_info, UE);
-  UE->rnti = rnti;
-  UE->CellGroup = CellGroup;
+  NR_UE_info_t *UE = get_new_nr_ue_inst(&nrmac->UE_info.uid_allocator, rnti, CellGroup);
   bool res = add_connected_nr_ue(nrmac, UE);
   if (!res) {
     LOG_E(NR_MAC, "Error adding UE %04x\n", rnti);
+    delete_nr_ue_data(UE, NULL, &nrmac->UE_info.uid_allocator);
     NR_SCHED_UNLOCK(&nrmac->sched_lock);
     return false;
   }
