@@ -165,22 +165,6 @@ __attribute__((always_inline)) static inline int32_t simde_mm_average(simde__m12
   return (uint32_t)(avg / scale);
 }
 
-#define oai_mm_displaySamples(vect)                                               \
-  {                                                                               \
-    oai128_t x = (oai128_t)vect;                                                  \
-    printf("[%s] SSE vector: %s = (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd)\n", \
-           __func__,                                                              \
-           #vect,                                                                 \
-           x.i16[0],                                                              \
-           x.i16[1],                                                              \
-           x.i16[2],                                                              \
-           x.i16[3],                                                              \
-           x.i16[4],                                                              \
-           x.i16[5],                                                              \
-           x.i16[6],                                                              \
-           x.i16[7]);                                                             \
-  }
-
 /**
  * Perform element-wise conjugation on a 128-bit SIMD vector of 16-bit integers.
  *
@@ -191,10 +175,8 @@ __attribute__((always_inline)) static inline int32_t simde_mm_average(simde__m12
  * @param 128-bit SIMD vector of 4x complex 16-bit integers.
  * @return Complex conjugated 128-bit SIMD vector.
  */
-__attribute__((always_inline)) static inline
-simde__m128i oai_mm_conj(simde__m128i a) {
-
-  // Use simde__m128i_private for static constant initialization
+__attribute__((always_inline)) static inline simde__m128i oai_mm_conj(simde__m128i a)
+{
   const oai128_t neg_imag = {.i16 = {1, -1, 1, -1, 1, -1, 1, -1}};
   return simde_mm_sign_epi16(a, neg_imag.v);
 }
@@ -278,32 +260,6 @@ simde__m128i oai_mm_cpx_mult_conj(simde__m128i a, simde__m128i b, int shift)
  * OAI specific AVX2 section
  */
 
-//#if defined(__x86_64__) || defined(__i386__) || defined(__arm__) || defined(__aarch64__)
-
-#define oai_mm256_displaySamples(vect)                                                                                         \
-  {                                                                                                                            \
-    oai256_t x = vect;                                                                                                         \
-    printf("[%s] AVX2 vector: %s = (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd) (%hd, %hd)\n", \
-           __func__,                                                                                                           \
-           #vect,                                                                                                              \
-           x.i16[0],                                                                                                           \
-           x.i16[1],                                                                                                           \
-           x.i16[2],                                                                                                           \
-           x.i16[3],                                                                                                           \
-           x.i16[4],                                                                                                           \
-           x.i16[5],                                                                                                           \
-           x.i16[6],                                                                                                           \
-           x.i16[7],                                                                                                           \
-           x.i16[8],                                                                                                           \
-           x.i16[9],                                                                                                           \
-           x.i16[10],                                                                                                          \
-           x.i16[11],                                                                                                          \
-           x.i16[12],                                                                                                          \
-           x.i16[13],                                                                                                          \
-           x.i16[14],                                                                                                          \
-           x.i16[15]);                                                                                                         \
-  }
-
 /**
  * Perform element-wise conjugation on a 256-bit SIMD vector of 16-bit integers.
  *
@@ -314,9 +270,8 @@ simde__m128i oai_mm_cpx_mult_conj(simde__m128i a, simde__m128i b, int shift)
  * @param 256-bit SIMD vector of 8x complex 16-bit integers.
  * @return Complex conjugated 256-bit SIMD vector.
  */
-__attribute__((always_inline)) static inline
-simde__m256i oai_mm256_conj(simde__m256i a) {
-  // Use simde__m256i_private for static constant initialization
+__attribute__((always_inline)) static inline simde__m256i oai_mm256_conj(simde__m256i a)
+{
   const oai256_t neg_imag = {.i16 = {1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1}};
   return simde_mm256_sign_epi16(a, neg_imag.v);
 }

@@ -2,7 +2,6 @@
 #include <simde/x86/avx2.h>
 #include <cstdint>
 
-// Deklaration der zu testenden Funktionen
 extern "C" {
   void oai_mm_separate_real_imag_parts(simde__m128i *out_re, simde__m128i *out_im, simde__m128i in0, simde__m128i in1);
   void oai_mm256_separate_real_imag_parts(simde__m256i *out_re, simde__m256i *out_im, simde__m256i in0, simde__m256i in1);
