@@ -653,6 +653,7 @@ static NR_UE_info_t *get_existing_ra(gNB_MAC_INST *nr_mac, uint16_t preamble_ind
  * Remove with nr_release_ra_UE(). */
 bool add_new_UE_RA(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
 {
+  DevAssert(UE->ra); // a UE in the acess_ue_list needs to have an RA process
   return add_UE_to_list(NR_NB_RA_PROC_MAX, nr_mac->UE_info.access_ue_list, UE);
 }
 

@@ -2478,7 +2478,9 @@ void reset_srs_stats(NR_UE_info_t *UE) {
 
 /* @brief returns a new UE allocated instance.
  *
- * It is not added to any list. Remove with delete_nr_ue_data(). */
+ * It will be typically added to the access_ue_list, but this is not in this
+ * function to allow error handling outside (e.g., if list is full). Remove
+ * with delete_nr_ue_data().  */
 NR_UE_info_t *get_new_nr_ue_inst(uid_allocator_t *uia, rnti_t rnti, NR_CellGroupConfig_t *CellGroup)
 {
   NR_UE_info_t *UE = calloc_or_fail(1, sizeof(NR_UE_info_t));
@@ -2543,6 +2545,8 @@ bool transition_ra_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
   NR_UE_info_t *r = remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, UE->rnti);
   DevAssert(r == UE); /* sanity check: we should have removed the current UE ptr from list */
 
+  free_and_zero(UE->ra);
+
   return add_connected_nr_ue(nr_mac, UE);
 }
 
@@ -2554,6 +2558,7 @@ bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
   LOG_I(NR_MAC, "Adding new UE context with RNTI 0x%04x\n", UE->rnti);
   NR_UEs_t *UE_info = &nr_mac->UE_info;
   dump_nr_list(UE_info->connected_ue_list);
+  AssertFatal(!UE->ra, "UE in connected cannot have RA process\n");
 
   NR_SCHED_LOCK(&UE_info->mutex);
 
