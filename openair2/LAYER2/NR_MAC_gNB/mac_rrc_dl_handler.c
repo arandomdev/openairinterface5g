@@ -474,6 +474,7 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
     return NULL;
 
   NR_UE_info_t *UE = get_new_nr_ue_inst(&mac->UE_info.uid_allocator, rnti, NULL);
+  AssertFatal(UE != NULL, "cannot create UE context, UE context setup failure not implemented\n");
   if (!add_new_UE_RA(mac, UE)) {
     delete_nr_ue_data(UE, /*not used*/ NULL, &mac->UE_info.uid_allocator);
     LOG_E(NR_MAC, "UE list full while creating new UE\n");

@@ -375,6 +375,7 @@ void rrc_add_nsa_user(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p, x2a
     gNB_MAC_INST *nrmac = RC.nrmac[rrc->module_id];
     NR_SCHED_LOCK(&nrmac->sched_lock);
     NR_UE_info_t *UE_info = get_new_nr_ue_inst(&nrmac->UE_info.uid_allocator, UE->rnti, secondaryCellGroup);
+    AssertFatal(UE_info != NULL, "cannot create UE context: list is full?\n");
     if (add_new_UE_RA(nrmac, UE_info)) {
       ret = true;
       nr_mac_prepare_ra_ue(nrmac, UE_info);
