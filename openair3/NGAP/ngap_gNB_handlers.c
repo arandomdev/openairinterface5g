@@ -53,13 +53,13 @@
 #include "oai_asn1.h"
 #include "queue.h"
 
-static void allocCopy(ngap_pdu_t *out, OCTET_STRING_t in)
+static void allocCopy(byte_array_t *out, const OCTET_STRING_t in)
 {
   if (in.size) {
-    out->buffer = malloc(in.size);
-    memcpy(out->buffer, in.buf, in.size);
+    out->buf = malloc_or_fail(in.size);
+    memcpy(out->buf, in.buf, in.size);
   }
-  out->length = in.size;
+  out->len = in.size;
 }
 
 char *ngap_direction2String(int ngap_dir) {
@@ -252,7 +252,7 @@ static int ngap_gNB_handle_ng_setup_response(sctp_assoc_t assoc_id, uint32_t str
 
   STAILQ_INIT(&amf_desc_p->plmn_supports);
 
-  for (i = 0; i < ie->value.choice.ServedGUAMIList.list.count; i++) {
+  for (i = 0; i < ie->value.choice.PLMNSupportList.list.count; i++) {
     NGAP_PLMNSupportItem_t *plmn_support_item_p;
     struct plmn_support_s  *new_plmn_support_p;
     NGAP_SliceSupportItem_t  *slice_support_item_p;

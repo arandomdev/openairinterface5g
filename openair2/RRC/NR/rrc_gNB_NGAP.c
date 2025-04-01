@@ -149,32 +149,38 @@ void nr_rrc_pdcp_config_security(gNB_RRC_UE_t *UE, bool enable_ciphering)
   nr_pdcp_config_set_security(UE->rrc_ue_id, DL_SCH_LCID_DCCH, true, &security_parameters);
 }
 
-//------------------------------------------------------------------------------
-/*
-* Initial UE NAS message on S1AP.
-*/
+/** @brief Process AMF Identifier and fill GUAMI struct members */
+static void process_amf_Identifier(uint32_t amf_Id, nr_guami_t *guami)
+{
+  guami->amf_region_id = (amf_Id >> 16) & 0xff;
+  guami->amf_set_id = (amf_Id >> 6) & 0x3ff;
+  guami->amf_pointer = amf_Id & 0x3f;
+}
+
+/**
+ * @brief Prepare the Initial UE Message (Uplink NAS) to be forwarded to the AMF over N2
+ *        extracts NAS PDU, Selected PLMN and Registered AMF from the RRCSetupComplete
+ */
 void rrc_gNB_send_NGAP_NAS_FIRST_REQ(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, NR_RRCSetupComplete_IEs_t *rrcSetupComplete)
-//------------------------------------------------------------------------------
 {
   MessageDef *message_p = itti_alloc_new_message(TASK_RRC_GNB, rrc->module_id, NGAP_NAS_FIRST_REQ);
   ngap_nas_first_req_t *req = &NGAP_NAS_FIRST_REQ(message_p);
   memset(req, 0, sizeof(*req));
 
+  // RAN UE NGAP ID
   req->gNB_ue_ngap_id = UE->rrc_ue_id;
 
+  // RRC Establishment Cause
   /* Assume that cause is coded in the same way in RRC and NGap, just check that the value is in NGap range */
   AssertFatal(UE->establishment_cause < NGAP_RRC_CAUSE_LAST, "Establishment cause invalid (%jd/%d)!", UE->establishment_cause, NGAP_RRC_CAUSE_LAST);
   req->establishment_cause = UE->establishment_cause;
 
-  /* Forward NAS message */
-  req->nas_pdu.length = rrcSetupComplete->dedicatedNAS_Message.size;
-  req->nas_pdu.buffer = malloc(req->nas_pdu.length);
-  AssertFatal(req->nas_pdu.buffer != NULL, "out of memory\n");
-  memcpy(req->nas_pdu.buffer, rrcSetupComplete->dedicatedNAS_Message.buf, req->nas_pdu.length);
-  // extract_imsi(NGAP_NAS_FIRST_REQ (message_p).nas_pdu.buffer,
-  //              NGAP_NAS_FIRST_REQ (message_p).nas_pdu.length,
-  //              ue_context_pP);
+  // NAS-PDU
+  req->nas_pdu.len = rrcSetupComplete->dedicatedNAS_Message.size;
+  req->nas_pdu.buf = malloc_or_fail(req->nas_pdu.len);
+  memcpy(req->nas_pdu.buf, rrcSetupComplete->dedicatedNAS_Message.buf, req->nas_pdu.len);
 
+  // Selected PLMN Identity: indicates the selected PLMN id for the non-3GPP access
   /* selected_plmn_identity: IE is 1-based, convert to 0-based (C array) */
   int selected_plmn_identity = rrcSetupComplete->selectedPLMN_Identity - 1;
   if (selected_plmn_identity != 0)
@@ -182,34 +188,41 @@ void rrc_gNB_send_NGAP_NAS_FIRST_REQ(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, NR_RRC
 
   req->selected_plmn_identity = 0; /* always zero because we only support one */
 
-  /* Fill UE identities with available information */
+  /* 5G-S-TMSI */
   if (UE->Initialue_identity_5g_s_TMSI.presence) {
-    /* Fill s-TMSI */
-    req->ue_identity.presenceMask = NGAP_UE_IDENTITIES_FiveG_s_tmsi;
+    req->ue_identity.presenceMask |= NGAP_UE_IDENTITIES_FiveG_s_tmsi;
     req->ue_identity.s_tmsi.amf_set_id = UE->Initialue_identity_5g_s_TMSI.amf_set_id;
     req->ue_identity.s_tmsi.amf_pointer = UE->Initialue_identity_5g_s_TMSI.amf_pointer;
     req->ue_identity.s_tmsi.m_tmsi = UE->Initialue_identity_5g_s_TMSI.fiveg_tmsi;
-  } else if (rrcSetupComplete->registeredAMF != NULL) {
+  }
+
+  /* Process Registered AMF IE */
+  if (rrcSetupComplete->registeredAMF != NULL) {
+    /* Fetch the AMF-Identifier from the registeredAMF IE
+     * The IE AMF-Identifier (AMFI) comprises of an AMF Region ID (8b),
+     * an AMF Set ID (10b) and an AMF Pointer (6b)
+     * as specified in TS 23.003 [21], clause 2.10.1. */
     NR_RegisteredAMF_t *r_amf = rrcSetupComplete->registeredAMF;
-    req->ue_identity.presenceMask = NGAP_UE_IDENTITIES_guami;
-
-    /* The IE AMF-Identifier (AMFI) comprises of an AMF Region ID (8b), an AMF Set ID (10b) and an AMF Pointer (6b) as specified in TS 23.003 [21], clause 2.10.1. */
+    req->ue_identity.presenceMask |= NGAP_UE_IDENTITIES_guami;
     uint32_t amf_Id = BIT_STRING_to_uint32(&r_amf->amf_Identifier);
-    req->ue_identity.guami.amf_region_id = (amf_Id >> 16) & 0xff;
-    req->ue_identity.guami.amf_set_id = (amf_Id >> 6) & 0x3ff;
-    req->ue_identity.guami.amf_pointer = amf_Id & 0x3f;
-
-    UE->ue_guami.amf_region_id = req->ue_identity.guami.amf_region_id;
-    UE->ue_guami.amf_set_id = req->ue_identity.guami.amf_set_id;
-    UE->ue_guami.amf_pointer = req->ue_identity.guami.amf_pointer;
-
+    process_amf_Identifier(amf_Id, &req->ue_identity.guami);
+    UE->ue_guami = req->ue_identity.guami;
     LOG_I(NGAP,
-          "Build NGAP_NAS_FIRST_REQ adding in s_TMSI: GUAMI amf_set_id %u amf_region_id %u ue %x\n",
+          "GUAMI in NGAP_NAS_FIRST_REQ (UE %04x): AMF Set ID %u, Region ID %u, Pointer %u\n",
+          UE->rnti,
           req->ue_identity.guami.amf_set_id,
           req->ue_identity.guami.amf_region_id,
-          UE->rnti);
-  } else {
-    req->ue_identity.presenceMask = NGAP_UE_IDENTITIES_NONE;
+          req->ue_identity.guami.amf_pointer);
+    // PLMN Identity
+    if (r_amf->plmn_Identity) {
+      char mnc_str[r_amf->plmn_Identity->mnc.list.count + 1];
+      for (int i = 0; i < r_amf->plmn_Identity->mnc.list.count; i++) {
+        mnc_str[i] = *r_amf->plmn_Identity->mnc.list.array[i];
+      }
+      mnc_str[r_amf->plmn_Identity->mnc.list.count] = '\0';
+      LOG_D(NGAP, "PLMN identity with MNC %s in the registeredAMF is present for RNTI %04x\n", mnc_str, UE->rnti);
+    }
+
   }
 
   itti_send_msg_to_task(TASK_NGAP, rrc->module_id, message_p);
@@ -249,7 +262,7 @@ static int decodePDUSessionResourceSetup(pdusession_t *session)
   NGAP_PDUSessionResourceSetupRequestTransfer_t *pdusessionTransfer = NULL;
   asn_codec_ctx_t st = {.max_stack_size = 100 * 1000};
   asn_dec_rval_t dec_rval =
-      aper_decode(&st, &asn_DEF_NGAP_PDUSessionResourceSetupRequestTransfer, (void **)&pdusessionTransfer, session->pdusessionTransfer.buffer, session->pdusessionTransfer.length, 0, 0);
+      aper_decode(&st, &asn_DEF_NGAP_PDUSessionResourceSetupRequestTransfer, (void **)&pdusessionTransfer, session->pdusessionTransfer.buf, session->pdusessionTransfer.len, 0, 0);
 
   if (dec_rval.code != RC_OK) {
     LOG_E(NR_RRC, "can not decode PDUSessionResourceSetupRequestTransfer\n");
@@ -492,14 +505,8 @@ int rrc_gNB_process_NGAP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, instance_t
 
   UE->amf_ue_ngap_id = req->amf_ue_ngap_id;
 
-  /* store guami in gNB_RRC_UE_t context;
-   * we copy individual members because the guami types are different (nr_rrc_guami_t and ngap_guami_t) */
-  UE->ue_guami.mcc = req->guami.mcc;
-  UE->ue_guami.mnc = req->guami.mnc;
-  UE->ue_guami.mnc_len = req->guami.mnc_len;
-  UE->ue_guami.amf_region_id = req->guami.amf_region_id;
-  UE->ue_guami.amf_set_id = req->guami.amf_set_id;
-  UE->ue_guami.amf_pointer = req->guami.amf_pointer;
+  // Directly copy the entire guami structure
+  UE->ue_guami = req->guami;
 
   /* NAS PDU */
   // this is malloced pointers, we pass it for later free()
@@ -714,8 +721,8 @@ int rrc_gNB_process_NGAP_DOWNLINK_NAS(MessageDef *msg_p, instance_t instance, mu
     msg_fail_p = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_NAS_NON_DELIVERY_IND);
     ngap_nas_non_delivery_ind_t *msg = &NGAP_NAS_NON_DELIVERY_IND(msg_fail_p);
     msg->gNB_ue_ngap_id = req->gNB_ue_ngap_id;
-    msg->nas_pdu.length = req->nas_pdu.length;
-    msg->nas_pdu.buffer = req->nas_pdu.buffer;
+    msg->nas_pdu.len = req->nas_pdu.len;
+    msg->nas_pdu.buf = req->nas_pdu.buf;
     // TODO add failure cause when defined!
     itti_send_msg_to_task(TASK_NGAP, instance, msg_fail_p);
     return (-1);
@@ -747,8 +754,8 @@ void rrc_gNB_send_NGAP_UPLINK_NAS(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const NR_
   memcpy(buf, nas->buf, nas->size);
   MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, rrc->module_id, NGAP_UPLINK_NAS);
   NGAP_UPLINK_NAS(msg_p).gNB_ue_ngap_id = UE->rrc_ue_id;
-  NGAP_UPLINK_NAS(msg_p).nas_pdu.length = nas->size;
-  NGAP_UPLINK_NAS(msg_p).nas_pdu.buffer = buf;
+  NGAP_UPLINK_NAS(msg_p).nas_pdu.len = nas->size;
+  NGAP_UPLINK_NAS(msg_p).nas_pdu.buf = buf;
   itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
 }
 
@@ -915,10 +922,10 @@ static void fill_qos2(NGAP_QosFlowAddOrModifyRequestList_t *qos, pdusession_t *s
   session->nb_qos = qos->list.count;
 }
 
-static void decodePDUSessionResourceModify(pdusession_t *param, const ngap_pdu_t pdu)
+static void decodePDUSessionResourceModify(pdusession_t *param, const byte_array_t pdu)
 {
   NGAP_PDUSessionResourceModifyRequestTransfer_t *pdusessionTransfer = NULL;
-  asn_dec_rval_t dec_rval = aper_decode(NULL, &asn_DEF_NGAP_PDUSessionResourceModifyRequestTransfer, (void **)&pdusessionTransfer, pdu.buffer, pdu.length, 0, 0);
+  asn_dec_rval_t dec_rval = aper_decode(NULL, &asn_DEF_NGAP_PDUSessionResourceModifyRequestTransfer, (void **)&pdusessionTransfer, pdu.buf, pdu.len, 0, 0);
 
   if (dec_rval.code != RC_OK) {
     LOG_E(NR_RRC, "could not decode PDUSessionResourceModifyRequestTransfer\n");
@@ -1017,7 +1024,7 @@ int rrc_gNB_process_NGAP_PDUSESSION_MODIFY_REQ(MessageDef *msg_p, instance_t ins
       sess->status = PDU_SESSION_STATUS_NEW;
       sess->param.pdusession_id = sessMod->pdusession_id;
       sess->cause.type = NGAP_CAUSE_NOTHING;
-      if (sessMod->nas_pdu.buffer != NULL) {
+      if (sessMod->nas_pdu.buf != NULL) {
         UE->pduSession[i].param.nas_pdu = sessMod->nas_pdu;
       }
       // Save new pdu session parameters, qos, upf addr, teid
@@ -1288,8 +1295,8 @@ void rrc_gNB_send_NGAP_UE_CAPABILITIES_IND(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, 
     ngap_ue_cap_info_ind_t *ind = &NGAP_UE_CAPABILITIES_IND(msg_p);
     memset(ind, 0, sizeof(*ind));
     ind->gNB_ue_ngap_id = UE->rrc_ue_id;
-    ind->ue_radio_cap.length = encoded;
-    ind->ue_radio_cap.buffer = buf2;
+    ind->ue_radio_cap.len = encoded;
+    ind->ue_radio_cap.buf = buf2;
     itti_send_msg_to_task (TASK_NGAP, rrc->module_id, msg_p);
     LOG_I(NR_RRC,"Send message to ngap: NGAP_UE_CAPABILITIES_IND\n");
 }
@@ -1372,7 +1379,7 @@ int rrc_gNB_process_NGAP_PDUSESSION_RELEASE_COMMAND(MessageDef *msg_p, instance_
   if (found) {
     // TODO RRCReconfiguration To UE
     LOG_I(NR_RRC, "Send RRCReconfiguration To UE \n");
-    rrc_gNB_generate_dedicatedRRCReconfiguration_release(rrc, UE, xid, cmd->nas_pdu.length, cmd->nas_pdu.buffer);
+    rrc_gNB_generate_dedicatedRRCReconfiguration_release(rrc, UE, xid, cmd->nas_pdu.len, cmd->nas_pdu.buf);
   } else {
     // gtp tunnel delete
     LOG_I(NR_RRC, "gtp tunnel delete all tunnels for UE %04x\n", UE->rnti);
