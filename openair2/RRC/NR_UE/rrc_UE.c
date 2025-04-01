@@ -72,6 +72,7 @@
 #include "nr_nas_msg.h"
 #include "openair2/SDAP/nr_sdap/nr_sdap_entity.h"
 
+
 static NR_UE_RRC_INST_t *NR_UE_rrc_inst;
 /* NAS Attach request with IMSI */
 static const char nr_nas_attach_req_imsi_dummy_NSA_case[] = {
@@ -262,7 +263,7 @@ static void nr_decode_SI(NR_UE_RRC_SI_INFO *SI_info, NR_SystemInformation_t *si,
 
 static void nr_rrc_ue_prepare_RRCSetupRequest(NR_UE_RRC_INST_t *rrc)
 {
-  LOG_D(NR_RRC, "Generation of RRCSetupRequest\n");
+  LOG_A(NR_RRC, "Generation of RRCSetupRequest\n");
   uint8_t rv[6];
   // Get RRCConnectionRequest, fill random for now
   // Generate random byte stream for contention resolution
@@ -331,6 +332,80 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
     xer_fprint(stdout, &asn_DEF_NR_SIB1, (const void *) sib1);
   LOG_A(NR_RRC, "SIB1 decoded\n");
+  const int n = sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.count;
+  for (int i = 0; i < n; ++i) {
+    //    struct NR_PLMN_IndentityInfo__plmn_IdentityList *PLMN_identityInfoList =
+    //    &sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList;
+    for (int i2 = 0; i2 < sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.count; i2++) {
+      int mccdigits =
+          sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mcc->list.count;
+      int mncdigits =
+          sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.count;
+
+      int mcc;
+      if (mccdigits == 2) {
+        mcc = *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mcc->list.array[0]
+                  * 10
+              + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]
+                     ->plmn_IdentityList.list.array[i2]
+                     ->mcc->list.array[1];
+      } else {
+        mcc =
+            *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mcc->list.array[0]
+                * 100
+            + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mcc->list.array[1]
+                  * 10
+            + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]
+                   ->plmn_IdentityList.list.array[i2]
+                   ->mcc->list.array[2];
+      }
+
+      int mnc;
+      if (mncdigits == 2) {
+        mnc =
+            *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.array[0]
+                * 10
+            + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.array[1];
+      } else {
+        mnc =
+            *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.array[0]
+                * 100
+            + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.array[1]
+                  * 10
+            + *sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->plmn_IdentityList.list.array[i2]->mnc.list.array[2];
+      }
+
+      LOG_A(NR_RRC, "PLMN %d.%d MCC %0*d, MNC %0*d\n", i + 1, i2 + 1, mccdigits, mcc, mncdigits, mnc);
+      // search internal table for provider name
+      const size_t num_plmn_data = sizeof(plmn_data) / sizeof(plmn_data[0]);
+      for (size_t plmn_ind = 0;; ++plmn_ind) {
+        if (plmn_ind == num_plmn_data) {
+          LOG_W(NR_RRC, "Did not find operator name from internal table for MCC %0*d, MNC %0*d\n", mccdigits, mcc, mncdigits, mnc);
+          break;
+        }
+        if ((plmn_data[plmn_ind].mcc == mcc) && (plmn_data[plmn_ind].mnc == mnc)) {
+          LOG_A(NR_RRC, "Found %s (name from internal table)\n", plmn_data[plmn_ind].oper_short);
+          break;
+        }
+      }
+    }
+    /*
+     LOG_I( RRC, "TAC 0x%04x\n",
+            ((sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->trackingAreaCode->size ==
+     2)?((sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->trackingAreaCode->buf[0]<<8) +
+     sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->trackingAreaCode->buf[1]):0)); LOG_I( RRC,
+     "cellReservedForOperatorUse                 : raw:%ld decoded:%s\n",
+     sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellReservedForOperatorUse,
+            SIBreserved(sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellReservedForOperatorUse) );
+     LOG_I( RRC, "cellAccessRelatedInfo.cellIdentity         : raw:%"PRIu32" decoded:%02x.%02x.%02x.%02x\n",
+            BIT_STRING_to_uint32( &sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity ),
+            sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity.buf[0],
+            sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity.buf[1],
+            sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity.buf[2],
+            sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity.buf[3] >>
+     sib1->cellAccessRelatedInfo.plmn_IdentityInfoList.list.array[i]->cellIdentity.bits_unused);
+      */
+  }
   nr_timer_start(&SI_info->sib1_timer);
   SI_info->sib1_validity = SIB_VALID;
   if (rrc->nrRrcState == RRC_STATE_IDLE_NR) {
@@ -357,6 +432,7 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   MessageDef *msg = itti_alloc_new_message(TASK_RRC_NRUE, 0, NR_MAC_RRC_CONFIG_SIB1);
   NR_MAC_RRC_CONFIG_SIB1(msg).sib1 = sib1;
   NR_MAC_RRC_CONFIG_SIB1(msg).can_start_ra = !rrc->is_NTN_UE;
+  NR_MAC_RRC_CONFIG_SIB1(msg).ssb_arfcn = rrc->arfcn_ssb;
   itti_send_msg_to_task(TASK_MAC_UE, rrc->ue_id, msg);
 }
 
@@ -873,6 +949,7 @@ static void nr_rrc_ue_decode_NR_BCCH_BCH_Message(NR_UE_RRC_INST_t *rrc,
     // mac will manage the pointer
     NR_MAC_RRC_CONFIG_MIB(msg).bcch = bcch_message;
     NR_MAC_RRC_CONFIG_MIB(msg).get_sib = get_sib;
+    NR_MAC_RRC_CONFIG_MIB(msg).ssb_arfcn = ssb_arfcn;
     itti_send_msg_to_task(TASK_MAC_UE, rrc->ue_id, msg);
   } else {
     LOG_E(NR_RRC, "RRC-received BCCH message is not a MIB\n");

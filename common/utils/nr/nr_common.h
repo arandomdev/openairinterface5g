@@ -92,6 +92,14 @@ static inline const char *rnti_types(nr_rnti_type_t rr)
 // the total shift is 2 * 15, in dB scale thats 10log10(2^(15*2))
 #define SQ15_SQUARED_NORM_FACTOR_DB 90.3089986992
 
+typedef enum {
+  PHY_CONFIG_BIT_MASK_CARRIER = 0,
+  PHY_CONFIG_BIT_MASK_CELL,
+  PHY_CONFIG_BIT_MASK_SSB,
+  PHY_CONFIG_BIT_MASK_TDD,
+  PHY_CONFIG_BIT_MASK_PRACH
+} nr_phy_config_mask_t;
+
 typedef struct nr_bandentry_s {
   int16_t band;
   uint64_t ul_min;
@@ -113,7 +121,7 @@ typedef struct {
 
 typedef struct {
   int gscn;
-  double ssRef;
+  uint32_t ssRef;
   int ssbFirstSC;
 } nr_gscn_info_t;
 
@@ -283,11 +291,14 @@ uint32_t get_ssb_offset_to_pointA(uint32_t absoluteFrequencySSB,
 int get_ssb_subcarrier_offset(uint32_t absoluteFrequencySSB, uint32_t absoluteFrequencyPointA, int scs);
 int get_delay_idx(int delay, int max_delay_comp);
 
-int get_scan_ssb_first_sc(const double fc,
+int get_scan_ssb_first_sc(uint32_t *fc_khz_p,
                           const int nbRB,
                           const int nrBand,
                           const int mu,
-                          nr_gscn_info_t ssbStartSC[MAX_GSCN_BAND]);
+                          const int numScans,
+                          const int firstScannedGscn,
+                          const int lastScannedGscn,
+                          nr_gscn_info_t ssbInfo[MAX_GSCN_BAND]);
 
 void check_ssb_raster(uint64_t freq, int band, int scs);
 int get_smallest_supported_bandwidth_index(int scs, frequency_range_t frequency_range, int n_rbs);
@@ -298,6 +309,9 @@ uint8_t get_PRACH_k_bar(unsigned int delta_f_RA_PRACH, unsigned int delta_f_PUSC
 unsigned int get_prach_K(int prach_sequence_length, int prach_fmt_id, int pusch_mu, int prach_mu);
 
 int get_slot_idx_in_period(const int slot, const frame_structure_t *fs);
+int get_ssb_first_sc(const uint32_t pointA, const uint32_t ssbCenter, const int mu);
+int get_gscn_from_nrarfcn(const int band, const int scs, const uint32_t arfcn);
+uint32_t get_ssref_from_gscn(const int gscn);
 
 frequency_range_t get_freq_range_from_freq(uint64_t freq);
 frequency_range_t get_freq_range_from_arfcn(uint32_t arfcn);
@@ -307,6 +321,12 @@ frequency_range_t get_freq_range_from_band(uint16_t band);
 #define ROUNDIDIV(a,b) (((a<<1)+b)/(b<<1))
 
 static const char *const duplex_mode_txt[] = {"FDD", "TDD"};
+
+#define SETBIT(a, b) ((a) |= (1 << (b)))
+#define GETBIT(a, b) (((a) >> (b)) & 1)
+
+// Align up to a multiple of 16
+#define ALIGN_UP_16(a) ((a + 15) & ~15)
 
 #ifdef __cplusplus
 #ifdef min
