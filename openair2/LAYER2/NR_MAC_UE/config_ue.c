@@ -491,9 +491,16 @@ static void config_common_ue(NR_UE_MAC_INST_t *mac, NR_ServingCellConfigCommon_t
 
 void release_common_ss_cset(NR_BWP_PDCCH_t *pdcch)
 {
-  asn1cFreeStruc(asn_DEF_NR_SearchSpace, pdcch->otherSI_SS);
-  asn1cFreeStruc(asn_DEF_NR_SearchSpace, pdcch->ra_SS);
-  asn1cFreeStruc(asn_DEF_NR_SearchSpace, pdcch->paging_SS);
+  ASN_STRUCT_FREE(asn_DEF_NR_SearchSpace, pdcch->otherSI_SS);
+  if (pdcch->otherSI_SS == pdcch->ra_SS)
+    pdcch->ra_SS = NULL;
+  else
+    ASN_STRUCT_FREE(asn_DEF_NR_SearchSpace, pdcch->ra_SS);
+  if (pdcch->paging_SS == pdcch->otherSI_SS || pdcch->paging_SS == pdcch->ra_SS)
+    pdcch->paging_SS = NULL;
+  else
+    asn1cFreeStruc(asn_DEF_NR_SearchSpace, pdcch->paging_SS);
+  pdcch->otherSI_SS = pdcch->ra_SS = NULL;
   asn1cFreeStruc(asn_DEF_NR_ControlResourceSet, pdcch->commonControlResourceSet);
 }
 
