@@ -22,10 +22,10 @@
 | nokiabox      | 172.21.19.39    | _None_                | gNB (Nokia), 5GC   | _Nokia RF integrated_                                 |
 | avra          | 172.21.16.124   | CI-Avra-Usage         | gNB (n78)          | AW2S Jaguar (192.168.80.239)                          |
 | orion         | 172.21.16.134   | CI-Orion-Build-Sanity-Check-Deploy-Test, CI-Orion-DsTester-Deploy-Test | Build | |
-| aerial2       | 172.21.16.131   | CI-Aerial2-Usage      | gNB (PNF/Nvidia CUBB + VNF) | Foxconn RU, _Nvidia Aerial SDK integrated_   |
+| gracehopper1-oai | --           | CI-Aerial-Usage       | gNB (PNF/Nvidia CUBB + VNF) | Foxconn RU, _Nvidia Aerial SDK integrated_   |
 | cacofonix     | 172.21.16.150   | CI-Cacofonix-Usage    | gNB (n78, FHI7.2)  |                                                       |
 | matix         | 172.21.19.58    | CI-Matix-Usage        | gNB (n77)          | N310                                                  |
-| gracehopper1-oai | --           | Gracehopper1          | build, gNB/Aerial  | _Nvidia Aerial SDK integrated_                        |
+| gracehopper3-oai | --           | Gracehopper3          | Build  | _Nvidia Aerial SDK integrated_                        |
 
 Note: The available resources, and their current usage, is indicated here:
 - [Lockable resources of jenkins-oai](https://jenkins-oai.eurecom.fr/lockable-resources/):
@@ -125,7 +125,7 @@ information on how the images are built.
   - build unit tests from `ci-scripts/docker/Dockerfile.unittest.ubuntu22`, and run them
 - [RAN-Ubuntu-ARM-Image-Builder](https://jenkins-oai.eurecom.fr/job/RAN-Ubuntu-ARM-Image-Builder/)
   ~BUILD-ONLY ~4G-LTE ~5G-NR
-  - gracehopper1-oai: ARM Ubuntu 22 image build using docker
+  - gracehopper3-oai: ARM Ubuntu 22 image build using docker
   - base image from `Dockerfile.base.ubuntu22`
   - build image from `Dockerfile.build.ubuntu22`, followed by
     - target image from `Dockerfile.gNB.ubuntu22`
@@ -197,7 +197,7 @@ information on how the images are built.
   - OpenShift cluster for CN deployment and container images for gNB and UE deployment
 - [RAN-SA-AERIAL-CN5G](https://jenkins-oai.eurecom.fr/job/RAN-SA-AERIAL-CN5G/)
   ~5G-NR
-  - 5G-NR SA test setup: OAI VNF + PNF/NVIDIA CUBB on Aerial2 + Foxconn RU, up2 + COTS UE (Quectel RM520N), OAI CN5G
+  - 5G-NR SA test setup: OAI VNF + PNF/NVIDIA CUBB on gracehopper1-oai + Foxconn RU, up2 + COTS UE (Quectel RM520N), OAI CN5G
   - container images for gNB deployment
 - [RAN-SA-2x2-Module-CN5G](https://jenkins-oai.eurecom.fr/view/RAN/job/RAN-SA-2x2-Module-CN5G/)
   ~5G-NR
