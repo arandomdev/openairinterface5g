@@ -309,10 +309,15 @@ unsigned int rrc_gNB_get_next_transaction_identifier(module_id_t gnb_mod_idP)
   return tmp;
 }
 
-/**
- * @brief Create srb-ToAddModList for RRCSetup and RRCReconfiguration messages
-*/
-static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, bool reestablish)
+/** @brief Create srb-ToAddModList for RRCSetup and RRCReconfiguration messages
+  * @param reestablish bitmap to indicates whether PDCP should be re-established
+  * for the SRB1 and/or SRB2. For convenience the bitmap is 0-based, with index 1
+  * corresponding to SRB1, index 2 to SRB2. 3GPP TS 38.331 RadioBearerConfig
+  * specifies that PDCP shall be re-established whenever the security key used
+  * for the radio bearer changes, with some expections for SRB1 (i.e. when resuming
+  * an RRC connection, or at the first reconfiguration after RRC connection
+  * reestablishment in NR, do not re-establish PDCP) */
+static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, uint8_t reestablish)
 {
   if (!ue->Srb[1].Active) {
     LOG_E(NR_RRC, "Call SRB list while SRB1 doesn't exist\n");
@@ -323,8 +328,8 @@ static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, bool reestablish)
     if (ue->Srb[i].Active) {
       asn1cSequenceAdd(list->list, NR_SRB_ToAddMod_t, srb);
       srb->srb_Identity = i;
-      /* Set reestablishPDCP only for SRB2 */
-      if (reestablish && i == 2) {
+      /* Based on the bitmap, set reestablishPDCP for SRB1 and SRB2 */
+      if ((i == 1 || i == 2) && (reestablish & (1 << i))) {
         asn1cCallocOne(srb->reestablishPDCP, NR_SRB_ToAddMod__reestablishPDCP_true);
       }
     }
@@ -507,7 +512,8 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
 
   UE->measConfig = measconfig;
 
-  NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish);
+  // Re-establish PDCP for SRB2 only
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish ? (1 << 2) : 0);
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(UE, reestablish);
 
   RRCReconfigurationParams_t params = {.buffer.buf = buf,
@@ -968,8 +974,10 @@ static void rrc_gNB_process_RRCReestablishmentComplete(gNB_RRC_INST *rrc, gNB_RR
   /* PDCP Reestablishment of DRBs according to 5.3.5.6.5 of 3GPP TS 38.331 (over E1) */
   cuup_notify_reestablishment(rrc, ue_p);
 
-  /* Create srb-ToAddModList */
-  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue_p, true);
+  /* Create srb-ToAddModList, 3GPP TS 38.331 RadioBearerConfig:
+    do not re-establish PDCP for SRB1, when resuming an RRC connection,
+    or at the first reconfiguration after RRC connection reestablishment in NR */
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue_p, 1 << 2); // Re-establish PDCP for SRB2 only
   /* Create drb-ToAddModList */
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(ue_p, true);
 
