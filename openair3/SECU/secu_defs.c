@@ -34,7 +34,13 @@
 void stream_compute_integrity(eia_alg_id_e alg, nas_stream_cipher_t const* stream_cipher, uint8_t out[4])
 {
   if (alg == EIA0_ALG_ID) {
-    LOG_E(OSA, "Provided integrity algorithm is currently not supported = %u\n", alg);
+    LOG_D(OSA, "EIA0 algorithm applied for integrity\n");
+    /* Explicitly set MAC to 0 if it is allowed
+       to prevent undefined behavior for EIA0.
+       (c.f. TS 33.501: "implemented in such way that
+       it shall generate a 32 bit MAC-I/NAS-MAC and
+       XMAC-I/XNAS-MAC of all zeroes")*/
+    memset(out, 0, 4);
   } else if (alg == EIA1_128_ALG_ID) {
     LOG_D(OSA, "EIA1 algorithm applied for integrity\n");
     nas_stream_encrypt_eia1(stream_cipher, out);
@@ -67,9 +73,12 @@ void stream_compute_encrypt(eea_alg_id_e alg, nas_stream_cipher_t const* stream_
 stream_security_context_t *stream_integrity_init(int integrity_algorithm, const uint8_t *integrity_key)
 {
   switch (integrity_algorithm) {
-    case EEA0_ALG_ID: return NULL;
-    case EEA1_128_ALG_ID: return stream_integrity_init_eia1(integrity_key);
-    case EEA2_128_ALG_ID: return stream_integrity_init_eia2(integrity_key);
+    case EIA0_ALG_ID:
+      /* NULL Integrity only allowed in emergency mode, not supported */
+      LOG_W(OSA, "EIA0 algorithm is not allowed in non-emergency mode, continuing..\n");
+      return NULL;
+    case EIA1_128_ALG_ID: return stream_integrity_init_eia1(integrity_key);
+    case EIA2_128_ALG_ID: return stream_integrity_init_eia2(integrity_key);
     default: AssertFatal(0, "unsupported integrity algorithm\n");
   }
 }
@@ -117,6 +126,12 @@ stream_security_container_t *stream_security_container_init(int ciphering_algori
 
   container->integrity_context = stream_integrity_init(integrity_algorithm, integrity_key);
   container->ciphering_context = stream_ciphering_init(ciphering_algorithm, ciphering_key);
+
+  /* Reject invalid configurations, i.e. ones that set NIA0 */
+  if (container->integrity_context == NULL) {
+    stream_security_container_delete(container);
+    return NULL;
+  }
 
   return container;
 }
