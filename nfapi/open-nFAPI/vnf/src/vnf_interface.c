@@ -890,12 +890,12 @@ int nfapi_vnf_stop(nfapi_vnf_config_t* config)
 
 int nfapi_nr_vnf_pnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_pnf_param_request_t* req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_param_request_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_param_request_t));
 }
 
 int nfapi_vnf_pnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_pnf_param_request_t* req)
@@ -910,12 +910,12 @@ int nfapi_vnf_pnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_pnf_pa
 
 int nfapi_nr_vnf_pnf_config_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_pnf_config_request_t* req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_config_request_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_config_request_t));
 }
 
 
@@ -941,12 +941,12 @@ int nfapi_vnf_pnf_start_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_pnf_st
 
 int nfapi_nr_vnf_pnf_start_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_pnf_start_request_t* req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_start_request_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_pnf_start_request_t));
 }
 
 int nfapi_vnf_pnf_stop_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_pnf_stop_request_t* req)
@@ -961,12 +961,12 @@ int nfapi_vnf_pnf_stop_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_pnf_sto
 
 int nfapi_nr_vnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_param_request_scf_t* req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_param_request_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_param_request_scf_t));
 }
 
 int nfapi_vnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_param_request_t* req)
@@ -981,7 +981,7 @@ int nfapi_vnf_param_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_param_requ
 
 int nfapi_nr_vnf_config_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_config_request_scf_t* req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
@@ -1007,7 +1007,7 @@ int nfapi_nr_vnf_config_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_con
 	req->nfapi_config.timing_info_period.value = phy->timing_info_period;
 	req->num_tlv++;
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_config_request_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_config_request_scf_t));
 }
 
 int nfapi_vnf_config_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_config_request_t* req)
@@ -1053,12 +1053,12 @@ int nfapi_vnf_start_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_start_requ
 
 int nfapi_nr_vnf_start_req(nfapi_vnf_config_t* config, int p5_idx, nfapi_nr_start_request_scf_t * req)
 {
-	if(config == 0 || req == 0)
+	if(config == 0 || req == 0 || !config->nr_pack_and_send_p5_msg)
 		return -1;
 
 	vnf_t* _this = (vnf_t*)(config);
 
-	return vnf_nr_pack_and_send_p5_message(_this, p5_idx, &req->header, sizeof(nfapi_nr_start_request_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, p5_idx, &req->header, sizeof(nfapi_nr_start_request_scf_t));
 }
 
 

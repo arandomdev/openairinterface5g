@@ -1530,8 +1530,9 @@ static int vnf_send_p5_msg(nfapi_vnf_pnf_info_t* pnf, const void *msg, int len, 
 	return 0;
 }
 
-int vnf_nr_pack_and_send_p5_message(vnf_t* vnf, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t* msg, uint16_t msg_len)
+int vnf_nr_pack_and_send_p5_message(void* vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len)
 {
+  vnf_t* vnf = (vnf_t*)vnf_ptr;
 	nfapi_vnf_pnf_info_t* pnf = nfapi_vnf_pnf_list_find(&(vnf->_public), p5_idx);
 	
 	if(pnf)

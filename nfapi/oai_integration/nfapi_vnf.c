@@ -34,6 +34,8 @@
 #include "nfapi_nr_interface_scf.h"
 #include "nfapi_vnf_interface.h"
 #include "nfapi_vnf.h"
+#include <vnf.h>
+#include <vnf_p7.h>
 #include "nfapi.h"
 #include "vendor_ext.h"
 
@@ -1448,6 +1450,7 @@ void *vnf_nr_p7_thread_start(void *ptr)
   p7_vnf->config->unpack_func = &nfapi_nr_p7_message_unpack;
   p7_vnf->config->hdr_unpack_func = &nfapi_nr_p7_message_header_unpack;
   p7_vnf->config->pack_func = &nfapi_nr_p7_message_pack;
+  p7_vnf->config->nr_pack_and_send_p7_msg = &vnf_nr_p7_pack_and_send_p7_msg;
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Creating VNF NFAPI P7 start thread %s\n", __FUNCTION__);
   pthread_create(&vnf_p7_start_pthread, NULL, &vnf_nr_p7_start_thread, p7_vnf->config);
   return 0;
@@ -1868,6 +1871,7 @@ void configure_nr_nfapi_vnf(char *vnf_addr, int vnf_p5_port, char *pnf_ip_addr, 
   config->unpack_func = &nfapi_nr_p5_message_unpack;
   config->hdr_unpack_func = &nfapi_nr_p5_message_header_unpack;
   config->pack_func = &nfapi_nr_p5_message_pack;
+  config->nr_pack_and_send_p5_msg = &vnf_nr_pack_and_send_p5_message;
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Creating VNF NFAPI start thread %s\n", __FUNCTION__);
   pthread_create(&vnf_start_pthread, NULL, (void *)&vnf_nr_start_thread, config);
   NFAPI_TRACE(NFAPI_TRACE_INFO, "[VNF] Created VNF NFAPI start thread %s\n", __FUNCTION__);
