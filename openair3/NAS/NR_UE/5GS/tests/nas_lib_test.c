@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <arpa/inet.h>
+#include "RegistrationAccept.h"
 #include "fgs_service_request.h"
 #include "nr_nas_msg.h"
 
@@ -21,6 +22,59 @@ static bool eq_service_request(const fgs_service_request_msg_t *a, const fgs_ser
   result &= a->serviceType == b->serviceType;
   result &= memcmp(&a->fiveg_s_tmsi, &b->fiveg_s_tmsi, sizeof(Stmsi5GSMobileIdentity_t)) == 0;
   return result;
+}
+
+/** @brief Test regression of NAS Registration Accept decoding
+ *         decode the message received from OAI CN5G
+ *         and compare with the expected one */
+static void test_regression_registration_accept(void)
+{
+  // Registration Accept message
+  registration_accept_msg orig = {
+      .guti = malloc_or_fail(sizeof(*orig.guti)),
+      .fgsregistrationresult.registrationresult = 0x01,
+      .nas_allowed_nssai[0].sst = 0x01,
+      .nas_allowed_nssai[1].sst = 0x01,
+      .nas_allowed_nssai[2].sst = 0x01,
+      .config_nssai[0].sst = 0x01,
+      .config_nssai[1].sst = 0x01,
+      .config_nssai[2].sst = 0x01,
+  };
+
+  orig.guti->guti.typeofidentity = FGS_MOBILE_IDENTITY_5G_GUTI;
+  orig.guti->guti.amfpointer = 0x01;
+  orig.guti->guti.amfregionid = 0x01;
+  orig.guti->guti.amfsetid = 0x01;
+  orig.guti->guti.mccdigit1 = 0x00;
+  orig.guti->guti.mccdigit2 = 0x00;
+  orig.guti->guti.mccdigit3 = 0x01;
+  orig.guti->guti.mncdigit1 = 0x00;
+  orig.guti->guti.mncdigit2 = 0x01;
+  orig.guti->guti.mncdigit3 = 0x0F;
+  orig.guti->guti.tmsi = 0xb0207806;
+  orig.guti->guti.spare = 0b1111;
+  orig.guti->guti.oddeven = 0;
+
+  // Encoded Registration Accept message from OAI CN5G
+  uint8_t cn5g_msg[] = {0x01, 0x01, // Registration Result
+                        0x77, 0x00, 0x0B, 0xF2, 0x00, 0xF1, 0x10, // 5G-GUTI
+                        0x01, 0x00, 0x41, 0xB0, 0x20, 0x78, 0x06, // 5G-GUTI
+                        0x15, 0x06, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, // Allowed N-NSSAI
+                        0x31, 0x06, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}; // Configured N-NSSAI
+
+  // Decode NAS Registration Accept
+  int encoded_length;
+  registration_accept_msg decoded = {0};
+  AssertFatal((encoded_length = decode_registration_accept(&decoded, cn5g_msg, sizeof(cn5g_msg))) >= 0,
+              "encode_fgs_service_request() failed\n");
+
+  // Compare the raw encoded buffer with expected encoded data
+  bool ret = eq_fgmm_registration_accept((const registration_accept_msg *)&orig, (const registration_accept_msg *)&decoded);
+  AssertFatal(ret, "Encoding mismatch!\n");
+
+  // Free dynamic allocated memory
+  free_fgmm_registration_accept(&orig);
+  free_fgmm_registration_accept(&decoded);
 }
 
 /**
@@ -78,5 +132,6 @@ static void test_service_request(void)
 int main()
 {
   test_service_request();
+  test_regression_registration_accept();
   return 0;
 }

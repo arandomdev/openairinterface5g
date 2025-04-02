@@ -33,13 +33,12 @@
 #include <string.h>
 #include <stdint.h>
 #include "conversions.h"
-#include "TLVEncoder.h"
-#include "TLVDecoder.h"
 #include "RegistrationAccept.h"
-#include "assertions.h"
 #include "fgs_nas_utils.h"
+#include "common/utils/utils.h"
 
 #define IEI_5G_GUTI 0x77
+#define REGISTRATION_ACCEPT_MIN_LEN 2 // (5GS registration result) 2 octets
 
 /**
  * @brief Allowed NSSAI from Registration Accept according to 3GPP TS 24.501 Table 8.2.7.1.1
@@ -53,7 +52,6 @@ static int decode_nssai_ie(nr_nas_msg_snssai_t *nssai, const uint8_t *buf)
   const uint8_t *end = buf + length;
   while (buf < end) {
     nr_nas_msg_snssai_t *item = nssai + nssai_cnt;
-    item->sd = 0xffffff;
     const int item_len = *buf++; // Length of S-NSSAI IE item
     switch (item_len) {
       case 1:
@@ -63,31 +61,38 @@ static int decode_nssai_ie(nr_nas_msg_snssai_t *nssai, const uint8_t *buf)
 
       case 2:
         item->sst = *buf++;
-        item->hplmn_sst = *buf++;
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
         nssai_cnt++;
         break;
 
       case 4:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
         nssai_cnt++;
         break;
 
       case 5:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
-        item->hplmn_sst = *buf++;
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
         nssai_cnt++;
         break;
 
       case 8:
         item->sst = *buf++;
-        item->sd = 0xffffff & ntoh_int24_buf(buf);
+        item->sd = malloc_or_fail(sizeof(*item->sd));
+        *item->sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
-        item->hplmn_sst = *buf++;
-        item->hplmn_sd = 0xffffff & ntoh_int24_buf(buf);
+        item->hplmn_sst = malloc_or_fail(sizeof(*item->hplmn_sst));
+        *item->hplmn_sst = *buf++;
+        item->hplmn_sd = malloc_or_fail(sizeof(*item->hplmn_sd));
+        *item->hplmn_sd = 0xffffff & ntoh_int24_buf(buf);
         buf += 3;
         nssai_cnt++;
         break;
@@ -105,11 +110,17 @@ int decode_registration_accept(registration_accept_msg *registration_accept, con
   int dec = 0;
   const uint8_t *end = buffer + len;
 
-  /* Decoding mandatory fields */
+  if (len < REGISTRATION_ACCEPT_MIN_LEN) {
+    PRINT_NAS_ERROR("%s: buffer length is too short.\n", __func__);
+    return -1;
+  }
+
+  // 5GS registration result (M)
   if ((dec = decode_fgs_registration_result(&registration_accept->fgsregistrationresult, 0, *buffer, len)) < 0)
     return dec;
   buffer += dec;
 
+  // 5G-GUTI (O)
   if (buffer < end && *buffer == IEI_5G_GUTI) {
     registration_accept->guti = calloc_or_fail(1, sizeof(*registration_accept->guti));
     if ((dec = decode_5gs_mobile_identity(registration_accept->guti, IEI_5G_GUTI, buffer, end - buffer)) < 0) {
@@ -119,8 +130,7 @@ int decode_registration_accept(registration_accept_msg *registration_accept, con
     buffer += dec;
   }
 
-  // Allowed NSSAI (O)
-  /* Optional Presence IEs */
+  // Other optional IEs
   while (buffer < end) {
     const int iei = *buffer++;
     switch (iei) {
@@ -148,8 +158,6 @@ int encode_registration_accept(const registration_accept_msg *registration_accep
 {
   int encoded = 0;
 
-  LOG_FUNC_IN;
-
   *(buffer + encoded) = encode_fgs_registration_result(&registration_accept->fgsregistrationresult);
   encoded = encoded + 2;
 
@@ -160,6 +168,81 @@ int encode_registration_accept(const registration_accept_msg *registration_accep
     encoded += mi_enc;
   }
 
-  // todo ,Encoding optional fields
-  LOG_FUNC_RETURN(encoded);
+  return encoded;
+}
+
+/** Equality check for NAS Registration Accept */
+
+bool eq_snssai(const nr_nas_msg_snssai_t *a, const nr_nas_msg_snssai_t *b)
+{
+  _NAS_EQ_CHECK_INT(a->sst, b->sst);
+  if (a->hplmn_sst && b->hplmn_sst)
+    _NAS_EQ_CHECK_INT(*a->hplmn_sst, *b->hplmn_sst);
+  if (a->sd && b->sd)
+    _NAS_EQ_CHECK_INT(*a->sd, *b->sd);
+  if (a->hplmn_sd && b->hplmn_sd)
+    _NAS_EQ_CHECK_INT(*a->hplmn_sd, *b->hplmn_sd);
+  return true;
+}
+
+
+bool eq_fgmm_registration_accept(const registration_accept_msg *a, const registration_accept_msg *b)
+{
+  if (!a || !b) {
+    PRINT_NAS_ERROR("Null pointer in registration_accept_msg_eq\n");
+    return false;
+  }
+
+  // fgsregistrationresult (M)
+  _NAS_EQ_CHECK_INT(a->fgsregistrationresult.iei, b->fgsregistrationresult.iei);
+  _NAS_EQ_CHECK_INT(a->fgsregistrationresult.resultlength, b->fgsregistrationresult.resultlength);
+  _NAS_EQ_CHECK_INT(a->fgsregistrationresult.spare, b->fgsregistrationresult.spare);
+  _NAS_EQ_CHECK_INT(a->fgsregistrationresult.smsallowed, b->fgsregistrationresult.smsallowed);
+  _NAS_EQ_CHECK_INT(a->fgsregistrationresult.registrationresult, b->fgsregistrationresult.registrationresult);
+
+  // GUTI (O)
+  if (a->guti && b->guti) {
+    _NAS_EQ_CHECK_INT(a->guti->guti.spare, b->guti->guti.spare);
+    _NAS_EQ_CHECK_INT(a->guti->guti.oddeven, b->guti->guti.oddeven);
+    _NAS_EQ_CHECK_INT(a->guti->guti.typeofidentity, b->guti->guti.typeofidentity);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mccdigit2, b->guti->guti.mccdigit2);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mccdigit1, b->guti->guti.mccdigit1);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mncdigit3, b->guti->guti.mncdigit3);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mccdigit3, b->guti->guti.mccdigit3);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mncdigit2, b->guti->guti.mncdigit2);
+    _NAS_EQ_CHECK_INT(a->guti->guti.mncdigit1, b->guti->guti.mncdigit1);
+    _NAS_EQ_CHECK_INT(a->guti->guti.amfregionid, b->guti->guti.amfregionid);
+    _NAS_EQ_CHECK_INT(a->guti->guti.amfsetid, b->guti->guti.amfsetid);
+    _NAS_EQ_CHECK_INT(a->guti->guti.amfpointer, b->guti->guti.amfpointer);
+    _NAS_EQ_CHECK_INT(a->guti->guti.tmsi, b->guti->guti.tmsi);
+  } else if (a->guti || b->guti) {
+    PRINT_NAS_ERROR("NAS Equality Check failure: One of the two GUTIs is NULL\n");
+    return false;
+  }
+
+  // Allowed NSSAI (O), Configured NSSAI(O)
+  for (int i = 0; i < NAS_MAX_NUMBER_SLICES; i++) {
+    eq_snssai(&a->config_nssai[i], &b->config_nssai[i]);
+    eq_snssai(&a->nas_allowed_nssai[i], &b->nas_allowed_nssai[i]);
+  }
+
+  return true;
+}
+
+/** Memory management of NAS Registration Accept */
+
+void free_nssai(nr_nas_msg_snssai_t *msg)
+{
+  free(msg->hplmn_sd);
+  free(msg->hplmn_sst);
+  free(msg->sd);
+}
+
+void free_fgmm_registration_accept(registration_accept_msg *msg)
+{
+  free(msg->guti);
+  for (int i = 0; i < NAS_MAX_NUMBER_SLICES; i++) {
+    free_nssai(&msg->nas_allowed_nssai[i]);
+    free_nssai(&msg->config_nssai[i]);
+  }
 }

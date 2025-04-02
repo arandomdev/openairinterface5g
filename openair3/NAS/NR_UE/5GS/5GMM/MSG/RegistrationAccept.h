@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "SecurityHeaderType.h"
 #include "MessageType.h"
@@ -40,12 +41,14 @@
 #ifndef REGISTRATION_ACCEPT_H_
 #define REGISTRATION_ACCEPT_H_
 
+#define NAS_MAX_NUMBER_SLICES 8
+
 // 9.11.3.37 of 3GPP TS 24.501
 typedef struct {
   int sst;
-  int hplmn_sst;
-  int sd;
-  int hplmn_sd;
+  int *hplmn_sst;
+  int *sd;
+  int *hplmn_sd;
 } nr_nas_msg_snssai_t;
 
 /*
@@ -56,18 +59,21 @@ typedef struct {
  */
 
 typedef struct registration_accept_msg_tag {
-  /* Mandatory fields */
+  // 5GS registration result (M)
   FGSRegistrationResult fgsregistrationresult;
-  /* Optional fields */
+  // 5G-GUTI (O)
   FGSMobileIdentity *guti;
   // Allowed NSSAI (O)
-  nr_nas_msg_snssai_t nas_allowed_nssai[8];
+  nr_nas_msg_snssai_t nas_allowed_nssai[NAS_MAX_NUMBER_SLICES];
   // Configured NSSAI (O)
-  nr_nas_msg_snssai_t config_nssai[8];
+  nr_nas_msg_snssai_t config_nssai[NAS_MAX_NUMBER_SLICES];
 } registration_accept_msg;
 
 int decode_registration_accept(registration_accept_msg *registrationaccept, const uint8_t *buffer, uint32_t len);
 
 int encode_registration_accept(const registration_accept_msg *registrationaccept, uint8_t *buffer, uint32_t len);
+
+bool eq_fgmm_registration_accept(const registration_accept_msg *a, const registration_accept_msg *b);
+void free_fgmm_registration_accept(registration_accept_msg *msg);
 
 #endif /* ! defined(REGISTRATION_ACCEPT_H_) */
