@@ -569,8 +569,9 @@ int pnf_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_p7_message_header_t*
 	return 0;
 }
 
-int pnf_nr_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_nr_p7_message_header_t* header, uint32_t msg_len)
+int pnf_nr_p7_pack_and_send_p7_message(void* pnf_p7_ptr, nfapi_nr_p7_message_header_t* header, uint32_t msg_len)
 {
+  pnf_p7_t* pnf_p7 = (pnf_p7_t*)pnf_p7_ptr;
   header->m_segment_sequence = NFAPI_P7_SET_MSS(0, 0, pnf_p7->sequence_number);
 
   // Need to guard against different threads calling the encode function at the same time
@@ -707,9 +708,8 @@ void pnf_nr_pack_and_send_timing_info(pnf_p7_t* pnf_p7)
 	timing_info.tx_data_request_earliest_arrival = 0;
 	timing_info.ul_tti_earliest_arrival = 0;
 	timing_info.ul_dci_earliest_arrival = 0;
-
-
-	pnf_nr_p7_pack_and_send_p7_message(pnf_p7, &(timing_info.header), sizeof(timing_info));
+  AssertFatal(pnf_p7->_public.nr_pack_and_send_p7_msg, "The function pointer to pack and send P7 messages must be set");
+  pnf_p7->_public.nr_pack_and_send_p7_msg(pnf_p7, &(timing_info.header), sizeof(timing_info));
 
 	pnf_p7->timing_info_ms_counter = 0;
 }
@@ -2109,7 +2109,7 @@ void pnf_nr_handle_dl_node_sync(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
 		return;
 	}
 
-	pnf_nr_p7_pack_and_send_p7_message(pnf_p7, &(ul_node_sync.header), sizeof(ul_node_sync));
+	pnf_p7->_public.nr_pack_and_send_p7_msg(pnf_p7, &(ul_node_sync.header), sizeof(ul_node_sync));
 	//printf("\nSSent UL Node Sync sfn:%d,slot:%d\n",pnf_p7->sfn,pnf_p7->slot);
 }
 

@@ -360,7 +360,14 @@ typedef struct nfapi_pnf_config
 	                       void* pUnpackedBuf,
 	                       uint32_t unpackedBufLen,
 	                       nfapi_p4_p5_codec_config_t* config);
-
+	/*! \brief Decodes an NFAPI P5 message header
+ *  \param pnf A pointer to a pnf_t*
+ *  \param p5_idx The index of the P5 PNF intended to receive the message
+ *  \param msg_len The size of the encoded P5 message header
+ *  \param msg A pointer to the nfapi P5 message
+ *  \return 10 ( size of the unpacked header ) on success, -1 on failure.
+ */
+	int(*nr_pack_and_send_p5_msg)(void* pnf, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len);
 } nfapi_pnf_config_t;
 
 /*! Create a pnf configuration 
@@ -803,6 +810,13 @@ typedef struct nfapi_pnf_p7_config
 						   uint32_t unpackedBufLen,
 						   nfapi_p7_codec_config_t* config);
 
+	/*! \brief Decodes an NFAPI P7 message header
+	 *  \param pnf_p7 A pointer to a pnf_p7_t struct
+	 *  \param header A pointer to the P7 message to pack & send
+	 *  \param msg_len The P7 message length
+	 *  \return 10 ( size of the unpacked header ) on success, -1 on failure.
+	 */
+	int (*nr_pack_and_send_p7_msg)(void* pnf_p7, nfapi_nr_p7_message_header_t* header, uint32_t msg_len);
 } nfapi_pnf_p7_config_t;
 
 /*! Create and initialise a nfapi_pnf_p7_config structure

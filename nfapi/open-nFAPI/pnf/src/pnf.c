@@ -1702,8 +1702,9 @@ void pnf_handle_p5_message(pnf_t* pnf, void *pRecvMsg, int recvMsgLen)
 	}
 }
 
-int pnf_nr_pack_and_send_p5_message(pnf_t* pnf, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len)
+int pnf_nr_pack_and_send_p5_message(void* pnf_ptr, nfapi_nr_p4_p5_message_header_t* msg, uint32_t msg_len)
 {
+  pnf_t* pnf = (pnf_t*)pnf_ptr;
   int packed_len =
       pnf->_public.pack_func(msg, msg_len, pnf->tx_message_buffer, sizeof(pnf->tx_message_buffer), &pnf->_public.codec_config);
 

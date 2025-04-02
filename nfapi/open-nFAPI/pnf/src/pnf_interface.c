@@ -128,7 +128,7 @@ int nfapi_pnf_stop(nfapi_pnf_config_t* config)
 int nfapi_nr_pnf_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_param_response_t* resp)
 {
 	// ensure it's valid
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -136,7 +136,7 @@ int nfapi_nr_pnf_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_param_r
 
 	pnf_t* _this = (pnf_t*)(config);
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_pnf_param_response_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_pnf_param_response_t));
 }
 
 int nfapi_pnf_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_pnf_param_response_t* resp)
@@ -176,7 +176,7 @@ int nfapi_pnf_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_pnf_config_respo
 int nfapi_nr_pnf_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_config_response_t* resp)
 {
 	// ensure it's valid
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -189,7 +189,7 @@ int nfapi_nr_pnf_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_config
 
 	pnf_t* _this = (pnf_t*)(config);
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_pnf_config_response_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_pnf_config_response_t));
 }
 
 
@@ -215,7 +215,7 @@ int nfapi_pnf_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_pnf_start_respons
 int nfapi_nr_pnf_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_start_response_t* resp)
 {
 	// ensure it's valid
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -228,7 +228,7 @@ int nfapi_nr_pnf_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_nr_pnf_start_r
 
 	pnf_t* _this = (pnf_t*)(config);
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_pnf_start_response_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_pnf_start_response_t));
 }
 
 
@@ -266,7 +266,7 @@ int nfapi_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_param_response_t* res
 
 int nfapi_nr_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_nr_param_response_scf_t* resp)
 {
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -274,7 +274,7 @@ int nfapi_nr_pnf_param_resp(nfapi_pnf_config_t* config, nfapi_nr_param_response_
 
 	pnf_t* _this = (pnf_t*)(config);
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_param_response_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_param_response_scf_t));
 }
 
 int nfapi_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_config_response_t* resp)
@@ -307,7 +307,7 @@ int nfapi_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_config_response_t* r
 
 int nfapi_nr_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_nr_config_response_scf_t* resp)
 {
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -330,7 +330,7 @@ int nfapi_nr_pnf_config_resp(nfapi_pnf_config_t* config, nfapi_nr_config_respons
 		return -1;
 	}
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_config_response_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_config_response_scf_t));
 }
 
 
@@ -363,7 +363,7 @@ int nfapi_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_start_response_t* res
 
 int nfapi_nr_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_nr_start_response_scf_t* resp)
 {
-	if (config == NULL || resp == NULL)
+	if (config == NULL || resp == NULL || !config->nr_pack_and_send_p5_msg)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: NULL parameters\n", __FUNCTION__);
 		return -1;
@@ -385,7 +385,7 @@ int nfapi_nr_pnf_start_resp(nfapi_pnf_config_t* config, nfapi_nr_start_response_
 		return -1;
 	}
 
-	return pnf_nr_pack_and_send_p5_message(_this, &(resp->header), sizeof(nfapi_nr_start_response_scf_t));
+	return config->nr_pack_and_send_p5_msg(_this, &(resp->header), sizeof(nfapi_nr_start_response_scf_t));
 }
 
 
