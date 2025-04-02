@@ -1,5 +1,8 @@
 add_library(fgs_5gmm_lib OBJECT
+    fgmm_lib.c
     fgs_service_request.c
+    fgmm_service_accept.c
+    fgmm_service_reject.c
     RegistrationRequest.c
     RegistrationAccept.c
     FGSIdentityResponse.c
