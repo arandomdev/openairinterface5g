@@ -80,19 +80,55 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
-    oai-gnb:
+
+    oai-gnb-pci0:
         image: ${REGISTRY:-oaisoftwarealliance}/${GNB_IMG:-oai-gnb}:${TAG:-develop}
-        container_name: rfsim5g-oai-gnb
+        container_name: rfsim5g-oai-gnb-pci0
         cap_drop:
             - ALL
         environment:
-            USE_ADDITIONAL_OPTIONS: --rfsim --log_config.global_log_options level,nocolor,time
+            USE_ADDITIONAL_OPTIONS: --rfsim --rfsimulator.serveraddr 192.168.71.150
+                                    --telnetsrv --telnetsrv.shrmod ci
+                                    --gNBs.[0].min_rxtxtime 6
+                                    --gNBs.[0].gNB_ID 0xe00
+                                    --gNBs.[0].nr_cellid 1
+                                    --gNBs.[0].physCellId 0
+                                    --neighbour_list.[0].neighbour_cell_configuration.[0].absoluteFrequencySSB 630048
+                                    --log_config.global_log_options level,nocolor,time
             ASAN_OPTIONS: detect_leaks=0
         depends_on:
-            - oai-ext-dn
+            - oai-nr-ue
         networks:
             public_net:
                 ipv4_address: 192.168.71.140
+        volumes:
+            - ../../conf_files/gnb.sa.band78.273prb.rfsim.2x2.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-gnb-pci1:
+        image: ${REGISTRY:-oaisoftwarealliance}/${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: oai-gnb-pci1
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --rfsim --rfsimulator.serveraddr 192.168.71.150
+                                    --telnetsrv --telnetsrv.shrmod ci
+                                    --gNBs.[0].min_rxtxtime 6
+                                    --gNBs.[0].gNB_ID 0xb00
+                                    --gNBs.[0].nr_cellid 2
+                                    --gNBs.[0].physCellId 2
+                                    --neighbour_list.[1].neighbour_cell_configuration.[0].absoluteFrequencySSB 630048
+                                    --log_config.global_log_options level,nocolor,time
+            ASAN_OPTIONS: detect_leaks=0
+        depends_on:
+            - oai-nr-ue
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.141
         volumes:
             - ../../conf_files/gnb.sa.band78.273prb.rfsim.2x2.conf:/opt/oai-gnb/etc/gnb.conf
         healthcheck:
@@ -110,9 +146,11 @@ services:
             - NET_ADMIN  # for interface bringup
             - NET_RAW    # for ping
         environment:
-            USE_ADDITIONAL_OPTIONS: --rfsim -r 273 --numerology 1 --band 78 -C 3450720000 --ssb 1518 --ue-nb-ant-tx 2 --uicc0.imsi 208990100001100 --ue-nb-ant-rx 2 --uecap_file /opt/oai-nr-ue/etc/uecap.xml --rfsimulator.serveraddr 192.168.71.140 --log_config.global_log_options level,nocolor,time
-        depends_on:
-            - oai-gnb
+            USE_ADDITIONAL_OPTIONS: --rfsim -r 273 --numerology 1 --band 78 -C 3450720000 --ssb 1518
+                                    --ue-nb-ant-tx 2 --uicc0.imsi 208990100001100 --ue-nb-ant-rx 2
+                                    --uecap_file /opt/oai-nr-ue/etc/uecap.xml
+                                    --rfsimulator.serveraddr server
+                                    --log_config.global_log_options level,nocolor,time
         networks:
             public_net:
                 ipv4_address: 192.168.71.150
