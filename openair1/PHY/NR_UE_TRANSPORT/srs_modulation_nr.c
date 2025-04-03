@@ -423,14 +423,14 @@ int generate_srs_nr(nfapi_nr_srs_pdu_t *srs_config_pdu,
 *                send srs according to current configuration
 *
 *********************************************************************/
-int ue_srs_procedures_nr(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, c16_t **txdataF)
+int ue_srs_procedures_nr(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, c16_t **txdataF, nr_phy_data_tx_t *phy_data)
 {
-  if(!ue->srs_vars[0]->active) {
+  if(phy_data->srs_vars.active == false) {
     return -1;
   }
-  ue->srs_vars[0]->active = false;
 
-  nfapi_nr_srs_pdu_t *srs_config_pdu = (nfapi_nr_srs_pdu_t*)&ue->srs_vars[0]->srs_config_pdu;
+  // TODO: This is wrong: casting from UE fapi to gNB NFAPI srs pdu
+  nfapi_nr_srs_pdu_t *srs_config_pdu = (nfapi_nr_srs_pdu_t *)&phy_data->srs_vars.srs_config_pdu;
 
 #ifdef SRS_DEBUG
   LOG_I(NR_PHY,"Frame = %i, slot = %i\n", proc->frame_tx, proc->nr_slot_tx);
