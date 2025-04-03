@@ -36,6 +36,7 @@
 #include "common/ngran_types.h"
 #include "f1ap_messages_types.h"
 #include "intertask_interface.h"
+#include "xnap_messages_types.h"
 
 #define IPV4_STR_ADDR_TO_INT_NWBO(AdDr_StR,NwBo,MeSsAgE ) do {\
             struct in_addr inp;\
@@ -105,6 +106,7 @@ f1ap_tdd_info_t read_tdd_config(const NR_ServingCellConfigCommon_t *scc);
 f1ap_gnb_du_system_info_t *get_sys_info(NR_BCCH_BCH_Message_t *mib, const NR_BCCH_DL_SCH_Message_t *sib1);
 int gNB_app_handle_f1ap_gnb_cu_configuration_update(f1ap_gnb_cu_configuration_update_t *gnb_cu_cfg_update);
 MessageDef *RCconfig_NR_CU_E1(const E1_t *entity);
+xnap_net_config_t Read_IPconfig_Xn(void);
 ngran_node_t get_node_type(void);
 
 #ifdef E2_AGENT
