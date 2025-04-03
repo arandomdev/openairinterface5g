@@ -1676,7 +1676,6 @@ set (SIMUSRC
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/channel_sim.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/random_channel.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/rangen_double.c
-  ${OPENAIR1_DIR}/SIMULATION/TOOLS/phase_noise.c
   ${OPENAIR1_DIR}/SIMULATION/RF/rf.c
   ${OPENAIR1_DIR}/SIMULATION/RF/dac.c
   ${OPENAIR1_DIR}/SIMULATION/RF/adc.c
@@ -2003,6 +2002,7 @@ target_link_libraries(nr_pucchsim PRIVATE asn1_nr_rrc_hdrs asn1_lte_rrc_hdrs)
 
 add_executable(nr_dlsim
   ${OPENAIR1_DIR}/SIMULATION/NR_PHY/dlsim.c
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/phase_noise.c
   ${OPENAIR_DIR}/executables/softmodem-common.c
   ${NR_UE_RRC_DIR}/rrc_nsa.c
   ${NFAPI_USER_DIR}/nfapi.c
@@ -2033,6 +2033,7 @@ target_link_libraries(nr_ulschsim PRIVATE asn1_nr_rrc_hdrs asn1_lte_rrc_hdrs)
 
 add_executable(nr_ulsim
   ${OPENAIR1_DIR}/SIMULATION/NR_PHY/ulsim.c
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/phase_noise.c
   ${OPENAIR_DIR}/executables/softmodem-common.c
   ${NR_UE_RRC_DIR}/rrc_nsa.c
   ${NFAPI_USER_DIR}/nfapi.c
