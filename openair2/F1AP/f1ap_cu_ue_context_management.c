@@ -257,11 +257,13 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
   if (f1ap_ue_context_setup_req->cu_to_du_rrc_information!=NULL) {
     /* optional */
     /* 6.1 cG_ConfigInfo */
-    if(f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo!=NULL){
+    if(f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo_length > 0) {
+      DevAssert(f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo != NULL);
       asn1cCalloc(ie6->value.choice.CUtoDURRCInformation.cG_ConfigInfo, cG_ConfigInfo);
       OCTET_STRING_fromBuf(cG_ConfigInfo, (const char *)f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo,
         f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo_length);
     }
+
     /* optional */
     /* 6.2 uE_CapabilityRAT_ContainerList */
     if(f1ap_ue_context_setup_req->cu_to_du_rrc_information->uE_CapabilityRAT_ContainerList!=NULL){
@@ -427,9 +429,12 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
       /* 12.1.1 dRBID */
       drbs_toBeSetup_item->dRBID = drb->drb_id;
       /* 12.1.2 qoSInformation */
-      int some_decide_qos = 0; // BK: Need Check
+      /* decide if E-UTRAN or NG-RAN through CG-ConfigInfo presence */
+      bool is_eutran = f1ap_ue_context_setup_req->cu_to_du_rrc_information
+                       && f1ap_ue_context_setup_req->cu_to_du_rrc_information->cG_ConfigInfo_length;
 
-      if (some_decide_qos) {
+      if (is_eutran) {
+        AssertFatal(false, "not implemented/tested yet\n");
         drbs_toBeSetup_item->qoSInformation.present = F1AP_QoSInformation_PR_eUTRANQoS;
         /*  12.1.2.1 eUTRANQoS */
         asn1cCalloc(drbs_toBeSetup_item->qoSInformation.choice.eUTRANQoS, eUTRANQoS);
@@ -480,7 +485,7 @@ int CU_send_UE_CONTEXT_SETUP_REQUEST(sctp_assoc_t assoc_id, f1ap_ue_context_setu
 
         /* 12.1.2.4 flows_Mapped_To_DRB_List */  // BK: need verifiy
         f1ap_write_flows_mapped(drb_info->flows_mapped_to_drb, &DRB_Information->flows_Mapped_To_DRB_List, drb_info->flows_to_be_setup_length);
-      } // if some_decide_qos
+      }
 
       /* 12.1.3 uLUPTNLInformation_ToBeSetup_List */
       for (int j = 0; j < f1ap_ue_context_setup_req->drbs_to_be_setup[i].up_ul_tnl_length; j++) {
