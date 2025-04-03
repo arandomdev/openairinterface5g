@@ -239,15 +239,15 @@ static void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_
                        &data);
 }
 
-static void nr_rrc_f1_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t *rrc_reconf_buf, uint32_t rrc_reconf_len)
+static void nr_rrc_f1_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
 {
-  // N2/Xn HO: fill with UE caps, as-context, rrc reconf, send to source CU
-  // also, fill the UE->rnti from the new one (in F1 case, happens after
-  // confirmation of ue ctxt modif
+  uint8_t rrc_reconf_buf[NR_RRC_BUF_SIZE] = {0};
+  int size = rrc_gNB_encode_RRCReconfiguration(rrc, UE, xid, NULL, rrc_reconf_buf, sizeof(rrc_reconf_buf), true);
+  DevAssert(size > 0 && size <= sizeof(rrc_reconf_buf));
 
   // F1 HO: handling of "source CU" information
   DevAssert(UE->ho_context->source != NULL);
-  rrc_gNB_trigger_reconfiguration_for_handover(rrc, UE, rrc_reconf_buf, rrc_reconf_len);
+  rrc_gNB_trigger_reconfiguration_for_handover(rrc, UE, rrc_reconf_buf, size);
   LOG_A(NR_RRC, "HO acknowledged: Send reconfiguration for UE %u/RNTI %04x...\n", UE->rrc_ue_id, UE->rnti);
 
   /* Re-establish SRB2 according to clause 5.3.5.6.3 of 3GPP TS 38.331

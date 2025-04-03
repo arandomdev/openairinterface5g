@@ -500,13 +500,13 @@ static void rrc_gNB_process_RRCSetupComplete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE
   rrc_gNB_send_NGAP_NAS_FIRST_REQ(rrc, UE, rrcSetupComplete);
 }
 
-static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
-                                             gNB_RRC_UE_t *UE,
-                                             uint8_t xid,
-                                             struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *nas_messages,
-                                             uint8_t *buf,
-                                             int max_len,
-                                             bool reestablish)
+int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
+                                      gNB_RRC_UE_t *UE,
+                                      uint8_t xid,
+                                      struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *nas_messages,
+                                      uint8_t *buf,
+                                      int max_len,
+                                      bool reestablish)
 {
   NR_CellGroupConfig_t *cellGroupConfig = UE->masterCellGroup;
   nr_rrc_du_container_t *du = get_du_for_ue(rrc, UE->rrc_ue_id);
@@ -2097,17 +2097,9 @@ static void rrc_CU_process_ue_context_setup_response(MessageDef *msg_p, instance
     DevAssert(resp->crnti != NULL);
     UE->ho_context->target->du_ue_id = resp->gNB_DU_ue_id;
     UE->ho_context->target->new_rnti = *resp->crnti;
-
-    uint8_t xid = rrc_gNB_get_next_transaction_identifier(0);
+    uint8_t xid = rrc_gNB_get_next_transaction_identifier(rrc->module_id);
     UE->xids[xid] = RRC_DEDICATED_RECONF;
-    uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
-    int size = rrc_gNB_encode_RRCReconfiguration(rrc, UE, xid, NULL, buffer, sizeof(buffer), true);
-    DevAssert(size > 0 && size <= sizeof(buffer));
-
-    // TODO N2 38.413 sec 9.3.1.21: admitted PDU sessions (in UE), Target to
-    // Source Transparent Container (9.3.1.21) which encodes the RRC
-    // reconfiguration above
-    UE->ho_context->target->ho_req_ack(rrc, UE, buffer, size);
+    UE->ho_context->target->ho_req_ack(rrc, UE, xid);
   }
 }
 

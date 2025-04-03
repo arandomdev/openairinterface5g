@@ -127,6 +127,14 @@ void rrc_gNB_generate_UeContextModificationRequest(const gNB_RRC_INST *rrc,
                                                    int n_rel_drbs,
                                                    const f1ap_drb_to_be_released_t *rel_drbs);
 
+int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
+                                      gNB_RRC_UE_t *UE,
+                                      uint8_t xid,
+                                      struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *nas_messages,
+                                      uint8_t *buf,
+                                      int max_len,
+                                      bool reestablish);
+
 pdusession_level_qos_parameter_t *get_qos_characteristics(const int qfi, rrc_pdu_session_param_t *pduSession);
 f1ap_qos_characteristics_t get_qos_char_from_qos_flow_param(const pdusession_level_qos_parameter_t *qos_param);
 void openair_rrc_gNB_configuration(gNB_RRC_INST *rrc, gNB_RrcConfigurationReq *configuration);
