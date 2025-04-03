@@ -1156,12 +1156,9 @@ printf("%d\n", slot);
         ue_dci_configuration(UE_mac, &dl_config, frame, slot);
         nr_ue_scheduled_response(&scheduled_response);
 
-        pbch_pdcch_processing(UE,
-                              &UE_proc,
-                              &phy_data);
-        pdsch_processing(UE,
-                         &UE_proc,
-                         &phy_data);
+        pbch_processing(UE, &UE_proc);
+        pdcch_processing(UE, &UE_proc, &phy_data);
+        pdsch_processing(UE, &UE_proc, &phy_data);
         //----------------------------------------------------------
         //---------------------- count errors ----------------------
         //----------------------------------------------------------

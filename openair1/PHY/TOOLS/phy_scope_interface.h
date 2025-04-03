@@ -180,11 +180,13 @@ void copyData(void *, enum scopeDataType type, void *dataIn, int elementSz, int 
     scope_data->copyDataUnsafeWithOffset(type, ##__VA_ARGS__); \
   }
 
-#define UEunlockScopeData(ue, type) \
-  scopeData_t *scope_data = (scopeData_t *)ue->scopeData; \
-  if (scope_data && scope_data->unlockScopeData) { \
-    scope_data->unlockScopeData(type); \
-  }
+#define UEunlockScopeData(ue, type)                         \
+  do {                                                      \
+    scopeData_t *scope_data = (scopeData_t *)ue->scopeData; \
+    if (scope_data && scope_data->unlockScopeData) {        \
+      scope_data->unlockScopeData(type);                    \
+    }                                                       \
+  } while (0)
 
 #define UEdumpScopeData(ue, slot, frame, cause_string)            \
   do {                                                            \

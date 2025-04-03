@@ -733,7 +733,7 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
           UEscopeCopyUnsafe(ue, pdschRxdataF_comp, &rxdataF_comp[0][0][rx_size_symbol * i], data_size, offset, i);
           offset += data_size;
         }
-        UEunlockScopeData(ue, pdschRxdataF_comp)
+        UEunlockScopeData(ue, pdschRxdataF_comp);
       }
     } else {
       UEscopeCopy(ue, pdschRxdataF_comp, rxdataF_comp[0], sizeof(c16_t), nbRx, rx_size_symbol * NR_SYMBOLS_PER_SLOT, 0);
