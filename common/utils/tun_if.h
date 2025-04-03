@@ -34,6 +34,7 @@
  * \param[in] instance_id unique instance number
  */
 int tun_generate_ifname(char *ifname, const char *ifprefix, int instance_id);
+int tun_generate_ue_ifname(char *ifname, int instance_id, int pdu_session_id);
 
 /*!
  * \brief This function initializes the TUN interface
@@ -72,5 +73,9 @@ bool tun_config(const char* ifname, const char *ipv4, const char *ipv6);
  * \param[in] ipv4 IPv4 address of the UE
  */
 void setup_ue_ipv4_route(const char* ifname, int instance_id, const char *ipv4);
+
+typedef enum { INTERFACE_DOWN, INTERFACE_UP } if_action_t;
+bool change_interface_state(int sock_fd, const char *ifn, if_action_t if_action);
+int tun_alloc(const char *dev);
 
 #endif /*TUN_IF_H_*/

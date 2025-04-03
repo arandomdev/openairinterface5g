@@ -32,6 +32,7 @@
 #include "gtpv1_u_messages_types.h"
 #include "intertask_interface.h"
 #include "rlc.h"
+#include "tun_if.h"
 
 typedef struct {
   nr_sdap_entity_t *sdap_entity_llist;
@@ -322,8 +323,7 @@ static void nr_sdap_rx_entity(nr_sdap_entity_t *entity,
      * 5.2.2 Downlink
      * deliver the retrieved SDAP SDU to the upper layer.
      */
-    extern int nas_sock_fd[];
-    int len = write(nas_sock_fd[0], &buf[offset], size-offset);
+    int len = write(entity->pdusession_sock, &buf[offset], size - offset);
     LOG_D(SDAP, "RX Entity len : %d\n", len);
     LOG_D(SDAP, "RX Entity size : %d\n", size);
     LOG_D(SDAP, "RX Entity offset : %d\n", offset);
@@ -514,6 +514,8 @@ nr_sdap_entity_t *new_nr_sdap_entity(int is_gnb,
   sdap_entity->qfi2drb_map_delete = nr_sdap_qfi2drb_map_del;
   sdap_entity->qfi2drb_map = nr_sdap_qfi2drb_map;
 
+  sdap_entity->pdusession_sock = -1;
+
   if(is_defaultDRB) {
     sdap_entity->default_drb = drb_identity;
     LOG_I(SDAP, "Default DRB for the created SDAP entity: %ld \n", sdap_entity->default_drb);
@@ -592,6 +594,9 @@ bool nr_sdap_delete_entity(ue_id_t ue_id, int pdusession_id)
 
     if (entityPtr->ue_id == ue_id && entityPtr->pdusession_id == pdusession_id) {
       entityPrev->next_entity = entityPtr->next_entity;
+      if (entityPrev->pdusession_sock != -1) {
+        remove_ue_ip_if(entityPrev);
+      }
       free(entityPtr);
       LOG_D(SDAP, "Successfully deleted Entity.\n");
       ret = true;
@@ -674,4 +679,12 @@ void nr_reconfigure_sdap_entity(NR_SDAP_Config_t *sdap_config, ue_id_t ue_id, in
       sdap_entity->qfi2drb_map_delete(sdap_entity, qfi);
     }
   }
+}
+
+void set_qfi(uint8_t qfi, uint8_t pduid, ue_id_t ue_id)
+{
+  nr_sdap_entity_t *entity = nr_sdap_get_entity(ue_id, pduid);
+  DevAssert(entity != NULL);
+  entity->qfi = qfi;
+  return;
 }
