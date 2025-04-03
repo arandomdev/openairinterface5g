@@ -24,6 +24,7 @@
 #define TIME2TIMEHR(_time) (((uint32_t)(_time.tv_sec) & 0xFFF) << 20 | ((uint32_t)(_time.tv_usec) & 0xFFFFF))
 
 #include "nfapi_pnf_interface.h"
+#define FAPI2_IP_DSCP	0
 
 #define NFAPI_MAX_PACKED_MESSAGE_SIZE 32768
 
@@ -144,7 +145,7 @@ typedef struct {
 int pnf_p7_message_pump(pnf_p7_t* pnf_p7);
 int pnf_nr_p7_message_pump(pnf_p7_t* pnf_p7);
 int pnf_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_p7_message_header_t* msg, uint32_t msg_len);
-int pnf_nr_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_nr_p7_message_header_t* header, uint32_t msg_len);
+int pnf_nr_p7_pack_and_send_p7_message(void* pnf_p7_ptr, nfapi_nr_p7_message_header_t* header, uint32_t msg_len);
 int pnf_p7_send_message(pnf_p7_t* pnf_p7, uint8_t* msg, uint32_t msg_len);
 
 
@@ -159,8 +160,10 @@ int nfapi_pnf_p7_nr_rach_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rach_indica
 pnf_p7_rx_message_t* pnf_p7_rx_reassembly_queue_add_segment(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, uint32_t rx_hr_time, uint16_t sequence_number, uint16_t segment_number, uint8_t m, uint8_t* data, uint16_t data_len);
 void pnf_p7_rx_reassembly_queue_remove_msg(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, pnf_p7_rx_message_t* msg);
 void pnf_p7_rx_reassembly_queue_remove_old_msgs(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, uint32_t rx_hr_time, uint32_t delta);
-
-int pnf_nr_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_nr_p7_message_header_t* header, uint32_t msg_len);
-
+struct timespec pnf_timespec_sub(struct timespec lhs, struct timespec rhs);
+uint32_t pnf_get_current_time_hr(void);
+struct timespec pnf_timespec_add(struct timespec lhs, struct timespec rhs);
+void pnf_p7_free(pnf_p7_t* pnf_p7, void* ptr);
+void* pnf_p7_malloc(pnf_p7_t* pnf_p7, size_t size);
 #endif /* _PNF_P7_H_ */
 

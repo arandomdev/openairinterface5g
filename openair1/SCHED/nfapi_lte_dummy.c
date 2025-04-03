@@ -52,3 +52,41 @@ void install_nr_schedule_handlers(NR_IF_Module_t *if_inst){}
 
 void nr_dump_frame_parms(NR_DL_FRAME_PARMS *fp){}
 
+int vnf_pack_and_send_p5_msg(void *vnf_ptr, uint16_t p5_idx, nfapi_nr_p4_p5_message_header_t *msg, uint32_t msg_len)
+{
+  return 0;
+}
+
+int vnf_pack_and_send_p7_msg(void *vnf_p7_ptr, nfapi_nr_p7_message_header_t *header)
+{
+  return 0;
+}
+
+void *vnf_nr_start_p7_thread(void *ptr)
+{
+  return 0;
+}
+
+int pnf_pack_and_send_p5_msg(void *pnf_ptr, nfapi_nr_p4_p5_message_header_t *msg, uint32_t msg_len)
+{
+  return 0;
+}
+
+int pnf_pack_and_send_p7_msg(void *pnf_p7_ptr, nfapi_nr_p7_message_header_t *header, uint32_t msg_len)
+{
+  return 0;
+}
+
+void *pnf_start_p5_thread(void *ptr)
+{
+  return 0;
+}
+
+void vnf_start_p5_thread(void *ptr)
+{
+}
+
+void *pnf_nr_p7_thread_start(void *ptr)
+{
+  return 0;
+}

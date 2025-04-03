@@ -1,0 +1,107 @@
+diff --git a/wls_lib/Makefile b/wls_lib/Makefile
+index 7b167a6..2e49d3a 100644
+--- a/wls_lib/Makefile
++++ b/wls_lib/Makefile
+@@ -15,6 +15,12 @@ ifeq ($(WIRELESS_SDK_TOOLCHAIN),icc)
+     AS := as
+     AR := ar
+     LD := icc
++else ifeq ($(WIRELESS_SDK_TOOLCHAIN),gcc)
++    CC  := gcc
++    CPP := g++
++    AS := as
++    AR := ar
++    LD := gcc
+ else ifeq ($(WIRELESS_SDK_TOOLCHAIN),icx)
+     CC  := icx
+     CPP := icx
+@@ -41,6 +47,7 @@ ifeq ($(TARGET_PROCESSOR),)
+     $(error "Please define valid WIRELESS_SDK_TARGET_ISA environment variable $(WIRELESS_SDK_TARGET_ISA)")
+ endif
+ 
++OBJDUMP := objdump
+ MD := mkdir -p
+ CP := cp -f
+ RM := rm -rf
+@@ -51,15 +58,38 @@ PROJECT_DIR  := ./
+ BUILDDIR := make
+ PROJECT_BINARY := $(PROJECT_NAME).so
+ 
++PKGCONF ?= pkg-config
++LIBDPDK_VERSION=20.11.3
++
++ifeq ($(shell $(PKGCONF) --modversion "libdpdk = '$(LIBDPDK_VERSION)'"),$(LIBDPDK_VERSION))
++    DPDK_INSTALLED=1
++else
++    DPDK_INSTALLED=0
++endif
++
+ ifeq ($(RTE_SDK),)
+-    $(error "Please define RTE_SDK environment variable")
++ifeq ($(DPDK_INSTALLED),0)
++$(error "Please define RTE_SDK environment variable OR install DPDK version $(LIBDPDK_VERSION)")
++endif
+ endif
+ 
+-RTE_INC := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH):/usr/lib64/pkgconfig:$(RTE_SDK)/build/meson-uninstalled pkgconf --cflags-only-I libdpdk)
++# At least one of the options is defined
++
++ifneq ($(RTE_SDK),)
++    RTE_INC := $(shell PKG_CONFIG_PATH=/usr/lib64/pkgconfig:$(RTE_SDK)/build/meson-uninstalled pkgconf --cflags-only-I libdpdk)
++else ifeq ($(DPDK_INSTALLED),1)
++    RTE_INC := $(shell PKG_CONFIG_PATH=/usr/lib64/pkgconfig  $(PKGCONF) --cflags-only-I libdpdk)
++endif
+ 
+ CC_SRC = wls_lib_dpdk.c \
+ 	syslib.c
+ 
++CC_HDR = syslib.h \
++	ttypes.h \
++	wls.h \
++	wls_debug.h \
++	wls_lib.h
++
+ CC_FLAGS += -std=gnu11 -Wall -Wno-deprecated-declarations  \
+ 	-fdata-sections \
+ 	-ffunction-sections \
+@@ -67,14 +97,9 @@ CC_FLAGS += -std=gnu11 -Wall -Wno-deprecated-declarations  \
+     -fPIC \
+ 	-Wall \
+ 	-Wimplicit-function-declaration \
+-	-g -O3 -mcmodel=large $(TARGET_PROCESSOR)
+-
+-#Add CodeCoverage option
+-ifeq ($(CODE_COVERAGE),1)
+-    CC_FLAGS += -fprofile-instr-generate -fcoverage-mapping
+-endif
++	#-g -O3 -mcmodel=large $(TARGET_PROCESSOR)
+ 
+-INC := -I$(RTE_INC)
++INC := -I$(RTE_INC) -I../intel_fapi/
+ DEF :=
+ 
+ AS_FLAGS :=
+@@ -164,4 +189,23 @@ release :  all
+ $(PROJECT_BINARY) : $(DIRLIST) echo_start_build $(GENERATE_DEPS) $(CC_OBJTARGETS) $(AS_OBJTARGETS)
+ 	@echo [AR]    $(subst $(BUILDDIR)/,,$@)
+ 	@$(CC) $(CC_OBJTARGETS) $(AS_OBJTARGETS) -shared -fPIC -o $@
++	
++##############################################################
++#  Install configuration
++##############################################################
++
++INSTALL_DIR := /usr/local
++INCLUDE_DIR := $(INSTALL_DIR)/include/
++
++.PHONY : install
++install: $(PROJECT_BINARY) install_headers
++	@echo [INSTALL] : $(PROJECT_BINARY)
++	@$(CP) $(PROJECT_BINARY) $(INSTALL_DIR)/lib
++
++.PHONY : install_headers
++install_headers: $(CC_SRC)
++	@echo [INSTALL] : $(PROJECT_NAME) headers
++	@$(MD) $(INCLUDE_DIR)
++	@$(CP) $(CC_HDR) $(INCLUDE_DIR)	
++	
+ 

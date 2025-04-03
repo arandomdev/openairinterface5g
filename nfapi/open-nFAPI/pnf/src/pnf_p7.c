@@ -32,6 +32,14 @@
 
 #include "common/ran_context.h"
 #include <SCHED_NR/phy_frame_config_nr.h>
+
+#ifdef ENABLE_SOCKET
+#include <socket/include/socket_common.h>
+#endif
+
+#ifdef ENABLE_WLS
+#include "wls_integration/include/wls_pnf.h"
+#endif
 #define FAPI2_IP_DSCP	0
 
 extern int sf_ahead;
@@ -464,9 +472,8 @@ int pnf_p7_send_message(pnf_p7_t* pnf_p7, uint8_t* msg, uint32_t len)
 	socklen_t remote_addr_len = sizeof(struct sockaddr_in);
 	
 	int sendto_result;
-	
-	if ((sendto_result = sendto((int)pnf_p7->p7_sock, (const char*)msg, len, 0, (const struct sockaddr*)&remote_addr, remote_addr_len)) < 0)
-//if ((sendto_result = sendto((int)pnf_p7->p7_sock,"hello", 6, 0, (const struct sockaddr*)&remote_addr, remote_addr_len)) < 0)
+
+if ((sendto_result = sendto((int)pnf_p7->p7_sock, (const char*)msg, len, 0, (const struct sockaddr*)&remote_addr, remote_addr_len)) < 0)//if ((sendto_result = sendto((int)pnf_p7->p7_sock,"hello", 6, 0, (const struct sockaddr*)&remote_addr, remote_addr_len)) < 0)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s %s:%d sendto(%d, %p, %d) %d failed errno: %d\n", __FUNCTION__, pnf_p7->_public.remote_p7_addr, pnf_p7->_public.remote_p7_port, (int)pnf_p7->p7_sock, (const char*)msg, len, remote_addr_len,  errno);
 		return -1;
@@ -569,8 +576,9 @@ int pnf_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_p7_message_header_t*
 	return 0;
 }
 
-int pnf_nr_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_nr_p7_message_header_t* header, uint32_t msg_len)
+int pnf_nr_p7_pack_and_send_p7_message(void* pnf_p7_ptr, nfapi_nr_p7_message_header_t* header, uint32_t msg_len)
 {
+  pnf_p7_t* pnf_p7 = (pnf_p7_t*)pnf_p7_ptr;
   header->m_segment_sequence = NFAPI_P7_SET_MSS(0, 0, pnf_p7->sequence_number);
 
   // Need to guard against different threads calling the encode function at the same time
@@ -580,7 +588,7 @@ int pnf_nr_p7_pack_and_send_p7_message(pnf_p7_t* pnf_p7, nfapi_nr_p7_message_hea
   }
 
   uint8_t tx_buf[131072]; // four times NFAPI_MAX_PACKED_MESSAGE_SIZE as of this commit
-  int len = nfapi_nr_p7_message_pack(header, tx_buf, sizeof(tx_buf), &pnf_p7->_public.codec_config);
+  int len = pnf_p7->_public.pack_func(header, tx_buf, sizeof(tx_buf), &pnf_p7->_public.codec_config);
 
   if (len < 0) {
     if (pthread_mutex_unlock(&(pnf_p7->pack_mutex)) != 0) {
@@ -707,9 +715,8 @@ void pnf_nr_pack_and_send_timing_info(pnf_p7_t* pnf_p7)
 	timing_info.tx_data_request_earliest_arrival = 0;
 	timing_info.ul_tti_earliest_arrival = 0;
 	timing_info.ul_dci_earliest_arrival = 0;
-
-
-	pnf_nr_p7_pack_and_send_p7_message(pnf_p7, &(timing_info.header), sizeof(timing_info));
+  AssertFatal(pnf_p7->_public.nr_pack_and_send_p7_msg, "The function pointer to pack and send P7 messages must be set");
+  pnf_p7->_public.nr_pack_and_send_p7_msg(pnf_p7, &(timing_info.header), sizeof(timing_info));
 
 	pnf_p7->timing_info_ms_counter = 0;
 }
@@ -1274,11 +1281,11 @@ uint8_t is_p7_request_in_window(uint16_t sfnsf, const char* name, pnf_p7_t* phy)
 
 
 // P7 messages
-void pnf_handle_dl_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
+void pnf_handle_dl_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, bool isNFAPI)
 {
   // NFAPI_TRACE(NFAPI_TRACE_INFO, "DL_CONFIG.req Received\n");
   uint16_t frame, slot;
-  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot)) {
+  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot,isNFAPI)) {
     if (pthread_mutex_lock(&(pnf_p7->mutex)) != 0) {
       NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to lock mutex\n");
       return;
@@ -1299,8 +1306,11 @@ void pnf_handle_dl_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
                   frame,
                   slot,
                   buffer_index);
-
-      if (nfapi_nr_p7_message_unpack(pRecvMsg, recvMsgLen, req, sizeof(*req), &(pnf_p7->_public.codec_config)) != 0)
+      if (pnf_p7->_public.unpack_func(pRecvMsg,
+                                      recvMsgLen + NFAPI_HEADER_LENGTH,
+                                      req,
+                                      sizeof(*req),
+                                      &(pnf_p7->_public.codec_config)) != 0)
         NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to unpack request\n");
     } else {
       if (pnf_p7->_public.timing_info_mode_aperiodic)
@@ -1407,10 +1417,10 @@ void pnf_handle_dl_config_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_
 	}
 }
 
-void pnf_handle_ul_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
+void pnf_handle_ul_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, bool isNFAPI)
 {
   uint16_t frame, slot;
-  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot)) {
+  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot,isNFAPI)) {
     if (pthread_mutex_lock(&(pnf_p7->mutex)) != 0) {
       NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to lock mutex\n");
       return;
@@ -1432,8 +1442,11 @@ void pnf_handle_ul_tti_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
                   frame,
                   slot,
                   buffer_index);
-
-      if (nfapi_nr_p7_message_unpack(pRecvMsg, recvMsgLen, req, sizeof(*req), &(pnf_p7->_public.codec_config)) != 0)
+      if (pnf_p7->_public.unpack_func(pRecvMsg,
+                                      recvMsgLen + NFAPI_HEADER_LENGTH,
+                                      req,
+                                      sizeof(*req),
+                                      &(pnf_p7->_public.codec_config)) != 0)
         NFAPI_TRACE(NFAPI_TRACE_ERROR, "failed to unpack UL_TTI.request\n");
     } else {
       NFAPI_TRACE(NFAPI_TRACE_NOTE,
@@ -1527,10 +1540,10 @@ void pnf_handle_ul_config_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_
 	}
 }
 
-void pnf_handle_ul_dci_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
+void pnf_handle_ul_dci_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, bool isNFAPI)
 {
   uint16_t frame, slot;
-  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot)) {
+  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot,isNFAPI)) {
     if (pthread_mutex_lock(&(pnf_p7->mutex)) != 0) {
       NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to lock mutex\n");
       return;
@@ -1551,8 +1564,11 @@ void pnf_handle_ul_dci_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
                   frame,
                   slot,
                   buffer_index);
-
-      if (nfapi_nr_p7_message_unpack(pRecvMsg, recvMsgLen, req, sizeof(*req), &pnf_p7->_public.codec_config) != 0)
+      if (pnf_p7->_public.unpack_func(pRecvMsg,
+                                      recvMsgLen + NFAPI_HEADER_LENGTH,
+                                      req,
+                                      sizeof(*req),
+                                      &(pnf_p7->_public.codec_config))  != 0)
         NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to unpack request\n");
     } else {
       if (pnf_p7->_public.timing_info_mode_aperiodic) {
@@ -1640,10 +1656,10 @@ void pnf_handle_hi_dci0_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
 	}
 }
 
-void pnf_handle_tx_data_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7)
+void pnf_handle_tx_data_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, bool isNFAPI)
 {
   uint16_t frame, slot;
-  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot)) {
+  if (peek_nr_nfapi_p7_sfn_slot(pRecvMsg, recvMsgLen, &frame, &slot, isNFAPI)) {
     if (pthread_mutex_lock(&(pnf_p7->mutex)) != 0) {
       NFAPI_TRACE(NFAPI_TRACE_INFO, "failed to lock mutex\n");
       return;
@@ -1664,8 +1680,11 @@ void pnf_handle_tx_data_request(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
                   frame,
                   slot,
                   buffer_index);
-
-      if (nfapi_nr_p7_message_unpack(pRecvMsg, recvMsgLen, req, sizeof(*req), &pnf_p7->_public.codec_config) == 0) {
+      if (pnf_p7->_public.unpack_func(pRecvMsg,
+                                      recvMsgLen + NFAPI_HEADER_LENGTH,
+                                      req,
+                                      sizeof(*req),
+                                      &(pnf_p7->_public.codec_config)) == 0) {
         for (int i = 0; i < req->Number_of_PDUs; ++i)
           pnf_p7->nr_stats.dl.bytes += req->pdu_list[i].PDU_length;
       } else {
@@ -2063,7 +2082,7 @@ void pnf_nr_handle_dl_node_sync(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
 	}
 
 	// unpack the message
-	if (nfapi_nr_p7_message_unpack(pRecvMsg, recvMsgLen, &dl_node_sync, sizeof(dl_node_sync), &pnf_p7->_public.codec_config) < 0)
+	if (pnf_p7->_public.unpack_func(pRecvMsg, recvMsgLen, &dl_node_sync, sizeof(dl_node_sync), &pnf_p7->_public.codec_config) < 0)
 	{
 		NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: Unpack message failed, ignoring\n", __FUNCTION__);
 		return;
@@ -2097,7 +2116,7 @@ void pnf_nr_handle_dl_node_sync(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7
 		return;
 	}
 
-	pnf_nr_p7_pack_and_send_p7_message(pnf_p7, &(ul_node_sync.header), sizeof(ul_node_sync));
+	pnf_p7->_public.nr_pack_and_send_p7_msg(pnf_p7, &(ul_node_sync.header), sizeof(ul_node_sync));
 	//printf("\nSSent UL Node Sync sfn:%d,slot:%d\n",pnf_p7->sfn,pnf_p7->slot);
 }
 
@@ -2169,54 +2188,6 @@ void pnf_dispatch_p7_message(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7,  
 			}
 			break;
 	}
-}
-
-void pnf_nr_dispatch_p7_message(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, uint32_t rx_hr_time)
-{
-  nfapi_nr_p7_message_header_t header;
-
-  // validate the input params
-  if (pRecvMsg == NULL || recvMsgLen < 4 || pnf_p7 == NULL) {
-    NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: invalid input params\n", __FUNCTION__);
-    return;
-  }
-
-  // unpack the message header
-  if (nfapi_nr_p7_message_header_unpack(pRecvMsg, recvMsgLen, &header, sizeof(header), &pnf_p7->_public.codec_config) < 0) {
-    NFAPI_TRACE(NFAPI_TRACE_ERROR, "Unpack message header failed, ignoring\n");
-    return;
-  }
-
-  // ensure the message is sensible
-  if (recvMsgLen < 8 || pRecvMsg == NULL) {
-    NFAPI_TRACE(NFAPI_TRACE_WARN, "Invalid message size: %d, ignoring\n", recvMsgLen);
-    return;
-  }
-
-  switch (header.message_id) {
-    case NFAPI_NR_PHY_MSG_TYPE_DL_NODE_SYNC:
-      pnf_nr_handle_dl_node_sync(pRecvMsg, recvMsgLen, pnf_p7, rx_hr_time);
-      break;
-    case NFAPI_NR_PHY_MSG_TYPE_DL_TTI_REQUEST:
-      pnf_handle_dl_tti_request(pRecvMsg, recvMsgLen, pnf_p7);
-      break;
-    case NFAPI_NR_PHY_MSG_TYPE_UL_TTI_REQUEST:
-      pnf_handle_ul_tti_request(pRecvMsg, recvMsgLen, pnf_p7);
-      break;
-    case NFAPI_NR_PHY_MSG_TYPE_UL_DCI_REQUEST:
-      pnf_handle_ul_dci_request(pRecvMsg, recvMsgLen, pnf_p7);
-      break;
-    case NFAPI_NR_PHY_MSG_TYPE_TX_DATA_REQUEST:
-      pnf_handle_tx_data_request(pRecvMsg, recvMsgLen, pnf_p7);
-      break;
-    default: {
-      if (header.message_id >= NFAPI_VENDOR_EXT_MSG_MIN && header.message_id <= NFAPI_VENDOR_EXT_MSG_MAX) {
-        pnf_handle_p7_vendor_extension(pRecvMsg, recvMsgLen, pnf_p7, header.message_id);
-      } else {
-        NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s P7 Unknown message ID %d\n", __FUNCTION__, header.message_id);
-      }
-    } break;
-  }
 }
 
 void pnf_handle_p7_message(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7,  uint32_t rx_hr_time)
@@ -2325,111 +2296,6 @@ void pnf_handle_p7_message(void *pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7,  ui
 	
 }
 
-void pnf_nr_handle_p7_message(void* pRecvMsg, int recvMsgLen, pnf_p7_t* pnf_p7, uint32_t rx_hr_time)
-{
-  nfapi_nr_p7_message_header_t messageHeader;
-
-  // validate the input params
-  if (pRecvMsg == NULL || recvMsgLen < 4 || pnf_p7 == NULL) {
-    NFAPI_TRACE(NFAPI_TRACE_ERROR, "pnf_handle_p7_message: invalid input params (%p %d %p)\n", pRecvMsg, recvMsgLen, pnf_p7);
-    return;
-  }
-
-  // unpack the message header
-  if (nfapi_nr_p7_message_header_unpack(pRecvMsg,
-                                        recvMsgLen,
-                                        &messageHeader,
-                                        sizeof(nfapi_nr_p7_message_header_t),
-                                        &pnf_p7->_public.codec_config)
-      < 0) {
-    NFAPI_TRACE(NFAPI_TRACE_ERROR, "Unpack message header failed, ignoring\n");
-    return;
-  }
-
-  uint8_t m = NFAPI_P7_GET_MORE(messageHeader.m_segment_sequence);
-  uint8_t sequence_num = NFAPI_P7_GET_SEQUENCE(messageHeader.m_segment_sequence);
-  uint8_t segment_num = NFAPI_P7_GET_SEGMENT(messageHeader.m_segment_sequence);
-
-  if (pnf_p7->_public.checksum_enabled) {
-    uint32_t checksum = nfapi_nr_p7_calculate_checksum(pRecvMsg, recvMsgLen);
-    if (checksum != messageHeader.checksum) {
-      NFAPI_TRACE(NFAPI_TRACE_ERROR, "Checksum verification failed %d %d\n", checksum, messageHeader.checksum);
-      return;
-    }
-  }
-
-  if (m == 0 && segment_num == 0) {
-    // we have a complete message
-    // ensure the message is sensible
-    if (recvMsgLen < 8 || pRecvMsg == NULL) {
-      NFAPI_TRACE(NFAPI_TRACE_WARN, "Invalid message size: %d, ignoring\n", recvMsgLen);
-      return;
-    }
-
-    pnf_nr_dispatch_p7_message(pRecvMsg, recvMsgLen, pnf_p7, rx_hr_time);
-  } else {
-    pnf_p7_rx_message_t* rx_msg = pnf_p7_rx_reassembly_queue_add_segment(pnf_p7,
-                                                                         &(pnf_p7->reassembly_queue),
-                                                                         rx_hr_time,
-                                                                         sequence_num,
-                                                                         segment_num,
-                                                                         m,
-                                                                         pRecvMsg,
-                                                                         recvMsgLen);
-
-    if (rx_msg->num_segments_received == rx_msg->num_segments_expected) {
-      // send the buffer on
-      uint16_t i = 0;
-      uint32_t length = 0;
-      for (i = 0; i < rx_msg->num_segments_expected; ++i) {
-        length += rx_msg->segments[i].length - (i > 0 ? NFAPI_NR_P7_HEADER_LENGTH : 0);
-      }
-
-      if (pnf_p7->reassemby_buffer_size < length) {
-        pnf_p7_free(pnf_p7, pnf_p7->reassemby_buffer);
-        pnf_p7->reassemby_buffer = 0;
-      }
-
-      if (pnf_p7->reassemby_buffer == 0) {
-        NFAPI_TRACE(NFAPI_TRACE_NOTE, "Resizing PNF_P7 Reassembly buffer %d->%d\n", pnf_p7->reassemby_buffer_size, length);
-        pnf_p7->reassemby_buffer = (uint8_t*)pnf_p7_malloc(pnf_p7, length);
-
-        if (pnf_p7->reassemby_buffer == 0) {
-          NFAPI_TRACE(NFAPI_TRACE_NOTE, "Failed to allocate PNF_P7 reassemby buffer len:%d\n", length);
-          return;
-        }
-        memset(pnf_p7->reassemby_buffer, 0, length);
-        pnf_p7->reassemby_buffer_size = length;
-      }
-
-      uint32_t offset = 0;
-      for (i = 0; i < rx_msg->num_segments_expected; ++i) {
-        if (i == 0) {
-          memcpy(pnf_p7->reassemby_buffer, rx_msg->segments[i].buffer, rx_msg->segments[i].length);
-          offset += rx_msg->segments[i].length;
-        } else {
-          memcpy(pnf_p7->reassemby_buffer + offset,
-                 rx_msg->segments[i].buffer + NFAPI_NR_P7_HEADER_LENGTH,
-                 rx_msg->segments[i].length - NFAPI_NR_P7_HEADER_LENGTH);
-          offset += rx_msg->segments[i].length - NFAPI_NR_P7_HEADER_LENGTH;
-        }
-      }
-
-      pnf_nr_dispatch_p7_message(pnf_p7->reassemby_buffer, length, pnf_p7, rx_msg->rx_hr_time);
-
-      // delete the structure
-      pnf_p7_rx_reassembly_queue_remove_msg(pnf_p7, &(pnf_p7->reassembly_queue), rx_msg);
-    }
-  }
-
-  // The timeout used to be 1000, i.e., 1ms, which is too short. The below 10ms
-  // is selected to be able to encompass any "reasonable" slot ahead time for the VNF.
-  // Ideally, we would remove old msg (segments) if we detect packet loss
-  // (e.g., if the sequence numbers advances sufficiently); in the branch of
-  // this commit, our goal is to make the PNF work, so we content ourselves to
-  // just remove very old messages.
-  pnf_p7_rx_reassembly_queue_remove_old_msgs(pnf_p7, &(pnf_p7->reassembly_queue), rx_hr_time, 10000);
-}
 
 
 void pnf_nfapi_p7_read_dispatch_message(pnf_p7_t* pnf_p7, uint32_t now_hr_time)
@@ -2501,66 +2367,6 @@ void pnf_nfapi_p7_read_dispatch_message(pnf_p7_t* pnf_p7, uint32_t now_hr_time)
 	while(recvfrom_result > 0);
 }
 
-void pnf_nr_nfapi_p7_read_dispatch_message(pnf_p7_t* pnf_p7, uint32_t now_hr_time)
-{
-  int recvfrom_result = 0;
-  struct sockaddr_in remote_addr;
-  socklen_t remote_addr_size = sizeof(remote_addr);
-  remote_addr.sin_family = 2; // hardcoded
-  do {
-    // peek the header
-    uint8_t header_buffer[NFAPI_NR_P7_HEADER_LENGTH];
-    recvfrom_result = recvfrom(pnf_p7->p7_sock,
-                               header_buffer,
-                               NFAPI_NR_P7_HEADER_LENGTH,
-                               MSG_DONTWAIT | MSG_PEEK,
-                               (struct sockaddr*)&remote_addr,
-                               &remote_addr_size);
-    if (recvfrom_result > 0) {
-      // get the segment size
-      nfapi_nr_p7_message_header_t header;
-      nfapi_nr_p7_message_header_unpack(header_buffer, NFAPI_NR_P7_HEADER_LENGTH, &header, 34, 0);
-
-      // resize the buffer if we have a large segment
-      if (header.message_length > pnf_p7->rx_message_buffer_size) {
-        NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d\n", header.message_length);
-        pnf_p7->rx_message_buffer = realloc(pnf_p7->rx_message_buffer, header.message_length);
-        pnf_p7->rx_message_buffer_size = header.message_length;
-      }
-
-      // read the segment
-      recvfrom_result = recvfrom(pnf_p7->p7_sock,
-                                 pnf_p7->rx_message_buffer,
-                                 header.message_length,
-                                 MSG_DONTWAIT,
-                                 (struct sockaddr*)&remote_addr,
-                                 &remote_addr_size);
-
-      now_hr_time = pnf_get_current_time_hr(); // moved to here - get closer timestamp???
-
-      if (recvfrom_result > 0) {
-        pnf_nr_handle_p7_message(pnf_p7->rx_message_buffer, recvfrom_result, pnf_p7, now_hr_time);
-        // printf("\npnf_handle_p7_message sfn=%d,slot=%d\n",pnf_p7->sfn,pnf_p7->slot);
-      }
-    } else if (recvfrom_result == 0) {
-      // recv zero length message
-      recvfrom_result =
-          recvfrom(pnf_p7->p7_sock, header_buffer, 0, MSG_DONTWAIT, (struct sockaddr*)&remote_addr, &remote_addr_size);
-    }
-
-    if (recvfrom_result == -1) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // return to the select
-        // NFAPI_TRACE(NFAPI_TRACE_WARN, "%s recvfrom would block :%d\n", __FUNCTION__, errno);
-      } else {
-        NFAPI_TRACE(NFAPI_TRACE_WARN, "%s recvfrom failed errno:%d\n", __FUNCTION__, errno);
-      }
-    }
-
-    // need to update the time as we would only use the value from the
-    // select
-  } while (recvfrom_result > 0);
-}
 
 
 int pnf_p7_message_pump(pnf_p7_t* pnf_p7)
@@ -2722,12 +2528,12 @@ struct timespec pnf_timespec_add(struct timespec lhs, struct timespec rhs)
 struct timespec pnf_timespec_sub(struct timespec lhs, struct timespec rhs)
 {
 	struct timespec result;
-	if ((lhs.tv_nsec-rhs.tv_nsec)<0) 
+	if ((lhs.tv_nsec-rhs.tv_nsec)<0)
 	{
 		result.tv_sec = lhs.tv_sec-rhs.tv_sec-1;
 		result.tv_nsec = 1000000000+lhs.tv_nsec-rhs.tv_nsec;
-	} 
-	else 
+	}
+	else
 	{
 		result.tv_sec = lhs.tv_sec-rhs.tv_sec;
 		result.tv_nsec = lhs.tv_nsec-rhs.tv_nsec;
@@ -2735,184 +2541,3 @@ struct timespec pnf_timespec_sub(struct timespec lhs, struct timespec rhs)
 	return result;
 }
 
-int pnf_nr_p7_message_pump(pnf_p7_t* pnf_p7)
-{
-
-	// initialize the mutex lock
-	if(pthread_mutex_init(&(pnf_p7->mutex), NULL) != 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "After P7 mutex init: %d\n", errno);
-		return -1;
-	}
-	
-	if(pthread_mutex_init(&(pnf_p7->pack_mutex), NULL) != 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "After P7 mutex init: %d\n", errno);
-		return -1;
-	}	
-
-	// create the pnf p7 socket
-	if ((pnf_p7->p7_sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "After P7 socket errno: %d\n", errno);
-		return -1;
-	}
-	NFAPI_TRACE(NFAPI_TRACE_INFO, "PNF P7 socket created (%d)...\n", pnf_p7->p7_sock);
-
-	// configure the UDP socket options
-	int reuseaddr_enable = 1;
-	if (setsockopt(pnf_p7->p7_sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_enable, sizeof(int)) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "PNF P7 setsockopt (SOL_SOCKET, SO_REUSEADDR) failed  errno: %d\n", errno);
-		return -1;
-	}
-
-/*
-	int reuseport_enable = 1;
-	if (setsockopt(pnf_p7->p7_sock, SOL_SOCKET, SO_REUSEPORT, &reuseport_enable, sizeof(int)) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "PNF P7 setsockopt (SOL_SOCKET, SO_REUSEPORT) failed  errno: %d\n", errno);
-		return -1;
-	}
-*/
-		
-	int iptos_value = FAPI2_IP_DSCP << 2;
-	if (setsockopt(pnf_p7->p7_sock, IPPROTO_IP, IP_TOS, &iptos_value, sizeof(iptos_value)) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "PNF P7 setsockopt (IPPROTO_IP, IP_TOS) failed errno: %d\n", errno);
-		return -1;
-	}
-
-	struct sockaddr_in addr;
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(pnf_p7->_public.local_p7_port);
-
-	if(pnf_p7->_public.local_p7_addr == 0)
-	{
-		addr.sin_addr.s_addr = INADDR_ANY;
-	}
-	else
-	{
-		//addr.sin_addr.s_addr = inet_addr(pnf_p7->_public.local_p7_addr);
-		if(inet_aton(pnf_p7->_public.local_p7_addr, &addr.sin_addr) == -1)
-		{
-			NFAPI_TRACE(NFAPI_TRACE_INFO, "inet_aton failed\n");
-		}
-	}
-
-
-	NFAPI_TRACE(NFAPI_TRACE_INFO, "PNF P7 binding %d too %s:%d\n", pnf_p7->p7_sock, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-	if (bind(pnf_p7->p7_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "PNF_P7 bind error fd:%d errno: %d\n", pnf_p7->p7_sock, errno);
-		return -1;
-	}
-	NFAPI_TRACE(NFAPI_TRACE_INFO, "PNF P7 bind succeeded...\n");
-
-	//Initializaing timing structures needed for slot ticking 
-
-	struct timespec slot_start;
-	clock_gettime(CLOCK_MONOTONIC, &slot_start);
-
-	struct timespec pselect_start;
-
-	struct timespec slot_duration;
-	slot_duration.tv_sec = 0;
-	slot_duration.tv_nsec = 0.5e6;
-
-	//Infinite loop 
-
-	while(pnf_p7->terminate == 0)
-	{
-		fd_set rfds;
-		int selectRetval = 0;
-
-		// select on a timeout and then get the message
-		FD_ZERO(&rfds);
-		FD_SET(pnf_p7->p7_sock, &rfds);
-
-		struct timespec timeout;
-		timeout.tv_sec = 100;
-		timeout.tv_nsec = 0;
-		clock_gettime(CLOCK_MONOTONIC, &pselect_start);
-
-		//setting the timeout
-
-		if((pselect_start.tv_sec > slot_start.tv_sec) || ((pselect_start.tv_sec == slot_start.tv_sec) && (pselect_start.tv_nsec > slot_start.tv_nsec)))
-		{
-			// overran the end of the subframe we do not want to wait
-			timeout.tv_sec = 0;
-			timeout.tv_nsec = 0;
-
-			//struct timespec overrun = pnf_timespec_sub(pselect_start, sf_start);
-			//NFAPI_TRACE(NFAPI_TRACE_INFO, "Subframe overrun detected of %d.%d running to catchup\n", overrun.tv_sec, overrun.tv_nsec);
-		}
-		else
-		{
-			// still time before the end of the subframe wait
-			timeout = pnf_timespec_sub(slot_start, pselect_start);
-		}
-
-		selectRetval = pselect(pnf_p7->p7_sock+1, &rfds, NULL, NULL, &timeout, NULL);
-
-		uint32_t now_hr_time = pnf_get_current_time_hr();
-
-		
-		
-
-		if(selectRetval == 0)
-		{	
-			// timeout
-
-			//update slot start timing
-			slot_start = pnf_timespec_add(slot_start, slot_duration);
-
-			//increment sfn/slot
-			if (++pnf_p7->slot == 20)
-                        {
-                                pnf_p7->slot = 0;
-                                pnf_p7->sfn = (pnf_p7->sfn + 1) % 1024;
-                        }
-
-			continue;
-		}
-		else if (selectRetval == -1 && (errno == EINTR))
-		{
-			// interrupted by signal
-			NFAPI_TRACE(NFAPI_TRACE_WARN, "PNF P7 Signal Interrupt %d\n", errno);
-			continue;
-		}
-		else if (selectRetval == -1)
-		{
-			NFAPI_TRACE(NFAPI_TRACE_WARN, "PNF P7 select() failed\n");
-			sleep(1);
-			continue;
-		}
-
-		if(FD_ISSET(pnf_p7->p7_sock, &rfds)) 
-
-		{
-			pnf_nr_nfapi_p7_read_dispatch_message(pnf_p7, now_hr_time); 
-		}
-	}
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "PNF_P7 Terminating..\n");
-
-	// close the connection and socket
-	if (close(pnf_p7->p7_sock) < 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "close failed errno: %d\n", errno);
-	}
-
-	if(pthread_mutex_destroy(&(pnf_p7->pack_mutex)) != 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "mutex destroy failed errno: %d\n", errno);
-	}
-
-	if(pthread_mutex_destroy(&(pnf_p7->mutex)) != 0)
-	{
-		NFAPI_TRACE(NFAPI_TRACE_ERROR, "mutex destroy failed errno: %d\n", errno);
-	}
-
-	return 0;
-}
