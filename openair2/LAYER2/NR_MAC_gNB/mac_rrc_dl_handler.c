@@ -334,6 +334,9 @@ static int handle_ue_context_drbs_setup(NR_UE_info_t *UE,
       resp_drb->up_dl_tnl[0].teid = resp_f1.gnb_NGu_teid[0];
     }
 
+    // TODO should not be necessary?
+    if (!cellGroupConfig->rlc_BearerToAddModList)
+      cellGroupConfig->rlc_BearerToAddModList = calloc_or_fail(1, sizeof(*cellGroupConfig->rlc_BearerToAddModList));
     int ret = ASN_SEQUENCE_ADD(&cellGroupConfig->rlc_BearerToAddModList->list, rlc_BearerConfig);
     DevAssert(ret == 0);
   }
@@ -453,6 +456,52 @@ static NR_UE_NR_Capability_t *get_ue_nr_cap_from_ho_prep_info(uint8_t *buf, uint
   return cap;
 }
 
+static NR_CG_ConfigInfo_t *get_cg_config_info(uint8_t *buf, uint32_t len)
+{
+  struct NR_CG_ConfigInfo *cg_configinfo = NULL;
+  asn_dec_rval_t dec_rval = uper_decode_complete(NULL, &asn_DEF_NR_CG_ConfigInfo, (void **)&cg_configinfo, buf, len);
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_MAC, "cannot decode CG-ConfigInfo, ignoring it\n");
+    return NULL;
+  }
+  //xer_fprint(stdout, &asn_DEF_NR_CG_ConfigInfo, cg_configinfo);
+  return cg_configinfo;
+}
+
+static NR_UE_NR_Capability_t *get_ue_nr_cap_from_cg_config_info(const NR_CG_ConfigInfo_t *cgci)
+{
+  /* INTO DU handler */
+  if (cgci->criticalExtensions.present != NR_CG_ConfigInfo__criticalExtensions_PR_c1)
+    return NULL;
+  if (!cgci->criticalExtensions.choice.c1
+      || cgci->criticalExtensions.choice.c1->present != NR_CG_ConfigInfo__criticalExtensions__c1_PR_cg_ConfigInfo)
+    return NULL;
+
+  const NR_CG_ConfigInfo_IEs_t *cgci_ie = cgci->criticalExtensions.choice.c1->choice.cg_ConfigInfo;
+  if (!cgci_ie->ue_CapabilityInfo)
+    return NULL;
+
+  // Decode UE-CapabilityRAT-ContainerList
+  const OCTET_STRING_t *cap_buf = cgci_ie->ue_CapabilityInfo;
+  NR_UE_CapabilityRAT_ContainerList_t *clist = NULL;
+  asn_dec_rval_t dec_rval = uper_decode_complete(NULL,
+                                        &asn_DEF_NR_UE_CapabilityRAT_ContainerList,
+                                        (void **)&clist,
+                                        cap_buf->buf,
+                                        cap_buf->size);
+
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_MAC,
+          "Failed to decode NR_UE_CapabilityRAT_ContainerList (%zu bits), size of OCTET_STRING %lu\n",
+          dec_rval.consumed,
+          cap_buf->size);
+    return NULL;
+  }
+  NR_UE_NR_Capability_t *cap = get_nr_cap(clist);
+  ASN_STRUCT_FREE(asn_DEF_NR_UE_CapabilityRAT_ContainerList, clist);
+  return cap;
+}
+
 NR_CellGroupConfig_t *clone_CellGroupConfig(const NR_CellGroupConfig_t *orig)
 {
   uint8_t buf[16636];
@@ -514,8 +563,54 @@ static NR_UE_info_t *create_new_UE(gNB_MAC_INST *mac, uint32_t cu_id)
   return UE;
 }
 
+static NR_UE_info_t *create_new_UE_nsa(gNB_MAC_INST *mac, uint32_t cu_id, const NR_CG_ConfigInfo_t *cgci)
+{
+  rnti_t rnti;
+  if (get_softmodem_params()->phy_test) {
+    AssertFatal(mac->UE_info.connected_ue_list[0] == NULL, "phytest: UE already present\n");
+    rnti = 0x1234;
+  } else {
+    bool found = nr_mac_get_new_rnti(&mac->UE_info, &rnti);
+    if (!found)
+      return NULL;
+  }
+
+  int cc_id = 0;
+  NR_COMMON_channels_t *cc = &mac->common_channels[cc_id];
+  NR_ServingCellConfig_t *scc = cc->pre_ServingCellConfig;
+  NR_ServingCellConfigCommon_t *sccc = cc->ServingCellConfigCommon;
+  const nr_mac_config_t *configuration = &mac->radio_config;
+
+  NR_UE_NR_Capability_t *cap = get_ue_nr_cap_from_cg_config_info(cgci);
+  NR_UE_info_t *UE = get_new_nr_ue_inst(&mac->UE_info.uid_allocator, rnti, NULL);
+  AssertFatal(UE != NULL, "cannot create UE context: list is full?\n");
+  NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(sccc, scc, cap, 1, 1, configuration, UE->uid);
+  AssertFatal(secondaryCellGroup != NULL, "out of memory\n");
+  UE->CellGroup = secondaryCellGroup;
+  UE->capability = cap;
+
+  if (get_softmodem_params()->phy_test) {
+    // phytest mode: we don't set up RA, etc
+    free_and_zero(UE->ra); // test-mode: UE will not do RA
+    bool res = add_connected_nr_ue(mac, UE);
+    DevAssert(res);
+  } else {
+    // for NSA and do-ra
+    DevAssert(secondaryCellGroup->spCellConfig
+              && secondaryCellGroup->spCellConfig->reconfigurationWithSync
+              && secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated
+              && secondaryCellGroup->spCellConfig->reconfigurationWithSync->rach_ConfigDedicated->choice.uplink->cfra);
+    int success = add_new_UE_RA(mac, UE);
+    DevAssert(success);
+    nr_mac_prepare_ra_ue(mac, UE);
+  }
+
+  return UE;
+}
+
 void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
 {
+  const bool is_SA = IS_SA_MODE(get_softmodem_params());
   gNB_MAC_INST *mac = RC.nrmac[0];
   /* response has same type as request... */
   f1ap_ue_context_setup_t resp = {
@@ -529,9 +624,11 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
   bool ue_id_provided = resp.gNB_DU_ue_id > 0 && resp.gNB_DU_ue_id < 0xffff;
 
   NR_UE_NR_Capability_t *ue_cap = NULL;
+  NR_CG_ConfigInfo_t *cg_configinfo = NULL;
   if (req->cu_to_du_rrc_information != NULL) {
     const cu_to_du_rrc_information_t *cu2du = req->cu_to_du_rrc_information;
-    AssertFatal(cu2du->cG_ConfigInfo == NULL, "CG-ConfigInfo not handled\n");
+    if (cu2du->cG_ConfigInfo != NULL)
+      cg_configinfo = get_cg_config_info(cu2du->cG_ConfigInfo, cu2du->cG_ConfigInfo_length);
     if (cu2du->handoverPreparationInfo != NULL) {
       ue_cap = get_ue_nr_cap_from_ho_prep_info(cu2du->handoverPreparationInfo, cu2du->handoverPreparationInfo_length);
     } else if (cu2du->uE_CapabilityRAT_ContainerList != NULL) {
@@ -539,15 +636,25 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
     }
     AssertFatal(cu2du->measConfig == NULL, "MeasConfig not handled\n");
   }
+  /* 38.473: "For DC operation, the CG-ConfigInfo IE shall be included in the CU
+   * to DU RRC Information IE at the gNB acting as secondary node" As of now,
+   * we only handle NSA => we check we have CG-ConfigInfo if not SA or have SA
+   * and no CG-ConfigInfo */
+  AssertFatal(is_SA ^ (cg_configinfo != NULL), "cannot have SA and CG-ConfigInfo: NR-DC not supported xor need CG-ConfigInfo for NSA/phy-test/do-ra\n");
 
   NR_SCHED_LOCK(&mac->sched_lock);
 
   NR_UE_info_t *UE = NULL;
-  if (!ue_id_provided) {
+  if (!ue_id_provided && !is_SA) {
+    UE = create_new_UE_nsa(mac, req->gNB_CU_ue_id, cg_configinfo);
+    resp.gNB_DU_ue_id = UE->rnti;
+    resp.crnti = &UE->rnti;
+  } else if (!ue_id_provided && is_SA) {
     UE = create_new_UE(mac, req->gNB_CU_ue_id);
     resp.gNB_DU_ue_id = UE->rnti;
     resp.crnti = &UE->rnti;
   } else {
+    DevAssert(is_SA);
     UE = find_nr_UE(&mac->UE_info, req->gNB_DU_ue_id);
   }
   AssertFatal(UE, "no UE found or could not be created, but UE Context Setup Failed not implemented\n");
@@ -577,12 +684,13 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
 
   NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
   UE->capability = ue_cap;
-  if (ue_cap != NULL) {
+  if (ue_cap != NULL && cg_configinfo == NULL) {
     // store the new UE capabilities, and update the cellGroupConfig
+    // only to be done if we did not already update through the cg_configinfo
     update_cellGroupConfig(new_CellGroup, UE->uid, UE->capability, &mac->radio_config, scc);
   }
 
-  if (!ue_id_provided) {
+  if (!ue_id_provided && cg_configinfo == NULL) {
     /* new UE: tell the UE to reestablish RLC */
     struct NR_CellGroupConfig__rlc_BearerToAddModList *addmod = new_CellGroup->rlc_BearerToAddModList;
     for (int i = 0; i < addmod->list.count; ++i) {
@@ -605,7 +713,8 @@ void ue_context_setup_request(const f1ap_ue_context_setup_t *req)
 
   ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->CellGroup);
   UE->CellGroup = new_CellGroup;
-  configure_UE_BWP(mac, scc, UE, false, NR_SearchSpace__searchSpaceType_PR_common, -1, -1);
+  int ss_type = cg_configinfo ? NR_SearchSpace__searchSpaceType_PR_ue_Specific: NR_SearchSpace__searchSpaceType_PR_common;
+  configure_UE_BWP(mac, scc, UE, false, ss_type, -1, -1);
 
   NR_SCHED_UNLOCK(&mac->sched_lock);
 
