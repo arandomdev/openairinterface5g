@@ -35,7 +35,6 @@
 
 #include "mac_defs.h"
 #include "NR_MAC_UE/mac_proto.h"
-#include "NR_MAC-CellGroupConfig.h"
 #include "LAYER2/NR_MAC_COMMON/nr_mac_common.h"
 #include "common/utils/nr/nr_common.h"
 #include "executables/softmodem-common.h"
@@ -1691,7 +1690,8 @@ void nr_rrc_mac_config_req_reset(module_id_t module_id, NR_UE_MAC_reset_cause_t 
     case GO_TO_IDLE:
       reset_ra(mac, true);
       nr_ue_init_mac(mac);
-      release_mac_configuration(mac, cause);
+      release_mac_config(mac);
+      release_mac_asn_structures(mac, cause);  // TODO verify if we actually need to do this
       nr_ue_mac_default_configs(mac);
       // new sync but no target cell id -> -1
       nr_ue_send_synch_request(mac, module_id, 0, &sync_req);
@@ -1701,19 +1701,20 @@ void nr_rrc_mac_config_req_reset(module_id_t module_id, NR_UE_MAC_reset_cause_t 
       reset_ra(mac, true);
       reset_mac_inst(mac);
       nr_ue_reset_sync_state(mac);
-      release_mac_configuration(mac, cause);
+      release_mac_asn_structures(mac, cause);
       mac->state = UE_DETACHING;
       break;
     case T300_EXPIRY:
       reset_ra(mac, false);
       reset_mac_inst(mac);
+      release_mac_config(mac);
       mac->state = UE_PERFORMING_RA; // still in sync but need to restart RA
       break;
     case RE_ESTABLISHMENT:
       reset_mac_inst(mac);
       nr_ue_mac_default_configs(mac);
       nr_ue_reset_sync_state(mac);
-      release_mac_configuration(mac, cause);
+      release_mac_asn_structures(mac, cause);
       // apply the timeAlignmentTimerCommon included in SIB1
       configure_timeAlignmentTimer(&mac->time_alignment_timer, mac->timeAlignmentTimerCommon, mac->current_UL_BWP->scs);
       // new sync with old cell ID (re-establishment on the same cell)
@@ -2074,6 +2075,7 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
 {
   NR_UE_SCHEDULING_INFO *si = &mac->scheduling_info;
   int scs = mac->current_UL_BWP->scs;
+  int slots_per_subframe = mac->frame_structure.numb_slots_frame / 10;
   if (mcg->drx_Config)
     LOG_E(NR_MAC, "DRX not implemented! Configuration not handled!\n");
   if (mcg->schedulingRequestConfig) {
@@ -2111,7 +2113,6 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
       }
     }
   }
-  int slots_per_subframe = mac->frame_structure.numb_slots_frame / 10;
   if (mcg->bsr_Config) {
     uint32_t periodic_sf = nr_get_sf_periodicBSRTimer(mcg->bsr_Config->periodicBSR_Timer);
     uint32_t target = periodic_sf < UINT_MAX ? periodic_sf * slots_per_subframe : periodic_sf;
@@ -2120,9 +2121,13 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
     uint32_t retx_sf = nr_get_sf_retxBSRTimer(mcg->bsr_Config->retxBSR_Timer);
     nr_timer_setup(&si->retxBSR_Timer, retx_sf * slots_per_subframe, 1); // 1 slot update rate
     if (mcg->bsr_Config->logicalChannelSR_DelayTimer) {
+      if (!si->sr_DelayTimer)
+        si->sr_DelayTimer = calloc(1, sizeof(*si->sr_DelayTimer));
       uint32_t dt_sf = get_sr_DelayTimer(*mcg->bsr_Config->logicalChannelSR_DelayTimer);
-      nr_timer_setup(&si->sr_DelayTimer, dt_sf * slots_per_subframe, 1); // 1 slot update rate
+      nr_timer_setup(si->sr_DelayTimer, dt_sf * slots_per_subframe, 1); // 1 slot update rate
     }
+    else
+      free_and_zero(si->sr_DelayTimer);
   }
   if (mcg->tag_Config) {
     if (mcg->tag_Config->tag_ToReleaseList) {
@@ -2153,8 +2158,7 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
   }
   if (mcg->phr_Config) {
     nr_phr_info_t *phr_info = &si->phr_info;
-    phr_info->is_configured = mcg->phr_Config->choice.setup != NULL;
-    if (phr_info->is_configured) {
+    if (mcg->phr_Config->present == NR_SetupRelease_PHR_Config_PR_setup) {
       struct NR_PHR_Config *config = mcg->phr_Config->choice.setup;
       AssertFatal(config->multiplePHR == 0, "mulitplePHR not supported");
       phr_info->PathlossChange_db = config->phr_Tx_PowerFactorChange;
@@ -2166,12 +2170,14 @@ static void configure_maccellgroup(NR_UE_MAC_INST_t *mac, const NR_MAC_CellGroup
       nr_timer_setup(&phr_info->prohibitPHR_Timer, prohibit_timer_sf * slots_per_subframe, 1);
       phr_info->phr_reporting = (1 << phr_cause_phr_config);
     }
+    if (mcg->phr_Config->present == NR_SetupRelease_PHR_Config_PR_release)
+      set_default_phr(mac, slots_per_subframe);
   }
 
   if (mcg->ext1 && mcg->ext1->dataInactivityTimer) {
     struct NR_SetupRelease_DataInactivityTimer *setup_release = mcg->ext1->dataInactivityTimer;
     if (setup_release->present == NR_SetupRelease_DataInactivityTimer_PR_release)
-      free(mac->data_inactivity_timer);
+      free_and_zero(mac->data_inactivity_timer);
     if (setup_release->present == NR_SetupRelease_DataInactivityTimer_PR_setup) {
       if (!mac->data_inactivity_timer)
         mac->data_inactivity_timer = calloc(1, sizeof(*mac->data_inactivity_timer));
@@ -2497,10 +2503,10 @@ void release_dl_BWP(NR_UE_MAC_INST_t *mac, int index)
   int bwp_id = bwp->bwp_id;
   asn_sequence_del(&mac->dl_BWPs, index, 0);
 
-  free(bwp->cyclicprefix);
+  free_and_zero(bwp->cyclicprefix);
   asn1cFreeStruc(asn_DEF_NR_PDSCH_TimeDomainResourceAllocationList, bwp->tdaList_Common);
   asn1cFreeStruc(asn_DEF_NR_PDSCH_Config, bwp->pdsch_Config);
-  free(bwp);
+  free_and_zero(bwp);
 
   NR_BWP_PDCCH_t *pdcch = &mac->config_BWP_PDCCH[bwp_id];
   release_common_ss_cset(pdcch);
@@ -2515,7 +2521,7 @@ void release_ul_BWP(NR_UE_MAC_INST_t *mac, int index)
   NR_UE_UL_BWP_t *bwp = mac->ul_BWPs.array[index];
   asn_sequence_del(&mac->ul_BWPs, index, 0);
 
-  free(bwp->cyclicprefix);
+  free_and_zero(bwp->cyclicprefix);
   asn1cFreeStruc(asn_DEF_NR_RACH_ConfigCommon, bwp->rach_ConfigCommon);
   asn1cFreeStruc(asn_DEF_NR_PUSCH_TimeDomainResourceAllocationList, bwp->tdaList_Common);
   asn1cFreeStruc(asn_DEF_NR_ConfiguredGrantConfig, bwp->configuredGrantConfig);
