@@ -104,7 +104,7 @@ void *nrmac_stats_thread(void *arg) {
 }
 
 void clear_mac_stats(gNB_MAC_INST *gNB) {
-  UE_iterator(gNB->UE_info.list, UE) {
+  UE_iterator(gNB->UE_info.connected_ue_list, UE) {
     memset(&UE->mac_stats,0,sizeof(UE->mac_stats));
   }
 }
@@ -119,7 +119,7 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, char *output, size_t strlen, bool reset
   NR_SCHED_ENSURE_LOCKED(&gNB->sched_lock);
 
   NR_SCHED_LOCK(&gNB->UE_info.mutex);
-  UE_iterator(gNB->UE_info.list, UE) {
+  UE_iterator(gNB->UE_info.connected_ue_list, UE) {
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     NR_mac_stats_t *stats = &UE->mac_stats;
     const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / stats->num_rsrp_meas : 0;
