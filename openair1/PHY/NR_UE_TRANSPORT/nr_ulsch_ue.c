@@ -392,7 +392,8 @@ static void dmrs_amp_mult(const uint32_t dmrs_port,
                           const c16_t *mod_dmrs,
                           c16_t *mod_dmrs_out,
                           const uint32_t n_dmrs,
-                          const pusch_dmrs_type_t dmrs_type)
+                          const pusch_dmrs_type_t dmrs_type,
+                          const unsigned int num_cdm_groups_no_data)
 {
   /* short array that hold amplitude for k_prime = 0 and k_prime = 1 */
   int32_t alpha_dmrs[2] __attribute((aligned(16)));
@@ -401,9 +402,19 @@ static void dmrs_amp_mult(const uint32_t dmrs_port,
     alpha_dmrs[i] = a;
   }
 
+  /* TS 38.214 table 6.2.2-1 for the ratio of PUSCH EPRE to DMRS EPRE */
+  double beta_dmrs_pusch = 1.0;
+  if (num_cdm_groups_no_data == 2) {
+    beta_dmrs_pusch = pow(10.0, 3.0 / 20.0);
+  }
+  else if (num_cdm_groups_no_data == 3) {
+    if (dmrs_type == pusch_dmrs_type2)
+      beta_dmrs_pusch = pow(10.0, 4.77 / 20.0);
+  }
+
   /* multiply amplitude with complex DMRS vector */
   for (int_fast16_t i = 0; i < n_dmrs; i++) {
-    mod_dmrs_out[i] = c16mulRealShift(mod_dmrs[i], alpha_dmrs[i % 2], 15);
+    mod_dmrs_out[i] = c16mulRealShift(mod_dmrs[i], alpha_dmrs[i % 2] * beta_dmrs_pusch, 15);
   }
 }
 
@@ -440,9 +451,9 @@ static void map_symbols(const nr_phy_pxsch_params_t p,
       c16_t mod_dmrs[ALNARS_16_4(n_dmrs)] __attribute((aligned(16)));
       if (p.transform_precoding == transformPrecoder_disabled) {
         nr_modulation(gold, n_dmrs * 2, DMRS_MOD_ORDER, (int16_t *)mod_dmrs);
-        dmrs_amp_mult(p.dmrs_port, p.Wt, p.Wf, mod_dmrs, mod_dmrs_amp, n_dmrs, p.dmrs_type);
+        dmrs_amp_mult(p.dmrs_port, p.Wt, p.Wf, mod_dmrs, mod_dmrs_amp, n_dmrs, p.dmrs_type, p.num_cdm_no_data);
       } else {
-        dmrs_amp_mult(p.dmrs_port, p.Wt, p.Wf, dmrs_seq, mod_dmrs_amp, n_dmrs, p.dmrs_type);
+        dmrs_amp_mult(p.dmrs_port, p.Wt, p.Wf, dmrs_seq, mod_dmrs_amp, n_dmrs, p.dmrs_type, p.num_cdm_no_data);
       }
     } else if ((p.pdu_bit_map & PUSCH_PDU_BITMAP_PUSCH_PTRS) && ptrs_symbol) {
       AssertFatal(p.transform_precoding == transformPrecoder_disabled, "PTRS NOT SUPPORTED IF TRANSFORM PRECODING IS ENABLED\n");
