@@ -35,6 +35,11 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "openair2/E2AP/flexric/src/agent/e2_agent_api.h"
 #include "openair2/E2AP/RAN_FUNCTION/init_ran_func.h"
 #endif
+
+#ifdef E3_AGENT
+#include "openair1/E3AP/e3_agent.h"
+#endif
+
 #include "nr-softmodem.h"
 #include <common/utils/assertions.h>
 #include <openair2/GNB_APP/gnb_app.h>
@@ -592,6 +597,13 @@ int main( int argc, char **argv ) {
           "no SYS_NICE capability: cannot set thread priority and affinity, consider running with sudo for optimum performance\n");
 
   softmodem_verify_mode(get_softmodem_params());
+
+//////////////////////////////////
+//// Init the E3 Agent
+#ifdef E3_AGENT
+  printf("Init E3 Agent\n");
+  e3_agent_init(); 
+#endif // E3_AGENT
 
 #if T_TRACER
   T_Config_Init();

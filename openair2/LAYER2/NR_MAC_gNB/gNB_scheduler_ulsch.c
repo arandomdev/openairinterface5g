@@ -63,6 +63,13 @@ int get_ul_tda(gNB_MAC_INST *nrmac, int frame, int slot)
       return 1;
   }
 
+  #ifdef E3_AGENT
+  // Empty symbol in slot 8 for spectrum sensing. Symbol 12.ToDo handle when SRS is present
+  if (slot == 8) {
+    return 1;
+  }
+#endif // E3_AGENT
+
   return 0; // if FDD or not mixed slot in TDD, for now use default TDA (TODO handle CSI-RS slots)
 }
 

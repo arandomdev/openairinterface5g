@@ -200,6 +200,11 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, frame_t frame, slot_t slo
     for (int i = 0; i < num_beams; i++) {
       uint16_t *vrb_map_UL = cc[CC_id].vrb_map_UL[i];
       memcpy(&vrb_map_UL[prev_slot % size * MAX_BWP_SIZE], &gNB->ulprbbl, sizeof(uint16_t) * MAX_BWP_SIZE);
+#ifdef E3_AGENT
+      // This for downlink PRBs
+      uint16_t *vrb_map = cc[CC_id].vrb_map[i];
+      memcpy(vrb_map, &gNB->ulprbbl, sizeof(uint16_t) * MAX_BWP_SIZE);
+#endif // E3_AGENT
     }
     clear_nr_nfapi_information(gNB, CC_id, frame, slot, &sched_info->DL_req, &sched_info->TX_req, &sched_info->UL_dci_req);
   }
@@ -208,6 +213,9 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, frame_t frame, slot_t slo
     char stats_output[32656] = {0};
     dump_mac_stats(gNB, stats_output, sizeof(stats_output), true);
     LOG_I(NR_MAC, "Frame.Slot %d.%d\n%s\n", frame, slot, stats_output);
+#ifdef E3_AGENT
+    nr_update_prb_policy(module_idP, frame, slot);
+#endif // E3_AGENT
   }
 
   nr_mac_update_timers(module_idP, frame, slot);
