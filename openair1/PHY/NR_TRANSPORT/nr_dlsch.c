@@ -355,7 +355,7 @@ static inline int do_onelayer(NR_DL_FRAME_PARMS *frame_parms,
                               c16_t *dmrs_start)
 {
   c16_t *txl = txl_start;
-  const uint sz = rel15->rbSize * NR_NB_SC_PER_RB;
+  const unsigned int sz = rel15->rbSize * NR_NB_SC_PER_RB;
   int upper_limit = sz;
   int remaining_re = 0;
   if (start_sc + upper_limit > symbol_sz) {

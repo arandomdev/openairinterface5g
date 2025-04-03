@@ -34,7 +34,7 @@
 
 void nr_bit2byte_uint32_8(uint32_t *in, uint16_t arraySize, uint8_t *out)
 {
-  const uint arrayInd = ceil(arraySize / 32.0);
+  const unsigned int arrayInd = ceil(arraySize / 32.0);
   for (int i = 0; i < (arrayInd - 1); i++) {
     for (int j = 0; j < 32; j++) {
       out[j + (i * 32)] = (in[i] >> j) & 1;
@@ -47,7 +47,7 @@ void nr_bit2byte_uint32_8(uint32_t *in, uint16_t arraySize, uint8_t *out)
 
 void nr_byte2bit_uint8_32(uint8_t *in, uint16_t arraySize, uint32_t *out)
 {
-  const uint arrayInd = ceil(arraySize / 32.0);
+  const unsigned int arrayInd = ceil(arraySize / 32.0);
   for (int i = 0; i < arrayInd; i++) {
     out[i] = 0;
     for (int j = 31; j > 0; j--) {

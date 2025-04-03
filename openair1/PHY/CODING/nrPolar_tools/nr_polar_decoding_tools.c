@@ -45,9 +45,9 @@ static inline void updateBit(uint8_t listSize,
                              uint8_t bit[xlen][ylen][zlen],
                              uint8_t bitU[xlen][ylen])
 {
-  const uint offset = (xlen / (pow(2, (ylen - col))));
+  const unsigned int offset = (xlen / (pow(2, (ylen - col))));
 
-  for (uint i = 0; i < listSize; i++) {
+  for (unsigned int i = 0; i < listSize; i++) {
     if (((row) % (2 * offset)) >= offset) {
       if (bitU[row][col - 1] == 0)
         updateBit(listSize, row, (col - 1), xlen, ylen, zlen, bit, bitU);
@@ -83,8 +83,8 @@ void updateLLR(uint8_t listSize,
                uint8_t bit[xlen][ylen][zlen],
                uint8_t bitU[xlen][ylen])
 {
-  const uint offset = (xlen / (pow(2, (ylen - col - 1))));
-  for (uint i = 0; i < listSize; i++) {
+  const unsigned int offset = (xlen / (pow(2, (ylen - col - 1))));
+  for (unsigned int i = 0; i < listSize; i++) {
     if ((row % (2 * offset)) >= offset) {
       if (bitU[row - offset][col] == 0)
         updateBit(listSize, (row - offset), col, xlen, ylen, zlen, bit, bitU);
@@ -116,7 +116,7 @@ void updatePathMetric(double *pathMetric,
                       double llr[xlen][ylen][zlen])
 {
   const int multiplier = (2 * bitValue) - 1;
-  for (uint i = 0; i < listSize; i++)
+  for (unsigned int i = 0; i < listSize; i++)
     pathMetric[i] += log(1 + exp(multiplier * llr[row][0][i])); // eq. (11b)
 }
 
@@ -131,14 +131,14 @@ void updatePathMetric2(double *pathMetric,
   double tempPM[listSize];
   memcpy(tempPM, pathMetric, (sizeof(double) * listSize));
 
-  uint bitValue = 0;
+  unsigned int bitValue = 0;
   int multiplier = (2 * bitValue) - 1;
-  for (uint i = 0; i < listSize; i++)
+  for (unsigned int i = 0; i < listSize; i++)
     pathMetric[i] += log(1 + exp(multiplier * llr[row][0][i])); // eq. (11b)
 
   bitValue = 1;
   multiplier = (2 * bitValue) - 1;
-  for (uint i = listSize; i < 2 * listSize; i++)
+  for (unsigned int i = listSize; i < 2 * listSize; i++)
     pathMetric[i] = tempPM[(i - listSize)] + log(1 + exp(multiplier * llr[row][0][(i - listSize)])); // eq. (11b)
 }
 

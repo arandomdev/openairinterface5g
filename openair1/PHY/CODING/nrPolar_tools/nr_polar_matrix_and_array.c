@@ -38,9 +38,9 @@ void nr_matrix_multiplication_uint8_1D_uint8_2D(const uint8_t *matrix1,
                                                 uint16_t row,
                                                 uint16_t col)
 {
-  for (uint i = 0; i < col; i++) {
+  for (unsigned int i = 0; i < col; i++) {
     output[i] = 0;
-    for (uint j = 0; j < row; j++) {
+    for (unsigned int j = 0; j < row; j++) {
       output[i] += matrix1[j] * matrix2[j][i];
     }
   }

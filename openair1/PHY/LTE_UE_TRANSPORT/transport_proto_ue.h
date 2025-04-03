@@ -1300,24 +1300,7 @@ uint8_t I_TBS2I_MCS(uint8_t I_TBS);
     \param symbPerRB Number of symbols per resource block allocated to this channel
     \return I_TBS given an SE and an N_PRB
 */
-uint8_t SE2I_TBS(float SE,
-                 uint8_t N_PRB,
-                 uint8_t symbPerRB);
-/** \brief This function generates the sounding reference symbol (SRS) for the uplink according to 36.211 v8.6.0. If IFFT_FPGA is
-defined, the SRS is quantized to a QPSK sequence.
-    @param frame_parms LTE DL Frame Parameters
-    @param soundingrs_ul_config_dedicated Dynamic configuration from RRC during Connection Establishment
-    @param txdataF pointer to the frequency domain TX signal
-@param amp
-@param subframe
-    @returns 0 on success*/
-int generate_srs(LTE_DL_FRAME_PARMS *frame_parms,
-                 SOUNDINGRS_UL_CONFIG_DEDICATED *soundingrs_ul_config_dedicated,
-                 int *txdataF,
-                 int16_t amp,
-                 uint32_t subframe);
-
-
+uint8_t SE2I_TBS(float SE, uint8_t N_PRB, uint8_t symbPerRB);
 /*!
   \brief This function is similar to generate_srs_tx but generates a conjugate sequence for channel estimation. If IFFT_FPGA is defined, the SRS is quantized to a QPSK sequence.
   @param phy_vars_ue Pointer to PHY_VARS structure
@@ -1338,7 +1321,7 @@ int32_t generate_srs_tx(PHY_VARS_UE *phy_vars_ue,
 int generate_drs_pusch(PHY_VARS_UE *ue,
                        UE_rxtx_proc_t *proc,
                        LTE_DL_FRAME_PARMS *frame_parms,
-                       int32_t **txdataF,
+                       c16_t **txdataF,
                        uint8_t eNB_id,
                        short amp,
                        unsigned int subframe,
@@ -1568,7 +1551,7 @@ void generate_pucch1x(int32_t **txdataF,
                       int16_t amp,
                       uint8_t subframe);
 
-void generate_pucch2x(int32_t **txdataF,
+void generate_pucch2x(c16_t **txdataF,
                       LTE_DL_FRAME_PARMS *fp,
                       uint8_t ncs_cell[20][7],
                       PUCCH_FMT_t fmt,
@@ -1581,7 +1564,7 @@ void generate_pucch2x(int32_t **txdataF,
                       uint8_t subframe,
                       uint16_t rnti);
 
-void generate_pucch3x(int32_t **txdataF,
+void generate_pucch3x(c16_t **txdataF,
                       LTE_DL_FRAME_PARMS *frame_parms,
                       uint8_t ncs_cell[20][7],
                       PUCCH_FMT_t fmt,

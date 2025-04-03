@@ -438,8 +438,8 @@ unsigned int ulsch_decoding(PHY_VARS_eNB *eNB,
   AssertFatal(ulsch_harq->Nsymb_pusch != 0,
               "FATAL ERROR: harq_pid %d, Nsymb 0!\n",harq_pid);
   const int nb_rb = ulsch_harq->nb_rb;
-  const uint A = ulsch_harq->TBS;
-  const uint Q_m = ulsch_harq->Qm;
+  const unsigned int A = ulsch_harq->TBS;
+  const unsigned int Q_m = ulsch_harq->Qm;
   G = nb_rb * (12 * Q_m) * ulsch_harq->Nsymb_pusch;
   LOG_D(PHY, "PUSCH nb_rb %d Q_m %d ulsch_harq->Nsymb_pusch %d\n",nb_rb, Q_m, ulsch_harq->Nsymb_pusch);  
   //#ifdef DEBUG_ULSCH_DECODING

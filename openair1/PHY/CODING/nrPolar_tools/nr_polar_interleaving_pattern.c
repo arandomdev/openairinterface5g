@@ -34,7 +34,7 @@
 
 void nr_polar_interleaving_pattern(uint16_t K, uint8_t I_IL, uint16_t *PI_k_)
 {
-  uint K_IL_max = 164;
+  unsigned int K_IL_max = 164;
   uint8_t interleaving_pattern_table[164] = {
       0,   2,   4,   7,   9,   14,  19,  20,  24,  25,  26,  28,  31,  34,  42,  45,  49,  50,  51,  53, 54, 56,  58,  59,
       61,  62,  65,  66,  67,  69,  70,  71,  72,  76,  77,  81,  82,  83,  87,  88,  89,  91,  93,  95, 98, 101, 104, 106,

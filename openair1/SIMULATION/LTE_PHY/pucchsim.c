@@ -356,17 +356,17 @@ int main(int argc, char **argv) {
     for(i=0; i<pucch3_payload_size; i++)
       pucch3_payload[i]=(uint8_t)(taus()&0x1);
 
-    generate_pucch3x(UE->common_vars.txdataF,
+    generate_pucch3x((c16_t **)UE->common_vars.txdataF,
                      frame_parms,
                      UE->ncs_cell,
                      pucch_format,
                      &pucch_config_dedicated,
                      n3_pucch,
-                     0, //shortened_format,
+                     0, // shortened_format,
                      pucch3_payload,
-                     AMP, //amp,
-                     subframe, //subframe
-                     n_rnti);  //rnti
+                     AMP, // amp,
+                     subframe, // subframe
+                     n_rnti); // rnti
   }
 
   LOG_M("txsigF0.m","txsF0", &UE->common_vars.txdataF[0][2*subframe*nsymb*OFDM_SYMBOL_SIZE_COMPLEX_SAMPLES_NO_PREFIX],OFDM_SYMBOL_SIZE_COMPLEX_SAMPLES_NO_PREFIX*nsymb,1,1);

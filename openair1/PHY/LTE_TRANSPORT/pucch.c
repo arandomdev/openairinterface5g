@@ -90,25 +90,20 @@ void dump_uci_stats(FILE *fd,PHY_VARS_eNB *eNB,int frame) {
   if (fd) fprintf(fd,"%s",output);
   else    printf("%s",output);  
 }
+
 /* PUCCH format3 >> */
 /* SubCarrier Demap */
-uint16_t pucchfmt3_subCarrierDeMapping( PHY_VARS_eNB *eNB,
-                                        int16_t SubCarrierDeMapData[4][14][12][2],
-                                        uint16_t n3_pucch ) {
+static unsigned int pucchfmt3_subCarrierDeMapping(PHY_VARS_eNB *eNB, c16_t SubCarrierDeMapData[4][14][12], unsigned int n3_pucch)
+{
   LTE_eNB_COMMON *eNB_common_vars  = &eNB->common_vars;
-  LTE_DL_FRAME_PARMS  *frame_parms = &eNB->frame_parms;
-  int16_t             *rxptr;
-  uint8_t             N_UL_symb    = D_NSYM1SLT;                      // only Normal CP format
-  uint16_t            m;                                              // Mapping to physical resource blocks(m)
-  uint32_t            aa;
-  uint16_t            k, l;
-  uint32_t            symbol_offset;
-  uint16_t            carrier_offset;
-  m = n3_pucch / D_NPUCCH_SF5;
+  LTE_DL_FRAME_PARMS *frame_parms = &eNB->frame_parms;
+  const unsigned int N_UL_symb = D_NSYM1SLT; // only Normal CP format
+  const unsigned int m = n3_pucch / D_NPUCCH_SF5;
 
   // Do detection
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (l=0; l<D_NSYM1SF; l++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int l = 0; l < D_NSYM1SF; l++) {
+      unsigned int carrier_offset;
       if ((l<N_UL_symb) && ((m&1) == 0))
         carrier_offset = (m*6) + frame_parms->first_carrier_offset;
       else if ((l<N_UL_symb) && ((m&1) == 1))
@@ -121,20 +116,13 @@ uint16_t pucchfmt3_subCarrierDeMapping( PHY_VARS_eNB *eNB,
       if (carrier_offset > frame_parms->ofdm_symbol_size)
         carrier_offset -= (frame_parms->ofdm_symbol_size);
 
-      symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size*l;
-      rxptr = (int16_t *)&eNB_common_vars->rxdataF[aa][symbol_offset];
+      unsigned int symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
+      c16_t *rxptr = (c16_t *)&eNB_common_vars->rxdataF[aa][symbol_offset];
 
-      for (k=0; k<12; k++,carrier_offset++) {
-        SubCarrierDeMapData[aa][l][k][0] = (int16_t)rxptr[carrier_offset<<1];      // DeMapping Data I
-        SubCarrierDeMapData[aa][l][k][1] = (int16_t)rxptr[1+(carrier_offset<<1)];  // DeMapping Date Q
-
+      for (unsigned int k = 0; k < 12; k++, carrier_offset++) {
+        SubCarrierDeMapData[aa][l][k] = rxptr[carrier_offset];
         if (carrier_offset==frame_parms->ofdm_symbol_size)
           carrier_offset = 0;
-
-        /*                #ifdef DEBUG_PUCCH_RX
-                        LOG_D(PHY,"[eNB] PUCCH subframe %d (%d,%d,%d,%d) : (%d,%d)\n",subframe,l,k,carrier_offset,m,
-                        SubCarrierDeMapData[aa][l][k][0],SubCarrierDeMapData[aa][l][k][1]);
-            #endif*/
       }
     }
   }
@@ -143,43 +131,32 @@ uint16_t pucchfmt3_subCarrierDeMapping( PHY_VARS_eNB *eNB,
 }
 
 /* cyclic shift hopping remove */
-uint16_t pucchfmt3_Baseseq_csh_remove( int16_t SubCarrierDeMapData[4][14][12][2],
-                                       int16_t CshData_fmt3[4][14][12][2],
-                                       LTE_DL_FRAME_PARMS *frame_parms,
-                                       uint8_t subframe,
-                                       uint8_t ncs_cell[20][7] ) {
-  //int16_t     calctmp_baSeq[2];
-  int16_t     calctmp_beta[2];
-  int16_t     calctmp_alphak[2];
-  int16_t     calctmp_SCDeMapData_alphak[2];
-  int32_t     n_cell_cs_div64;
-  int32_t     n_cell_cs_modNSC_RB;
-  //int32_t     NSlot1subframe  = D_NSLT1SF;
+static unsigned int pucchfmt3_Baseseq_csh_remove(c16_t SubCarrierDeMapData[4][14][12],
+                                                 c16_t CshData_fmt3[4][14][12],
+                                                 LTE_DL_FRAME_PARMS *frame_parms,
+                                                 unsigned int subframe,
+                                                 uint8_t ncs_cell[20][7])
+{
   int32_t     NSym1slot       = D_NSYM1SLT; // Symbol per 1slot
   int32_t     NSym1subframe   = D_NSYM1SF;  // Symbol per 1subframe
-  int32_t     aa, symNo, slotNo, sym, k;
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {  // Antenna
-    for (symNo=0; symNo<NSym1subframe; symNo++) {   // Symbol
-      slotNo = symNo / NSym1slot;
-      sym = symNo % NSym1slot;
-      n_cell_cs_div64 = (int32_t)(ncs_cell[2*subframe+slotNo][sym]/64.0);
-      n_cell_cs_modNSC_RB = ncs_cell[2*subframe+slotNo][sym] % 12;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) { // Antenna
+    for (unsigned int symNo = 0; symNo < NSym1subframe; symNo++) { // Symbol
+      unsigned int slotNo = symNo / NSym1slot;
+      unsigned int sym = symNo % NSym1slot;
+      int32_t n_cell_cs_div64 = (int32_t)(ncs_cell[2 * subframe + slotNo][sym] / 64.0);
+      int32_t n_cell_cs_modNSC_RB = ncs_cell[2 * subframe + slotNo][sym] % 12;
       // for canceling e^(j*PI|_n_cs^cell(ns,l)/64_|/2).
-      calctmp_beta[0] = RotTBL_re[(n_cell_cs_div64)&0x3];
-      calctmp_beta[1] = RotTBL_im[(n_cell_cs_div64)&0x3];
+      c16_t calctmp_beta = RotTBL[(n_cell_cs_div64) & 0x3];
 
-      for (k=0; k<12; k++) {  // Sub Carrier
+      for (unsigned int k = 0; k < 12; k++) { // Sub Carrier
         // for canceling being cyclically shifted"(i+n_cs^cell(ns,l))".
         // e^((j*2PI(n_cs^cell(ns,l) mod N_SC)/N_SC)*k).
-        calctmp_alphak[0] = alphaTBL_re[((n_cell_cs_modNSC_RB)*k)%12];
-        calctmp_alphak[1] = alphaTBL_im[((n_cell_cs_modNSC_RB)*k)%12];
+        c16_t calctmp_alphak = alphaTBL[(n_cell_cs_modNSC_RB * k) % 12];
         // e^(-alphar*k)*r_l,m,n,k
-        calctmp_SCDeMapData_alphak[0] = (((int32_t)SubCarrierDeMapData[aa][symNo][k][0] * calctmp_alphak[0] + (int32_t)SubCarrierDeMapData[aa][symNo][k][1] * calctmp_alphak[1])>>15);
-        calctmp_SCDeMapData_alphak[1] = (((int32_t)SubCarrierDeMapData[aa][symNo][k][1] * calctmp_alphak[0] - (int32_t)SubCarrierDeMapData[aa][symNo][k][0] * calctmp_alphak[1])>>15);
+        c16_t calctmp_SCDeMapData_alphak = c16MulConjShift(SubCarrierDeMapData[aa][symNo][k], calctmp_alphak, 15);
         // (e^(-alphar*k)*r_l,m,n,k) * e^(-beta)
-        CshData_fmt3[aa][symNo][k][0] = (((int32_t)calctmp_SCDeMapData_alphak[0] * calctmp_beta[0] + (int32_t)calctmp_SCDeMapData_alphak[1] * calctmp_beta[1])>>15);
-        CshData_fmt3[aa][symNo][k][1] = (((int32_t)calctmp_SCDeMapData_alphak[1] * calctmp_beta[0] - (int32_t)calctmp_SCDeMapData_alphak[0] * calctmp_beta[1])>>15);
+        CshData_fmt3[aa][symNo][k] = c16MulConjShift(calctmp_SCDeMapData_alphak, calctmp_beta, 15);
       }
     }
   }
@@ -194,35 +171,29 @@ static const int16_t TBL_3_SF5_GEN_N_DASH_NS[MAXROW_TBL_SF5_OS_IDX] = {0, 3, 6, 
 static const int16_t TBL_3_SF4_GEN_N_DASH_NS[MAXROW_TBL_SF4_OS_IDX] = {0, 3, 6, 9};
 
 /* Channel estimation */
-uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
-                                      double delta_theta[4][12],
-                                      int16_t ChestValue[4][2][12][2],
-                                      int16_t *Interpw,
-                                      uint8_t subframe,
-                                      uint8_t shortened_format,
-                                      LTE_DL_FRAME_PARMS *frame_parms,
-                                      uint16_t n3_pucch,
-                                      uint16_t n3_pucch_array[NUMBER_OF_UE_MAX],
-                                      uint8_t ncs_cell[20][7] ) {
-  uint32_t        aa, symNo, k, slotNo, sym, i, j;
-  int16_t         np, np_n, ip_ind=-1;
+static unsigned int pucchfmt3_ChannelEstimation(c16_t SubCarrierDeMapData[4][14][12],
+                                                double delta_theta[4][12],
+                                                c16_t ChestValue[4][2][12],
+                                                int16_t *Interpw,
+                                                unsigned int subframe,
+                                                unsigned int shortened_format,
+                                                LTE_DL_FRAME_PARMS *frame_parms,
+                                                unsigned int n3_pucch,
+                                                uint16_t n3_pucch_array[NUMBER_OF_UE_MAX],
+                                                uint8_t ncs_cell[20][7])
+{
+  int16_t np, np_n;
   //int16_t         npucch_sf;
-  int16_t         calctmp[2];
-  int16_t         BsCshData[4][D_NSYM1SF][D_NSC1RB][2];
-  //int16_t         delta_theta_calctmp[4][4][D_NSC1RB][2], delta_theta_comp[4][D_NSC1RB][2];
-  int16_t         delta_theta_comp[4][D_NSC1RB][2];
-  int16_t         CsData_allavg[4][14][2];
-  int16_t         CsData_temp[4][D_NSYM1SF][D_NSC1RB][2];
-  int32_t         IP_CsData_allsfavg[4][14][4][2];
-  int32_t         IP_allavg[D_NPUCCH_SF5];
-  //int16_t         temp_ch[2];
-  int16_t         m[NUMBER_OF_UE_MAX], m_self=0, same_m_number;
+  c16_t BsCshData[4][D_NSYM1SF][D_NSC1RB];
+  c16_t CsData_temp[4][D_NSYM1SF][D_NSC1RB];
+  c32_t IP_CsData_allsfavg[4][14][4];
+  int16_t m[NUMBER_OF_UE_MAX], m_self = 0;
   uint16_t        n3_pucch_sameRB[NUMBER_OF_UE_MAX];
   int16_t         n_oc0[NUMBER_OF_UE_MAX];
   int16_t         n_oc1[NUMBER_OF_UE_MAX];
   int16_t         np_n_array[2][NUMBER_OF_UE_MAX]; //Cyclic shift
-  uint8_t N_PUCCH_SF0 = 5;
-  uint8_t N_PUCCH_SF1 = (shortened_format==0)? 5:4;
+  unsigned int N_PUCCH_SF0 = 5;
+  unsigned int N_PUCCH_SF1 = (shortened_format == 0) ? 5 : 4;
   uint32_t u0 = (frame_parms->Nid_cell + frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.grouphop[subframe<<1]) % 30;
   uint32_t u1 = (frame_parms->Nid_cell + frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.grouphop[1+(subframe<<1)]) % 30;
   uint32_t v0=frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe<<1];
@@ -233,17 +204,16 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
   //double d_theta[32]={0.0};
   //int32_t temp_theta[32][2]={0};
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (symNo=0; symNo<D_NSYM1SF; symNo++) {
-      for(ip_ind=0; ip_ind<D_NPUCCH_SF5-1; ip_ind++) {
-        IP_CsData_allsfavg[aa][symNo][ip_ind][0] = 0;
-        IP_CsData_allsfavg[aa][symNo][ip_ind][1] = 0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
+      for (unsigned int ip_ind = 0; ip_ind < D_NPUCCH_SF5 - 1; ip_ind++) {
+        IP_CsData_allsfavg[aa][symNo][ip_ind] = (c32_t){0};
       }
     }
   }
 
   // compute m[], m_self
-  for(i=0; i<NUMBER_OF_UE_MAX; i++) {
+  for (unsigned int i = 0; i < NUMBER_OF_UE_MAX; i++) {
     m[i] = n3_pucch_array[i] / N_PUCCH_SF0; // N_PUCCH_SF0 = 5
 
     if(n3_pucch_array[i] == n3_pucch) {
@@ -251,27 +221,17 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
     }
   }
 
-  for(i=0; i<NUMBER_OF_UE_MAX; i++) {
-    //printf("n3_pucch_array[%d]=%d, m[%d]=%d \n", i, n3_pucch_array[i], i, m[i]);
-  }
-
-  //printf("m_self=%d \n", m_self);
-
   // compute n3_pucch_sameRB[] // Not 4 not be equally divided
-  for(i=0, same_m_number=0; i<NUMBER_OF_UE_MAX; i++) {
+  unsigned int same_m_number = 0;
+  for (unsigned int i = 0; i < NUMBER_OF_UE_MAX; i++) {
     if(m[i] == m[m_self]) {
       n3_pucch_sameRB[same_m_number] = n3_pucch_array[i];
       same_m_number++;
     }
   }
 
-  //printf("same_m_number = %d \n", same_m_number);
-  for(i=0; i<same_m_number; i++) {
-    //printf("n3_pucch_sameRB[%d]=%d \n", i, n3_pucch_sameRB[i]);
-  }
-
   // compute n_oc1[], n_oc0[]
-  for(i=0; i<same_m_number; i++) {
+  for (unsigned int i = 0; i < same_m_number; i++) {
     n_oc0[i] = n3_pucch_sameRB[i] % N_PUCCH_SF1; //N_PUCCH_SF1 = (shortened_format==0)? 5:4;
 
     if (N_PUCCH_SF1 == 5) {
@@ -281,12 +241,8 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
     }
   }
 
-  for(i=0; i<same_m_number; i++) {
-    //printf("n_oc0[%d]=%d, n_oc1[%d]=%d \n", i, n_oc0[i], i, n_oc1[i]);
-  }
-
   // np_n_array[][]
-  for(i=0; i<same_m_number; i++) {
+  for (unsigned int i = 0; i < same_m_number; i++) {
     if (N_PUCCH_SF1 == 5) {
       np_n_array[0][i] = TBL_3_SF5_GEN_N_DASH_NS[n_oc0[i]]; //slot0
       np_n_array[1][i] = TBL_3_SF5_GEN_N_DASH_NS[n_oc1[i]]; //slot1
@@ -295,21 +251,15 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
       np_n_array[1][i] = TBL_3_SF4_GEN_N_DASH_NS[n_oc1[i]];
     }
   }
+  unsigned int ip_ind = 0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) { // #define D_NSYM1SF       2*7
+      unsigned int slotNo = symNo / D_NSYM1SLT;
+      unsigned int sym = symNo % D_NSYM1SLT;
 
-  for(i=0; i<same_m_number; i++) {
-    //printf("np_n_array[0][%d]=%d ,np_n_array[1][%d]=%d \n", i, np_n_array[0][i], i, np_n_array[1][i]);
-  }
-
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (symNo=0; symNo<D_NSYM1SF; symNo++) { // #define D_NSYM1SF       2*7
-      slotNo = symNo / D_NSYM1SLT;
-      sym = symNo % D_NSYM1SLT;
-
-      for (k=0; k<D_NSC1RB; k++) { // #define D_NSC1RB        12
+      for (unsigned int k = 0; k < D_NSC1RB; k++) { // #define D_NSC1RB        12
         // remove Base Sequence (c_r^*)*(r_l,m,m,n,k) = BsCshData
-        BsCshData[aa][symNo][k][0] = (((int32_t)SubCarrierDeMapData[aa][symNo][k][0] * ul_ref_sigs[u][v][0][k<<1] + (int32_t)SubCarrierDeMapData[aa][symNo][k][1] * ul_ref_sigs[u][v][0][1+(k<<1)])>>15);
-        BsCshData[aa][symNo][k][1] = (((int32_t)SubCarrierDeMapData[aa][symNo][k][1] * ul_ref_sigs[u][v][0][k<<1] - (int32_t)SubCarrierDeMapData[aa][symNo][k][0] * ul_ref_sigs[u][v][0][1+(k<<1)])>>15);
-
+        BsCshData[aa][symNo][k] = c16MulConjShift(SubCarrierDeMapData[aa][symNo][k], ul_ref_sigs[u][v][0][k], 15);
         if(shortened_format == 1) {
           if (symNo < D_NSYM1SLT) {
             np = n3_pucch % D_NPUCCH_SF4;   // np = n_oc
@@ -333,19 +283,18 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
         }
 
         // cyclic shift e^(-j * beta_n * k)
-        calctmp[0] = alphaTBL_re[(((ncs_cell[2*subframe+slotNo][sym] + np_n)%D_NSC1RB)*k)%12];
-        calctmp[1] = alphaTBL_im[(((ncs_cell[2*subframe+slotNo][sym] + np_n)%D_NSC1RB)*k)%12];
+        c16_t calctmp = alphaTBL[(((ncs_cell[2 * subframe + slotNo][sym] + np_n) % D_NSC1RB) * k) % 12];
         // Channel Estimation 1A, g'(n_cs)_l,m,n
         // CsData_temp = g_l,m,n,k
         // remove cyclic shift BsCshData * e^(-j * beta_n * k)
-        CsData_temp[aa][symNo][k][0]=((((int32_t)BsCshData[aa][symNo][k][0] * calctmp[0] + (int32_t)BsCshData[aa][symNo][k][1] * calctmp[1])/ D_NSC1RB)>>15);
-        CsData_temp[aa][symNo][k][1]=((((int32_t)BsCshData[aa][symNo][k][1] * calctmp[0] - (int32_t)BsCshData[aa][symNo][k][0] * calctmp[1])/ D_NSC1RB)>>15);
+        c16_t tmp = c16MulConjShift(BsCshData[aa][symNo][k], calctmp, 15);
+        CsData_temp[aa][symNo][k] = (c16_t){tmp.r / D_NSC1RB, tmp.i / D_NSC1RB};
         // Interference power for Channel Estimation 1A, No use Cyclic Shift g'(n_cs)_l,m,n
         // Calculated by the cyclic shift that is not used  S(ncs)_est
         ip_ind = 0;
 
-        for(i=0; i<N_PUCCH_SF1; i++) {
-          for(j=0; j<same_m_number; j++) {  //np_n_array Loop
+        for (unsigned int i = 0; i < N_PUCCH_SF1; i++) {
+          for (unsigned int j = 0; j < same_m_number; j++) { // np_n_array Loop
             if(shortened_format == 1) {
               if(symNo < D_NSYM1SLT) { // if SF==1 slot0
                 if(TBL_3_SF4_GEN_N_DASH_NS[i] == np_n_array[0][j]) {
@@ -369,17 +318,18 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
             }
 
             if(j == same_m_number - 1) { //when even once it has not been used
+              c16_t calctmp;
               if(shortened_format == 1) {
-                calctmp[0] = alphaTBL_re[(((ncs_cell[2*subframe+slotNo][sym] + TBL_3_SF4_GEN_N_DASH_NS[i])%D_NSC1RB)*k)%12]; //D_NSC1RB =12
-                calctmp[1] = alphaTBL_im[(((ncs_cell[2*subframe+slotNo][sym] + TBL_3_SF4_GEN_N_DASH_NS[i])%D_NSC1RB)*k)%12];
+                calctmp = alphaTBL[(((ncs_cell[2 * subframe + slotNo][sym] + TBL_3_SF4_GEN_N_DASH_NS[i]) % D_NSC1RB) * k) % 12];
               } else {
-                calctmp[0] = alphaTBL_re[(((ncs_cell[2*subframe+slotNo][sym] + TBL_3_SF5_GEN_N_DASH_NS[i])%D_NSC1RB)*k)%12];
-                calctmp[1] = alphaTBL_im[(((ncs_cell[2*subframe+slotNo][sym] + TBL_3_SF5_GEN_N_DASH_NS[i])%D_NSC1RB)*k)%12];
+                calctmp = alphaTBL[(((ncs_cell[2 * subframe + slotNo][sym] + TBL_3_SF5_GEN_N_DASH_NS[i]) % D_NSC1RB) * k) % 12];
               }
 
               // IP_CsData_allsfavg = g'(n_cs)_l,m,n
-              IP_CsData_allsfavg[aa][symNo][ip_ind][0] += ((((int32_t)BsCshData[aa][symNo][k][0] * calctmp[0] + (int32_t)BsCshData[aa][symNo][k][1] * calctmp[1]))>>15);
-              IP_CsData_allsfavg[aa][symNo][ip_ind][1] += ((((int32_t)BsCshData[aa][symNo][k][1] * calctmp[0] - (int32_t)BsCshData[aa][symNo][k][0] * calctmp[1]))>>15);
+              c16_t tmp = c16MulConjShift(BsCshData[aa][symNo][k], calctmp, 15);
+
+              IP_CsData_allsfavg[aa][symNo][ip_ind].r += tmp.r;
+              IP_CsData_allsfavg[aa][symNo][ip_ind].i += tmp.i;
 
               if((symNo == 1 || symNo == 5 || symNo == 8 || symNo == 12)) {
               }
@@ -396,60 +346,51 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
       }
     }
   }
-
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (symNo=0; symNo<D_NSYM1SF; symNo++) {
-      CsData_allavg[aa][symNo][0] = 0;
-      CsData_allavg[aa][symNo][1] = 0;
-
-      for (k=0; k<D_NSC1RB; k++) {
-        CsData_allavg[aa][symNo][0] += (int16_t)((double)CsData_temp[aa][symNo][k][0]);
-        CsData_allavg[aa][symNo][1] += (int16_t)((double)CsData_temp[aa][symNo][k][1]);
+  cd_t CsData_allavg[4][14] = {};
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
+        CsData_allavg[aa][symNo].r += CsData_temp[aa][symNo][k].r;
+        CsData_allavg[aa][symNo].i += CsData_temp[aa][symNo][k].i;
       }
     }
   }
 
   // Frequency deviation estimation
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (k=0; k<12; k++) {
-      delta_theta_comp[aa][k][0] = 0;
-      delta_theta_comp[aa][k][1] = 0;
-      delta_theta_comp[aa][k][0] += (((int32_t)CsData_temp[aa][1][k][0] * CsData_temp[aa][5][k][0] + (int32_t)((CsData_temp[aa][1][k][1])*CsData_temp[aa][5][k][1]))>>8);
-      delta_theta_comp[aa][k][1] += (((int32_t)CsData_temp[aa][1][k][0]*CsData_temp[aa][5][k][1] - (int32_t)((CsData_temp[aa][1][k][1])*CsData_temp[aa][5][k][0]) )>>8);
-      delta_theta_comp[aa][k][0] += (((int32_t)CsData_temp[aa][8][k][0] * CsData_temp[aa][12][k][0] + (int32_t)((CsData_temp[aa][8][k][1])*CsData_temp[aa][12][k][1]))>>8);
-      delta_theta_comp[aa][k][1] += (((int32_t)CsData_temp[aa][8][k][0]*CsData_temp[aa][12][k][1] - (int32_t)((CsData_temp[aa][8][k][1])*CsData_temp[aa][12][k][0]))>>8);
-      delta_theta[aa][k] = atan2((double)delta_theta_comp[aa][k][1], (double)delta_theta_comp[aa][k][0]) / 4.0;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int k = 0; k < 12; k++) {
+      c16_t tmp1 = c16MulConjShift(CsData_temp[aa][1][k], CsData_temp[aa][5][k], 8);
+      c16_t tmp2 = c16MulConjShift(CsData_temp[aa][8][k], CsData_temp[aa][12][k], 8);
+      delta_theta[aa][k] = atan2(tmp1.i + tmp2.i, tmp1.r + tmp2.r) / 4.0;
     }
   }
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (k=0; k<D_NSC1RB; k++) {
-      ChestValue[aa][0][k][0] = (int16_t)((CsData_allavg[aa][1][0] + (int16_t)(((double)CsData_allavg[aa][5][0] * cos(delta_theta[aa][k]*4)) + ((double)CsData_allavg[aa][5][1] * sin(
-                                             delta_theta[aa][k]*4)))) /(2*D_NSC1RB)) ;
-      ChestValue[aa][0][k][1] = (int16_t)((CsData_allavg[aa][1][1] + (int16_t)(((double)CsData_allavg[aa][5][1] * cos(delta_theta[aa][k]*4)) - ((double)CsData_allavg[aa][5][0] * sin(
-                                             delta_theta[aa][k]*4)))) /(2*D_NSC1RB)) ;
-      ChestValue[aa][1][k][0] = (int16_t)((CsData_allavg[aa][8][0] + (int16_t)(((double)CsData_allavg[aa][12][0] * cos(delta_theta[aa][k]*4)) + ((double)CsData_allavg[aa][12][1] * sin(
-                                             delta_theta[aa][k]*4)))) /(2*D_NSC1RB)) ;
-      ChestValue[aa][1][k][1] = (int16_t)((CsData_allavg[aa][8][1] + (int16_t)(((double)CsData_allavg[aa][12][1] * cos(delta_theta[aa][k]*4)) - ((double)CsData_allavg[aa][12][0] * sin(
-                                             delta_theta[aa][k]*4)))) /(2*D_NSC1RB)) ;
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
+      cd_t dt = {cos(delta_theta[aa][k] * 4), sin(delta_theta[aa][k] * 4)};
+      cd_t tmp = cdMulConj(CsData_allavg[aa][5], dt);
+      ChestValue[aa][0][k].r = (CsData_allavg[aa][1].r + tmp.r) / (2 * D_NSC1RB);
+      ChestValue[aa][0][k].i = (CsData_allavg[aa][1].i + tmp.i) / (2 * D_NSC1RB);
+      cd_t tmp2 = cdMulConj(CsData_allavg[aa][12], dt);
+      ChestValue[aa][1][k].r = (CsData_allavg[aa][8].r + tmp2.r) / (2 * D_NSC1RB);
+      ChestValue[aa][1][k].i = (CsData_allavg[aa][8].i + tmp2.i) / (2 * D_NSC1RB);
     }
   }
 
   *Interpw = 0;
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
     if(ip_ind == 0) {//ip_ind= The total number of cyclic shift of non-use
       *Interpw = 1;
       break;
     }
 
-    for(i=0; i<ip_ind; i++) {
-      IP_allavg[i] = 0;
-      IP_allavg[i] += (((int32_t)IP_CsData_allsfavg[aa][1][i][0] * IP_CsData_allsfavg[aa][1][i][0] + (int32_t)IP_CsData_allsfavg[aa][1][i][1]*IP_CsData_allsfavg[aa][1][i][1])>>8);
-      IP_allavg[i] += (((int32_t)IP_CsData_allsfavg[aa][5][i][0] * IP_CsData_allsfavg[aa][5][i][0] + (int32_t)IP_CsData_allsfavg[aa][5][i][1]*IP_CsData_allsfavg[aa][5][i][1])>>8);
-      IP_allavg[i] += (((int32_t)IP_CsData_allsfavg[aa][8][i][0] * IP_CsData_allsfavg[aa][8][i][0] + (int32_t)IP_CsData_allsfavg[aa][8][i][1]*IP_CsData_allsfavg[aa][8][i][1])>>8);
-      IP_allavg[i] += (((int32_t)IP_CsData_allsfavg[aa][12][i][0] * IP_CsData_allsfavg[aa][12][i][0] + (int32_t)IP_CsData_allsfavg[aa][12][i][1]*IP_CsData_allsfavg[aa][12][i][1])>>8);
-      *Interpw += IP_allavg[i]/(2*D_NSLT1SF*frame_parms->nb_antennas_rx*ip_ind*12);
+    for (unsigned int i = 0; i < ip_ind; i++) {
+      int64_t IP_allavg = squaredMod(IP_CsData_allsfavg[aa][1][i]) >> 8;
+      IP_allavg += squaredMod(IP_CsData_allsfavg[aa][5][i]) >> 8;
+      IP_allavg += squaredMod(IP_CsData_allsfavg[aa][8][i]) >> 8;
+      IP_allavg += squaredMod(IP_CsData_allsfavg[aa][12][i]) >> 8;
+      *Interpw += IP_allavg / (2 * D_NSLT1SF * frame_parms->nb_antennas_rx * ip_ind * 12);
     }
   }
 
@@ -457,23 +398,21 @@ uint16_t pucchfmt3_ChannelEstimation( int16_t SubCarrierDeMapData[4][14][12][2],
 }
 
 /* Channel Equalization */
-uint16_t pucchfmt3_Equalization( int16_t CshData_fmt3[4][14][12][2],
-                                 int16_t ChdetAfterValue_fmt3[4][14][12][2],
-                                 int16_t ChestValue[4][2][12][2],
-                                 LTE_DL_FRAME_PARMS *frame_parms) {
-  int16_t aa, sltNo, symNo, k;
+static unsigned int pucchfmt3_Equalization(c16_t CshData_fmt3[4][14][12],
+                                           c16_t ChdetAfterValue_fmt3[4][14][12],
+                                           c16_t ChestValue[4][2][12],
+                                           LTE_DL_FRAME_PARMS *frame_parms)
+{
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    unsigned int sltNo = 0;
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    sltNo = 0;
-
-    for (symNo=0; symNo<D_NSYM1SF; symNo++) {
+    for (unsigned int symNo = 0; symNo < D_NSYM1SF; symNo++) {
       if(symNo >= D_NSYM1SLT) {
         sltNo = 1;
       }
 
-      for (k=0; k<D_NSC1RB; k++) {
-        ChdetAfterValue_fmt3[aa][symNo][k][0] = (((int32_t)CshData_fmt3[aa][symNo][k][0] * ChestValue[aa][sltNo][k][0] + (int32_t)CshData_fmt3[aa][symNo][k][1] * ChestValue[aa][sltNo][k][1])>>8);
-        ChdetAfterValue_fmt3[aa][symNo][k][1] = (((int32_t)CshData_fmt3[aa][symNo][k][1] * ChestValue[aa][sltNo][k][0] - (int32_t)CshData_fmt3[aa][symNo][k][0] * ChestValue[aa][sltNo][k][1])>>8);
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
+        ChdetAfterValue_fmt3[aa][symNo][k] = c16MulConjShift(CshData_fmt3[aa][symNo][k], ChestValue[aa][sltNo][k], 8);
       }
     }
   }
@@ -482,28 +421,24 @@ uint16_t pucchfmt3_Equalization( int16_t CshData_fmt3[4][14][12][2],
 }
 
 /* Frequency deviation remove AFC */
-uint16_t pucchfmt3_FrqDevRemove( int16_t ChdetAfterValue_fmt3[4][14][12][2],
-                                 double delta_theta[4][12],
-                                 int16_t RemoveFrqDev_fmt3[4][2][5][12][2],
-                                 LTE_DL_FRAME_PARMS *frame_parms ) {
-  int16_t aa, sltNo, symNo1slt, k, n;
-  double calctmp[2];
+static unsigned int pucchfmt3_FrqDevRemove(c16_t ChdetAfterValue_fmt3[4][14][12],
+                                           double delta_theta[4][12],
+                                           c16_t RemoveFrqDev_fmt3[4][2][5][12],
+                                           LTE_DL_FRAME_PARMS *frame_parms)
+{
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+      unsigned int n = 0;
 
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for(sltNo = 0; sltNo<D_NSLT1SF; sltNo++) {
-      n=0;
-
-      for (symNo1slt=0, n=0; symNo1slt<D_NSYM1SLT; symNo1slt++) {
+      for (unsigned int symNo1slt = 0; symNo1slt < D_NSYM1SLT; symNo1slt++) {
         if(!((symNo1slt==1) || (symNo1slt==5))) {
-          for (k=0; k<D_NSC1RB; k++) {
-            calctmp[0] = cos(delta_theta[aa][k] * (n-1));
-            calctmp[1] = sin(delta_theta[aa][k] * (n-1));
-            RemoveFrqDev_fmt3[aa][sltNo][n][k][0] = (int16_t)((double)ChdetAfterValue_fmt3[aa][(sltNo*D_NSYM1SLT)+symNo1slt][k][0] * calctmp[0]
-                                                    + (double)ChdetAfterValue_fmt3[aa][(sltNo*D_NSYM1SLT)+symNo1slt][k][1] * calctmp[1]);
-            RemoveFrqDev_fmt3[aa][sltNo][n][k][1] = (int16_t)((double)ChdetAfterValue_fmt3[aa][(sltNo*D_NSYM1SLT)+symNo1slt][k][1] * calctmp[0]
-                                                    - (double)ChdetAfterValue_fmt3[aa][(sltNo*D_NSYM1SLT)+symNo1slt][k][0] * calctmp[1]);
+          for (unsigned int k = 0; k < D_NSC1RB; k++) {
+            cd_t calctmp = {cos(delta_theta[aa][k] * (n - 1)), sin(delta_theta[aa][k] * (n - 1))};
+            cd_t tmp = {ChdetAfterValue_fmt3[aa][(sltNo * D_NSYM1SLT) + symNo1slt][k].r,
+                        ChdetAfterValue_fmt3[aa][(sltNo * D_NSYM1SLT) + symNo1slt][k].i};
+            cd_t tmp2 = cdMulConj(tmp, calctmp);
+            RemoveFrqDev_fmt3[aa][sltNo][n][k] = (c16_t){tmp2.r, tmp2.i};
           }
-
           n++;
         }
       }
@@ -516,33 +451,30 @@ uint16_t pucchfmt3_FrqDevRemove( int16_t ChdetAfterValue_fmt3[4][14][12][2],
 //for opt.Lev.2
 #define  MAXROW_TBL_SF5  5
 #define  MAXCLM_TBL_SF5  5
-const int16_t TBL_3_SF5[MAXROW_TBL_SF5][MAXCLM_TBL_SF5][2] = {
-  { {32767,0}, {32767,0}, {32767,0}, {32767,0}, {32767,0}},
-  { {32767,0}, {10126, 31163}, {-26509, 19260}, {-26509, -19260}, {10126, -31163}},
-  { {32767,0}, {-26509, 19260}, {10126, -31163}, {10126, 31163}, {-26509, -19260}},
-  { {32767,0}, {-26509, -19260}, {10126, 31163}, {10126, -31163}, {-26509, 19260}},
-  { {32767,0}, {10126, -31163}, {-26509, -19260}, {-26509, 19260}, {10126, 31163}}
-};
+static const c16_t TBL_3_SF5[MAXROW_TBL_SF5][MAXCLM_TBL_SF5] = {
+    {{32767, 0}, {32767, 0}, {32767, 0}, {32767, 0}, {32767, 0}},
+    {{32767, 0}, {10126, 31163}, {-26509, 19260}, {-26509, -19260}, {10126, -31163}},
+    {{32767, 0}, {-26509, 19260}, {10126, -31163}, {10126, 31163}, {-26509, -19260}},
+    {{32767, 0}, {-26509, -19260}, {10126, 31163}, {10126, -31163}, {-26509, 19260}},
+    {{32767, 0}, {10126, -31163}, {-26509, -19260}, {-26509, 19260}, {10126, 31163}}};
 
 #define  MAXROW_TBL_SF4_fmt3 4
 #define  MAXCLM_TBL_SF4      4
-static const int16_t TBL_3_SF4[MAXROW_TBL_SF4_fmt3][MAXCLM_TBL_SF4][2] = {{{32767, 0}, {32767, 0}, {32767, 0}, {32767, 0}},
-                                                                          {{32767, 0}, {-32767, 0}, {32767, 0}, {-32767, 0}},
-                                                                          {{32767, 0}, {32767, 0}, {-32767, 0}, {-32767, 0}},
-                                                                          {{32767, 0}, {-32767, 0}, {-32767, 0}, {32767, 0}}};
+static const c16_t TBL_3_SF4[MAXROW_TBL_SF4_fmt3][MAXCLM_TBL_SF4] = {{{32767, 0}, {32767, 0}, {32767, 0}, {32767, 0}},
+                                                                     {{32767, 0}, {-32767, 0}, {32767, 0}, {-32767, 0}},
+                                                                     {{32767, 0}, {32767, 0}, {-32767, 0}, {-32767, 0}},
+                                                                     {{32767, 0}, {-32767, 0}, {-32767, 0}, {32767, 0}}};
 
 /* orthogonal sequence remove */
-uint16_t pucchfmt3_OrthSeqRemove( int16_t RemoveFrqDev_fmt3[4][2][5][12][2],
-                                  int16_t Fmt3xDataRmvOrth[4][2][5][12][2],
-                                  uint8_t shortened_format,
-                                  uint16_t n3_pucch,
-                                  LTE_DL_FRAME_PARMS *frame_parms ) {
-  int16_t aa, sltNo, n, k;
-  int16_t Npucch_sf;
-  int16_t noc;
-
-  for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-    for (sltNo=0; sltNo<D_NSLT1SF; sltNo++) {
+static unsigned int pucchfmt3_OrthSeqRemove(c16_t RemoveFrqDev_fmt3[4][2][5][12],
+                                            c16_t Fmt3xDataRmvOrth[4][2][5][12],
+                                            unsigned int shortened_format,
+                                            unsigned int n3_pucch,
+                                            LTE_DL_FRAME_PARMS *frame_parms)
+{
+  for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+    for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+      unsigned int noc, Npucch_sf;
       if(shortened_format == 1) {
         if(sltNo == 0) {
           noc = n3_pucch % D_NPUCCH_SF4;
@@ -561,14 +493,12 @@ uint16_t pucchfmt3_OrthSeqRemove( int16_t RemoveFrqDev_fmt3[4][2][5][12][2],
         }
       }
 
-      for (n=0; n<Npucch_sf; n++) {
-        for (k=0; k<D_NSC1RB; k++) {
+      for (unsigned int n = 0; n < Npucch_sf; n++) {
+        for (unsigned int k = 0; k < D_NSC1RB; k++) {
           if ((sltNo == 1) && (shortened_format == 1)) {
-            Fmt3xDataRmvOrth[aa][sltNo][n][k][0] = (((int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][0] * TBL_3_SF4[noc][n][0] + (int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][1] * TBL_3_SF4[noc][n][1])>>15);
-            Fmt3xDataRmvOrth[aa][sltNo][n][k][1] = (((int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][1] * TBL_3_SF4[noc][n][0] - (int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][0] * TBL_3_SF4[noc][n][1])>>15);
+            Fmt3xDataRmvOrth[aa][sltNo][n][k] = c16MulConjShift(RemoveFrqDev_fmt3[aa][sltNo][n][k], TBL_3_SF4[noc][n], 15);
           } else {
-            Fmt3xDataRmvOrth[aa][sltNo][n][k][0] = (((int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][0] * TBL_3_SF5[noc][n][0] + (int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][1] * TBL_3_SF5[noc][n][1])>>15);
-            Fmt3xDataRmvOrth[aa][sltNo][n][k][1] = (((int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][1] * TBL_3_SF5[noc][n][0] - (int32_t)RemoveFrqDev_fmt3[aa][sltNo][n][k][0] * TBL_3_SF5[noc][n][1])>>15);
+            Fmt3xDataRmvOrth[aa][sltNo][n][k] = c16MulConjShift(RemoveFrqDev_fmt3[aa][sltNo][n][k], TBL_3_SF5[noc][n], 15);
           }
         }
       }
@@ -579,28 +509,25 @@ uint16_t pucchfmt3_OrthSeqRemove( int16_t RemoveFrqDev_fmt3[4][2][5][12][2],
 }
 
 /* averaging antenna */
-uint16_t pucchfmt3_AvgAnt( int16_t Fmt3xDataRmvOrth[4][2][5][12][2],
-                           int16_t Fmt3xDataAvgAnt[2][5][12][2],
-                           uint8_t shortened_format,
-                           LTE_DL_FRAME_PARMS *frame_parms ) {
-  int16_t aa, sltNo, n, k;
-  int16_t Npucch_sf;
-
-  for (sltNo=0; sltNo<D_NSLT1SF; sltNo++) {
+static unsigned int pucchfmt3_AvgAnt(c16_t Fmt3xDataRmvOrth[4][2][5][12],
+                                     c16_t Fmt3xDataAvgAnt[2][5][12],
+                                     unsigned int shortened_format,
+                                     LTE_DL_FRAME_PARMS *frame_parms)
+{
+  for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+    unsigned int Npucch_sf;
     if((sltNo == 1) && (shortened_format == 1)) {
       Npucch_sf = D_NPUCCH_SF4;
     } else {
       Npucch_sf = D_NPUCCH_SF5;
     }
 
-    for (n=0; n<Npucch_sf; n++) {
-      for (k=0; k<D_NSC1RB; k++) {
-        Fmt3xDataAvgAnt[sltNo][n][k][0] = 0;
-        Fmt3xDataAvgAnt[sltNo][n][k][1] = 0;
-
-        for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-          Fmt3xDataAvgAnt[sltNo][n][k][0] += Fmt3xDataRmvOrth[aa][sltNo][n][k][0]  / frame_parms->nb_antennas_rx;
-          Fmt3xDataAvgAnt[sltNo][n][k][1] += Fmt3xDataRmvOrth[aa][sltNo][n][k][1]  / frame_parms->nb_antennas_rx;
+    for (unsigned int n = 0; n < Npucch_sf; n++) {
+      for (unsigned int k = 0; k < D_NSC1RB; k++) {
+        Fmt3xDataAvgAnt[sltNo][n][k] = (c16_t){0};
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          Fmt3xDataAvgAnt[sltNo][n][k].r += Fmt3xDataRmvOrth[aa][sltNo][n][k].r / frame_parms->nb_antennas_rx;
+          Fmt3xDataAvgAnt[sltNo][n][k].i += Fmt3xDataRmvOrth[aa][sltNo][n][k].i / frame_parms->nb_antennas_rx;
         }
       }
     }
@@ -610,26 +537,22 @@ uint16_t pucchfmt3_AvgAnt( int16_t Fmt3xDataRmvOrth[4][2][5][12][2],
 }
 
 /* averaging symbol */
-uint16_t pucchfmt3_AvgSym( int16_t Fmt3xDataAvgAnt[2][5][12][2],
-                           int16_t Fmt3xDataAvgSym[2][12][2],
-                           uint8_t shortened_format ) {
-  int16_t sltNo, n, k;
-  int16_t Npucch_sf;
-
-  for (sltNo=0; sltNo<D_NSLT1SF; sltNo++) {
+static unsigned int pucchfmt3_AvgSym(c16_t Fmt3xDataAvgAnt[2][5][12], c16_t Fmt3xDataAvgSym[2][12], unsigned int shortened_format)
+{
+  for (unsigned int sltNo = 0; sltNo < D_NSLT1SF; sltNo++) {
+    unsigned int Npucch_sf;
     if((sltNo == 1) && (shortened_format == 1)) {
       Npucch_sf = D_NPUCCH_SF4;
     } else {
       Npucch_sf = D_NPUCCH_SF5;
     }
 
-    for (k=0; k<D_NSC1RB; k++) {
-      Fmt3xDataAvgSym[sltNo][k][0] = 0;
-      Fmt3xDataAvgSym[sltNo][k][1] = 0;
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
+      Fmt3xDataAvgSym[sltNo][k] = (c16_t){0};
 
-      for (n=0; n<Npucch_sf; n++) {
-        Fmt3xDataAvgSym[sltNo][k][0] += Fmt3xDataAvgAnt[sltNo][n][k][0] / Npucch_sf;
-        Fmt3xDataAvgSym[sltNo][k][1] += Fmt3xDataAvgAnt[sltNo][n][k][1] / Npucch_sf;
+      for (unsigned int n = 0; n < Npucch_sf; n++) {
+        Fmt3xDataAvgSym[sltNo][k].r += Fmt3xDataAvgAnt[sltNo][n][k].r / Npucch_sf;
+        Fmt3xDataAvgSym[sltNo][k].i += Fmt3xDataAvgAnt[sltNo][n][k].i / Npucch_sf;
       }
     }
   }
@@ -638,90 +561,74 @@ uint16_t pucchfmt3_AvgSym( int16_t Fmt3xDataAvgAnt[2][5][12][2],
 }
 
 /* iDFT */
-void pucchfmt3_IDft2( int16_t *x, int16_t *y ) {
-  int16_t i, k;
-  int16_t tmp[2];
-  int16_t calctmp[D_NSC1RB*2]= {0};
-
-  for(k=0; k<D_NSC1RB; k++) {
-    for (i=0; i<D_NSC1RB; i++) {
-      tmp[0] = alphaTBL_re[((i*k)%12)];
-      tmp[1] = alphaTBL_im[((i*k)%12)];
-      calctmp[2*k] += (((int32_t)x[2*i] * tmp[0] - (int32_t)x[2*i+1] * tmp[1])>>15);
-      calctmp[2*k+1] += (((int32_t)x[2*i+1] * tmp[0] + (int32_t)x[2*i] * tmp[1])>>15);
+static void pucchfmt3_IDft2(c16_t *x, c16_t *y)
+{
+  for (int k = 0; k < D_NSC1RB; k++) {
+    c32_t calctmp = {0};
+    for (int i = 0; i < D_NSC1RB; i++) {
+      c16_t tmp = c16mulShift(x[i], alphaTBL[((i * k) % 12)], 15);
+      calctmp.r += tmp.r;
+      calctmp.i += tmp.i;
     }
 
-    y[2*k] = (int16_t)( (double) calctmp[2*k] / sqrt(D_NSC1RB));
-    y[2*k+1] = (int16_t)((double) calctmp[2*k+1] / sqrt(D_NSC1RB));
+    y[k].r = (int16_t)(calctmp.r / sqrt(D_NSC1RB));
+    y[k].i = (int16_t)(calctmp.i / sqrt(D_NSC1RB));
   }
 }
 
 /* descramble */
-uint16_t pucchfmt3_Descramble( int16_t IFFTOutData_Fmt3[2][12][2],
-                               int16_t b[48],
-                               uint8_t subframe,
-                               uint32_t Nid_cell,
-                               uint32_t rnti
-                             ) {
-  int16_t m, k, c,i,j;
-  uint32_t cinit = 0;
+static unsigned int pucchfmt3_Descramble(c16_t IFFTOutData_Fmt3[2][12],
+                                         int16_t b[48],
+                                         unsigned int subframe,
+                                         uint32_t Nid_cell,
+                                         uint32_t rnti)
+{
   uint32_t x1;
-  uint32_t s,s0,s1;
-  cinit = (subframe + 1) * ((2 * Nid_cell + 1)<<16) + rnti;
-  s0 = lte_gold_generic(&x1,&cinit,1);
-  s1 = lte_gold_generic(&x1,&cinit,0);
-  i=0;
+  uint32_t cinit = (subframe + 1) * ((2 * Nid_cell + 1) << 16) + rnti;
+  uint32_t s0 = lte_gold_generic(&x1, &cinit, 1);
+  uint32_t s1 = lte_gold_generic(&x1, &cinit, 0);
+  int16_t i = 0;
 
-  for (m=0; m<D_NSLT1SF; m++) {
-    for(k=0; k<D_NSC1RB; k++) {
-      s = (i<32)? s0:s1;
-      j = (i<32)? i:(i-32);
-      c=((s>>j)&1);
-      b[i] = (IFFTOutData_Fmt3[m][k][0] * (1 - 2*c));
+  for (unsigned int m = 0; m < D_NSLT1SF; m++) {
+    for (unsigned int k = 0; k < D_NSC1RB; k++) {
+      uint32_t s = (i < 32) ? s0 : s1;
+      int16_t j = (i < 32) ? i : (i - 32);
+      int16_t c = ((s >> j) & 1);
+      b[i] = (IFFTOutData_Fmt3[m][k].r * (1 - 2 * c));
       i++;
       s = (i<32)? s0:s1;
       j = (i<32)? i:(i-32);
       c=((s>>j)&1);
-      b[i] = (IFFTOutData_Fmt3[m][k][1] * (1 - 2*c));
+      b[i] = (IFFTOutData_Fmt3[m][k].i * (1 - 2 * c));
       i++;
     }
   }
-
   return 0;
 }
 
-int16_t pucchfmt3_Decode( int16_t b[48],
-                          uint8_t subframe,
-                          int16_t DTXthreshold,
-                          int16_t Interpw,
-                          uint8_t do_sr) {
-  int16_t c, i;
-  int32_t Rho_tmp;
-  int16_t c_max;
-  int32_t Rho_max;
-  int16_t bit_pattern;
-
+static int16_t pucchfmt3_Decode(int16_t b[48], unsigned int subframe, int16_t DTXthreshold, int16_t Interpw, unsigned int do_sr)
+{
   /* Is payload 6bit or 7bit? */
+  int16_t bit_pattern;
   if( do_sr == 1 ) {
     bit_pattern = 128;
   } else {
     bit_pattern = 64;
   }
 
-  c=0;
-  Rho_tmp = 0;
-
-  for (i=0; i<48; i++) {
+  int32_t Rho_tmp = 0;
+  int16_t c = 0;
+  for (unsigned int i = 0; i < 48; i++) {
     Rho_tmp += b[i] * (1-2*chcod_tbl[c][i]);
   }
 
-  c_max = c;
-  Rho_max = Rho_tmp;
+  int16_t c_max = c;
+  int32_t Rho_max = Rho_tmp;
 
   for(c=1; c<bit_pattern; c++) {
     Rho_tmp = 0;
 
-    for (i=0; i<48; i++) {
+    for (unsigned int i = 0; i < 48; i++) {
       Rho_tmp += b[i] * (1-2*chcod_tbl[c][i]);
     }
 
@@ -744,129 +651,100 @@ int16_t pucchfmt3_Decode( int16_t b[48],
   }
 }
 
-
-uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB,
-		  int     frame,
-		  uint8_t subframe,
-		  uint8_t shortened_format
-)
+uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB, int frame, unsigned int subframe, unsigned int shortened_format)
 //-----------------------------------------------------------------------------
 {
   LTE_eNB_COMMON *common_vars = &eNB->common_vars;
   LTE_DL_FRAME_PARMS *frame_parms = &eNB->frame_parms;
+  c16_t z[12 * 14] = {0};
 
-  uint32_t u,v,n,aa;
-  uint32_t z[12*14] = {0};
-  int16_t *zptr = NULL;
-  int16_t rxcomp[NB_ANTENNAS_RX][2*12*14] = {0};
-  uint8_t ns,N_UL_symb,nsymb,n_cs_base;
-  uint16_t i,j,re_offset;
-  uint8_t m,l;
-  uint8_t n_cs,alpha_ind;
-  int16_t tmp_re,tmp_im,W_re=0,W_im=0;
-  int16_t W4_nouse[4]={32767,32767,-32768,-32768};
-  int32_t n0_IQ[2];
-  double interference_power;
-  int16_t *rxptr;
-  uint32_t symbol_offset;
+  const int16_t W4_nouse[4] = {32767, 32767, -32768, -32768};
 
-  uint32_t u0 = (frame_parms->pucch_config_common.grouphop[subframe<<1]) % 30;
-  uint32_t u1 = (frame_parms->pucch_config_common.grouphop[1+(subframe<<1)]) % 30;
-  uint32_t v0=frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe<<1];
-  uint32_t v1=frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[1+(subframe<<1)];
-  int calc_cnt;
+  const uint32_t u0 = (frame_parms->pucch_config_common.grouphop[subframe << 1]) % 30;
+  const uint32_t u1 = (frame_parms->pucch_config_common.grouphop[1 + (subframe << 1)]) % 30;
+  const uint32_t v0 = frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe << 1];
+  const uint32_t v1 = frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[1 + (subframe << 1)];
 
-  zptr = (int16_t *)z;
-  N_UL_symb = (frame_parms->Ncp==NORMAL) ? 7 : 6;
+  const unsigned int N_UL_symb = (frame_parms->Ncp == NORMAL) ? 7 : 6;
 
-  interference_power=0.0;
-  calc_cnt=0;
+  double interference_power = 0.0;
+  int calc_cnt = 0;
+
   // loop over 2 slots
-  for (n_cs_base=0; n_cs_base<12; n_cs_base++) {
-    zptr = (int16_t *)z;
-    for (ns=(subframe<<1),u=u0,v=v0; ns<(2+(subframe<<1)); ns++,u=u1,v=v1) {
-
+  for (unsigned int n_cs_base = 0; n_cs_base < 12; n_cs_base++) {
+    c16_t *zptr = z;
+    for (unsigned int ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
       //loop over symbols in slot
-      for (l=0; l<N_UL_symb; l++) {
-        n_cs = eNB->ncs_cell[ns][l]+n_cs_base;
+      for (unsigned int l = 0; l < N_UL_symb; l++) {
+        unsigned int n_cs = eNB->ncs_cell[ns][l] + n_cs_base;
         if(((l>1)&&(l<N_UL_symb-2)) || ((ns==(1+(subframe<<1))) && (shortened_format==1)) ){
-          zptr+=24;
+          zptr += 12;
           continue;
         }
-
+        c16_t W = {};
         if (l<2) {                                         // data
-          W_re=W4_nouse[l];
-          W_im=0;
+          W = (c16_t){W4_nouse[l], 0};
         } else if ((l>=N_UL_symb-2)) {                     // data
-          W_re=W4_nouse[l-N_UL_symb+4];
-          W_im=0;
+          W = (c16_t){W4_nouse[l - N_UL_symb + 4], 0};
         }
 
-        alpha_ind=0;
+        unsigned int alpha_ind = 0;
         // compute output sequence
 
-        for (n=0; n<12; n++) {
-
+        for (unsigned int n = 0; n < 12; n++) {
           // this is r_uv^alpha(n)
-          tmp_re = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][n<<1] - (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)])>>15);
-          tmp_im = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)] + (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][n<<1])>>15);
-
+          c16_t tmp = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
           // this is S(ns)*w_noc(m)*r_uv^alpha(n)
-          zptr[n<<1] = (tmp_re*W_re - tmp_im*W_im)>>15;
-          zptr[1+(n<<1)] = -(tmp_re*W_im + tmp_im*W_re)>>15;
-
+          zptr[n] = c16mulShift(tmp, W, 15);
           alpha_ind = (alpha_ind + n_cs)%12;
         } // n
 
-        zptr+=24;
+        zptr += 12;
       } // l
     } // ns
 
-    m = 1;
+    const unsigned int m = 1;
 
-    nsymb = N_UL_symb<<1;
+    unsigned int nsymb = N_UL_symb << 1;
 
-    zptr = (int16_t*)z;
+    zptr = z;
 
     // Do detection
-    for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-      n0_IQ[0]=0;
-      n0_IQ[1]=0;
-      for (j=0,l=0; l<nsymb; l++) {
+    for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+      c32_t n0_IQ = {0};
+      for (int j = 0, l = 0; l < nsymb; l++) {
         if((((l%N_UL_symb)>1)&&((l%N_UL_symb)<N_UL_symb-2)) || ((nsymb>=N_UL_symb) && (shortened_format==1)) ){
-          j+=24;
+          j += 12;
           continue;
         }
-          if ((l<(nsymb>>1)) && ((m&1) == 0))
-            re_offset = (m*6) + frame_parms->first_carrier_offset;
-          else if ((l<(nsymb>>1)) && ((m&1) == 1))
-            re_offset = frame_parms->first_carrier_offset + (frame_parms->N_RB_DL - (m>>1) - 1)*12;
-          else if ((m&1) == 0)
-            re_offset = frame_parms->first_carrier_offset + (frame_parms->N_RB_DL - (m>>1) - 1)*12;
-          else
-            re_offset = ((m-1)*6) + frame_parms->first_carrier_offset;
+        int re_offset;
+        if ((l < (nsymb >> 1)) && ((m & 1) == 0))
+          re_offset = (m * 6) + frame_parms->first_carrier_offset;
+        else if ((l < (nsymb >> 1)) && ((m & 1) == 1))
+          re_offset = frame_parms->first_carrier_offset + (frame_parms->N_RB_DL - (m >> 1) - 1) * 12;
+        else if ((m & 1) == 0)
+          re_offset = frame_parms->first_carrier_offset + (frame_parms->N_RB_DL - (m >> 1) - 1) * 12;
+        else
+          re_offset = ((m - 1) * 6) + frame_parms->first_carrier_offset;
 
         if (re_offset > frame_parms->ofdm_symbol_size)
           re_offset -= (frame_parms->ofdm_symbol_size);
 
-        symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size*l;
-        rxptr = (int16_t *)&common_vars->rxdataF[aa][symbol_offset];
+        unsigned int symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size * l;
+        c16_t *rxptr = (c16_t *)&common_vars->rxdataF[aa][symbol_offset];
 
-        for (i=0; i<12; i++,j+=2,re_offset++) {
+        for (int i = 0; i < 12; i++, j++, re_offset++) {
           if (re_offset==frame_parms->ofdm_symbol_size)
             re_offset = 0;
-
-          rxcomp[aa][j]   = (int16_t)((rxptr[re_offset<<1]*(int32_t)zptr[j])>>15)   - ((rxptr[1+(re_offset<<1)]*(int32_t)zptr[1+j])>>15);
-          rxcomp[aa][1+j] = (int16_t)((rxptr[re_offset<<1]*(int32_t)zptr[1+j])>>15) + ((rxptr[1+(re_offset<<1)]*(int32_t)zptr[j])>>15);
-          n0_IQ[0]+=rxcomp[aa][j];
-          n0_IQ[1]+=rxcomp[aa][1+j];
-        } //re
+          c16_t rxcomp = c16mulShift(rxptr[re_offset], zptr[j], 15);
+          n0_IQ = (c32_t){n0_IQ.r + rxcomp.r, n0_IQ.i + rxcomp.i};
+        } // re
         calc_cnt++;
       } // symbol
-      n0_IQ[0]/=12;
-      n0_IQ[1]/=12;
-      interference_power+= (double)(n0_IQ[0]*n0_IQ[0]+n0_IQ[1]*n0_IQ[1]);
-    }  // antenna
+      n0_IQ.r /= 12;
+      n0_IQ.i /= 12;
+      interference_power += squaredMod(n0_IQ);
+    } // antenna
   }
   interference_power /= calc_cnt;
   eNB->measurements.n0_pucch_dB = dB_fixed_x10((int)interference_power)/10;
@@ -879,89 +757,56 @@ uint32_t calc_pucch_1x_interference(PHY_VARS_eNB *eNB,
 
 uint32_t rx_pucch(PHY_VARS_eNB *eNB,
                   PUCCH_FMT_t fmt,
-                  uint8_t UCI_id,
-                  uint16_t n1_pucch,
-                  uint16_t n2_pucch,
-                  uint8_t shortened_format,
+                  unsigned int UCI_id,
+                  unsigned int n1_pucch,
+                  unsigned int n2_pucch,
+                  unsigned int shortened_format,
                   uint8_t *payload,
-                  int     frame,
-                  uint8_t subframe,
-                  uint8_t pucch1_thres,
-                  int br_flag
-                 )
+                  int frame,
+                  unsigned int subframe,
+                  unsigned int pucch1_thres,
+                  int br_flag)
 //-----------------------------------------------------------------------------
 {
-  static int first_call = 1;
   LTE_eNB_COMMON *common_vars = &eNB->common_vars;
   LTE_DL_FRAME_PARMS *frame_parms = &eNB->frame_parms;
-  int8_t sigma2_dB = /*max(eNB->measurements.n0_subband_power_tot_dB[0], eNB->measurements.n0_subband_power_tot_dB[eNB->frame_parms.N_RB_UL-1]); */eNB->measurements.n0_pucch_dB;
+  int8_t sigma2_dB = eNB->measurements.n0_pucch_dB;
+  c16_t z[12 * 14];
+  c16_t rxcomp[4][12 * 14];
+  const unsigned int c = (frame_parms->Ncp == 0) ? 3 : 2;
+  unsigned int phase_max = 0;
+  int32_t chest_mag = 0;
+  ;
+  uint32_t stat_max = 0, stat0_max[4], stat1_max[4];
+  uint8_t log2_maxh = 0;
+  const unsigned int deltaPUCCH_Shift = frame_parms->pucch_config_common.deltaPUCCH_Shift;
+  const unsigned int NRB2 = frame_parms->pucch_config_common.nRB_CQI;
+  const unsigned int Ncs1_div_deltaPUCCH_Shift = frame_parms->pucch_config_common.nCS_AN;
 
-  uint32_t u,v,n,aa;
-  uint32_t z[12*14];
-  int16_t *zptr;
-  int16_t rxcomp[4][2*12*14];
-  uint8_t ns,N_UL_symb,nsymb,n_oc,n_oc0,n_oc1;
-  uint8_t c = (frame_parms->Ncp==0) ? 3 : 2;
-  int16_t nprime,nprime0,nprime1;
-  uint16_t i,j,re_offset,thres,h,off;
-  uint8_t Nprime_div_deltaPUCCH_Shift,Nprime,d;
-  uint8_t m,l,refs,phase,re,l2,phase_max=0;
-  uint8_t n_cs,S,alpha_ind,rem;
-  int16_t tmp_re,tmp_im,W_re=0,W_im=0;
-  int16_t *rxptr;
-  uint32_t symbol_offset;
-  int16_t stat0_ref_re[4], stat0_ref_im[4], stat1_ref_re[4], stat1_ref_im[4];
-  int16_t chest0_re[4][12],chest0_im[4][12];
-  int16_t chest1_re[4][12],chest1_im[4][12];
-  int32_t chest_mag;
-  int32_t stat0_re[4],stat1_re[4],stat0_im[4],stat1_im[4];
-  uint32_t stat0[4],stat1[4],stat_max=0,stat0_max[4],stat1_max[4]; 
-  uint8_t log2_maxh;
-  uint8_t deltaPUCCH_Shift          = frame_parms->pucch_config_common.deltaPUCCH_Shift;
-  uint8_t NRB2                      = frame_parms->pucch_config_common.nRB_CQI;
-  uint8_t Ncs1_div_deltaPUCCH_Shift = frame_parms->pucch_config_common.nCS_AN;
-
-  uint32_t u0 = (frame_parms->pucch_config_common.grouphop[subframe<<1]) % 30;
-  uint32_t u1 = (frame_parms->pucch_config_common.grouphop[1+(subframe<<1)]) % 30;
-  uint32_t v0=frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe<<1];
-  uint32_t v1=frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[1+(subframe<<1)];
-  int chL;
+  const uint32_t u0 = (frame_parms->pucch_config_common.grouphop[subframe << 1]) % 30;
+  const uint32_t u1 = (frame_parms->pucch_config_common.grouphop[1 + (subframe << 1)]) % 30;
+  const uint32_t v0 = frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[subframe << 1];
+  const uint32_t v1 = frame_parms->pusch_config_common.ul_ReferenceSignalsPUSCH.seqhop[1 + (subframe << 1)];
   /* PUCCH format3 >> */
-  uint16_t Ret = 0;
-  int16_t SubCarrierDeMapData[4][14][12][2];       //[Antenna][Symbol][Subcarrier][Complex]
-  int16_t CshData_fmt3[4][14][12][2];              //[Antenna][Symbol][Subcarrier][Complex]
-  double delta_theta[4][12];                       //[Antenna][Subcarrier][Complex]
-  int16_t ChestValue[4][2][12][2];                 //[Antenna][Slot][Subcarrier][Complex]
-  int16_t ChdetAfterValue_fmt3[4][14][12][2];      //[Antenna][Symbol][Subcarrier][Complex]
-  int16_t RemoveFrqDev_fmt3[4][2][5][12][2];       //[Antenna][Slot][PUCCH_Symbol][Subcarrier][Complex]
-  int16_t Fmt3xDataRmvOrth[4][2][5][12][2];        //[Antenna][Slot][PUCCH_Symbol][Subcarrier][Complex]
-  int16_t Fmt3xDataAvgAnt[2][5][12][2];                         //[Slot][PUCCH_Symbol][Subcarrier][Complex]
-  int16_t Fmt3xDataAvgSym[2][12][2];                            //[Slot][Subcarrier][Complex]
-  int16_t IFFTOutData_Fmt3[2][12][2];                           //[Slot][Subcarrier][Complex]
   int16_t b[48];                                                //[bit]
   int16_t payload_entity = -1;
-  int16_t Interpw;
   int16_t payload_max;
-  // TODO
-  // When using PUCCH format3, it must be an argument of rx_pucch function
-  uint16_t n3_pucch = 20;
-  uint16_t n3_pucch_array[NUMBER_OF_UE_MAX]= {1};
-  n3_pucch_array[0]=n3_pucch;
-  uint8_t do_sr = 1;
-  uint16_t crnti=0x1234;
-  int16_t DTXthreshold = 10;
+
+  const unsigned int do_sr = 1;
+  const rnti_t crnti = 0x1234;
+  const int16_t DTXthreshold = 10;
   /* PUCCH format3 << */
 
+  static int first_call = 1;
   if (first_call == 1) {
-    for (i=0; i<10; i++) {
-      for (j=0; j<NUMBER_OF_UE_MAX; j++) {
+    for (int i = 0; i < 10; i++) {
+      for (int j = 0; j < NUMBER_OF_UE_MAX; j++) {
         eNB->pucch1_stats_cnt[j][i]=0;
         eNB->pucch1ab_stats_cnt[j][i]=0;
         if ( IS_SOFTMODEM_IQPLAYER)
           eNB->pucch1_stats_thres[j][i]=0;
       }
     }
-
     first_call=0;
   }
   eNB_UCI_STATS_t *uci_stats = NULL;
@@ -998,16 +843,15 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       LOG_E(PHY,"[eNB] rx_pucch: Illegal Ncs1_div_deltaPUCCH_Shift %d (should be 0...7)\n",Ncs1_div_deltaPUCCH_Shift);
       return(-1);
     }
-
-    zptr = (int16_t *)z;
-    thres = (c*Ncs1_div_deltaPUCCH_Shift);
-    Nprime_div_deltaPUCCH_Shift = (n1_pucch < thres) ? Ncs1_div_deltaPUCCH_Shift : (12/deltaPUCCH_Shift);
-    Nprime = Nprime_div_deltaPUCCH_Shift * deltaPUCCH_Shift;
+    c16_t *zptr = z;
+    unsigned int thres = (c * Ncs1_div_deltaPUCCH_Shift);
+    const unsigned int Nprime_div_deltaPUCCH_Shift = (n1_pucch < thres) ? Ncs1_div_deltaPUCCH_Shift : (12 / deltaPUCCH_Shift);
+    const unsigned int Nprime = Nprime_div_deltaPUCCH_Shift * deltaPUCCH_Shift;
 #ifdef DEBUG_PUCCH_RX
     printf("[eNB] PUCCH: cNcs1/deltaPUCCH_Shift %d, Nprime %d, n1_pucch %d\n",thres,Nprime,n1_pucch);
 #endif
-    N_UL_symb = (frame_parms->Ncp==NORMAL) ? 7 : 6;
-
+    const unsigned int N_UL_symb = (frame_parms->Ncp == NORMAL) ? 7 : 6;
+    int16_t nprime0, nprime1;
     if (n1_pucch < thres)
       nprime0=n1_pucch;
     else
@@ -1016,20 +860,20 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     if (n1_pucch >= thres)
       nprime1= ((c*(nprime0+1))%((12*c/deltaPUCCH_Shift)+1))-1;
     else {
-      d = (frame_parms->Ncp==0) ? 2 : 0;
-      h= (nprime0+d)%(c*Nprime_div_deltaPUCCH_Shift);
+      unsigned int d = (frame_parms->Ncp == 0) ? 2 : 0;
+      unsigned int h = (nprime0 + d) % (c * Nprime_div_deltaPUCCH_Shift);
       nprime1 = (h/c) + (h%c)*Nprime_div_deltaPUCCH_Shift;
     }
 
 #ifdef DEBUG_PUCCH_RX
     printf("PUCCH: nprime0 %d nprime1 %d\n",nprime0,nprime1);
 #endif
-    n_oc0 = nprime0/Nprime_div_deltaPUCCH_Shift;
+    unsigned int n_oc0 = nprime0 / Nprime_div_deltaPUCCH_Shift;
 
     if (frame_parms->Ncp==1)
       n_oc0<<=1;
 
-    n_oc1 = nprime1/Nprime_div_deltaPUCCH_Shift;
+    unsigned int n_oc1 = nprime1 / Nprime_div_deltaPUCCH_Shift;
 
     if (frame_parms->Ncp==1)  // extended CP
       n_oc1<<=1;
@@ -1037,91 +881,73 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #ifdef DEBUG_PUCCH_RX
     printf("[eNB] PUCCH: noc0 %d noc11 %d\n",n_oc0,n_oc1);
 #endif
-    nprime=nprime0;
-    n_oc  =n_oc0;
-
+    int16_t nprime = nprime0;
+    unsigned int n_oc = n_oc0;
+    c16_t W = {};
     // loop over 2 slots
-    for (ns=(subframe<<1),u=u0,v=v0; ns<(2+(subframe<<1)); ns++,u=u1,v=v1) {
+    for (unsigned int ns = (subframe << 1), u = u0, v = v0; ns < (2 + (subframe << 1)); ns++, u = u1, v = v1) {
+      unsigned int S;
       if ((nprime&1) == 0)
         S=0;  // 1
       else
         S=1;  // j
 
-      /*
-      if (fmt==pucch_format1)
-        LOG_I(PHY,"[eNB] subframe %d => PUCCH1: u%d %d, v%d %d : ", subframe,ns&1,u,ns&1,v);
-      else
-        LOG_I(PHY,"[eNB] subframe %d => PUCCH1a/b: u%d %d, v%d %d : ", subframe,ns&1,u,ns&1,v);
-      */
-
       //loop over symbols in slot
-      for (l=0; l<N_UL_symb; l++) {
+      for (unsigned int l = 0; l < N_UL_symb; l++) {
         // Compute n_cs (36.211 p. 18)
-        n_cs = eNB->ncs_cell[ns][l];
+        unsigned int n_cs = eNB->ncs_cell[ns][l];
 
         if (frame_parms->Ncp==0) { // normal CP
-          n_cs = ((uint16_t)n_cs + (nprime*deltaPUCCH_Shift + (n_oc%deltaPUCCH_Shift))%Nprime)%12;
+          n_cs = (n_cs + (nprime * deltaPUCCH_Shift + (n_oc % deltaPUCCH_Shift)) % Nprime) % 12;
         } else {
-          n_cs = ((uint16_t)n_cs + (nprime*deltaPUCCH_Shift + (n_oc>>1))%Nprime)%12;
+          n_cs = (n_cs + (nprime * deltaPUCCH_Shift + (n_oc >> 1)) % Nprime) % 12;
         }
 
-        refs=0;
+        unsigned int refs = 0;
 
         // Comput W_noc(m) (36.211 p. 19)
         if ((ns==(1+(subframe<<1))) && (shortened_format==1)) {  // second slot and shortened format
           if (l<2) {                                         // data
-            W_re=W3_re[n_oc][l];
-            W_im=W3_im[n_oc][l];
+            W = W3[n_oc][l];
           } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==0)) { // reference and normal CP
-            W_re=W3_re[n_oc][l-2];
-            W_im=W3_im[n_oc][l-2];
+            W = W3[n_oc][l - 2];
             refs=1;
           } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==1)) { // reference and extended CP
-            W_re=W4[n_oc][l-2];
-            W_im=0;
+            W = (c16_t){W4[n_oc][l - 2], 0};
             refs=1;
           } else if ((l>=N_UL_symb-2)) {                      // data
-            W_re=W3_re[n_oc][l-N_UL_symb+4];
-            W_im=W3_im[n_oc][l-N_UL_symb+4];
+            W = W3[n_oc][l - N_UL_symb + 4];
           }
         } else {
           if (l<2) {                                         // data
-            W_re=W4[n_oc][l];
-            W_im=0;
+            W = (c16_t){W4[n_oc][l], 0};
           } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==NORMAL)) { // reference and normal CP
-            W_re=W3_re[n_oc][l-2];
-            W_im=W3_im[n_oc][l-2];
+            W = W3[n_oc][l - 2];
             refs=1;
           } else if ((l<N_UL_symb-2)&&(frame_parms->Ncp==EXTENDED)) { // reference and extended CP
-            W_re=W4[n_oc][l-2];
-            W_im=0;
+            W = (c16_t){W4[n_oc][l - 2], 0};
             refs=1;
           } else if ((l>=N_UL_symb-2)) {                     // data
-            W_re=W4[n_oc][l-N_UL_symb+4];
-            W_im=0;
+            W = (c16_t){W4[n_oc][l - N_UL_symb + 4], 0};
           }
         }
 
         // multiply W by S(ns) (36.211 p.17). only for data, reference symbols do not have this factor
         if ((S==1)&&(refs==0)) {
-          tmp_re = W_re;
-          W_re = -W_im;
-          W_im = tmp_re;
+          W = (c16_t){-W.i, W.r};
         }
 
 #ifdef DEBUG_PUCCH_RX
         printf("[eNB] PUCCH: ncs[%d][%d]=%d, W_re %d, W_im %d, S %d, refs %d\n",ns,l,n_cs,W_re,W_im,S,refs);
 #endif
-        alpha_ind=0;
+        unsigned int alpha_ind = 0;
         // compute output sequence
 
-        for (n=0; n<12; n++) {
+        for (unsigned int n = 0; n < 12; n++) {
           // this is r_uv^alpha(n)
-          tmp_re = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][n<<1] - (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)])>>15);
-          tmp_im = (int16_t)(((int32_t)alpha_re[alpha_ind] * ul_ref_sigs[u][v][0][1+(n<<1)] + (int32_t)alpha_im[alpha_ind] * ul_ref_sigs[u][v][0][n<<1])>>15);
+          c16_t tmp = c16mulShift(alphaTBL[alpha_ind], ul_ref_sigs[u][v][0][n], 15);
           // this is S(ns)*w_noc(m)*r_uv^alpha(n)
-          zptr[n<<1] = (tmp_re*W_re - tmp_im*W_im)>>15;
-          zptr[1+(n<<1)] = -(tmp_re*W_im + tmp_im*W_re)>>15;
+          zptr[n] = c16mulShift(tmp, W, 15);
 #ifdef DEBUG_PUCCH_RX
           printf("[eNB] PUCCH subframe %d z(%d,%u) => %d,%d, alpha(%d) => %d,%d\n",subframe,l,n,zptr[n<<1],zptr[(n<<1)+1],
                  alpha_ind,alpha_re[alpha_ind],alpha_im[alpha_ind]);
@@ -1129,25 +955,26 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
           alpha_ind = (alpha_ind + n_cs)%12;
         } // n
 
-        zptr+=24;
+        zptr += 12;
       } // l
 
       nprime=nprime1;
       n_oc  =n_oc1;
     } // ns
 
-    rem = ((((deltaPUCCH_Shift*Ncs1_div_deltaPUCCH_Shift)>>3)&7)>0) ? 1 : 0;
-    m = (n1_pucch < thres) ? NRB2 : (((n1_pucch-thres)/(12*c/deltaPUCCH_Shift))+NRB2+((deltaPUCCH_Shift*Ncs1_div_deltaPUCCH_Shift)>>3)+rem);
+    unsigned int rem = ((((deltaPUCCH_Shift * Ncs1_div_deltaPUCCH_Shift) >> 3) & 7) > 0) ? 1 : 0;
+    unsigned int m = (n1_pucch < thres) ? NRB2
+                                : (((n1_pucch - thres) / (12 * c / deltaPUCCH_Shift)) + NRB2
+                                   + ((deltaPUCCH_Shift * Ncs1_div_deltaPUCCH_Shift) >> 3) + rem);
 #ifdef DEBUG_PUCCH_RX
     printf("[eNB] PUCCH: m %d, thres %d, NRB2 %d\n",m,thres,NRB2);
 #endif
-    nsymb = N_UL_symb<<1;
-    zptr = (int16_t *)z;
-
+    unsigned int nsymb = N_UL_symb << 1;
+    zptr = z;
     // Do detection
-    for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-      //for (j=0,l=0;l<(nsymb-1);l++) {
-      for (j=0,l=0; l<nsymb; l++) {
+    for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+      for (int j = 0, l = 0; l < nsymb; l++) {
+        unsigned int re_offset;
         if (br_flag > 0 ) {
           if ((m&1) == 0)
             re_offset = (m*6) + frame_parms->first_carrier_offset;
@@ -1167,24 +994,23 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
         if (re_offset > frame_parms->ofdm_symbol_size)
           re_offset -= (frame_parms->ofdm_symbol_size);
 
-        symbol_offset = (unsigned int)frame_parms->ofdm_symbol_size*l;
-        rxptr = (int16_t *)&common_vars->rxdataF[aa][symbol_offset];
+        unsigned int symbol_offset = frame_parms->ofdm_symbol_size * l;
+        c16_t *rxptr = (c16_t *)&common_vars->rxdataF[aa][symbol_offset];
 
-        for (i=0; i<12; i++,j+=2,re_offset++) {
+        for (int i = 0; i < 12; i++, j++, re_offset++) {
           if (re_offset==frame_parms->ofdm_symbol_size)
             re_offset = 0;
 
-          rxcomp[aa][j]   = (int16_t)((rxptr[re_offset<<1]*(int32_t)zptr[j])>>15)   - ((rxptr[1+(re_offset<<1)]*(int32_t)zptr[1+j])>>15);
-          rxcomp[aa][1+j] = (int16_t)((rxptr[re_offset<<1]*(int32_t)zptr[1+j])>>15) + ((rxptr[1+(re_offset<<1)]*(int32_t)zptr[j])>>15);
+          rxcomp[aa][j] = c16mulShift(rxptr[re_offset], zptr[j], 15);
 #ifdef DEBUG_PUCCH_RX
           printf("[eNB] PUCCH subframe %d (%d,%d,%d,%d,%d) => (%d,%d) x (%d,%d) : (%d,%d)\n",subframe,l,i,re_offset,m,j,
                  rxptr[re_offset<<1],rxptr[1+(re_offset<<1)],
                  zptr[j],zptr[1+j],
                  rxcomp[aa][j],rxcomp[aa][1+j]);
 #endif
-        } //re
+        } // re
       } // symbol
-    }  // antenna
+    } // antenna
 
     // PUCCH Format 1
     // Do cfo correction and MRC across symbols
@@ -1196,56 +1022,45 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #endif
       stat_max = 0;
 
-      for (phase=0; phase<7; phase++) {
+      for (unsigned int phase = 0; phase < 7; phase++) {
         int stat=0;
-        for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-	  stat0[aa]=0;stat1[aa]=0;
-          for (re=0; re<12; re++) {
-	    stat0_re[aa]=0;
-	    stat0_im[aa]=0;
-	    stat1_re[aa]=0;
-	    stat1_im[aa]=0;
-            off=re<<1;
-            const int16_t *cfo = (frame_parms->Ncp == 0) ? &cfo_pucch_np[14 * phase] : &cfo_pucch_ep[12 * phase];
+        c32_t stat0_cmul[4] = {};
+        c32_t stat1_cmul[4] = {};
+        uint32_t stat0[4]={};
+        uint32_t stat1[4]={};
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int re = 0; re < 12; re++) {
+            unsigned int off = re;
+            const c16_t *cfo = (c16_t *)(frame_parms->Ncp == 0 ? &cfo_pucch_np[14 * phase] : &cfo_pucch_ep[12 * phase]);
 
-            for (l=0; l<(nsymb>>1); l++) {
-              stat0_re[aa] += (((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15))/nsymb;
-              stat0_im[aa] += (((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15))/nsymb;
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d,%d) => (%d,%d) x (%d,%d) : (%d,%d) , stat %d\n",subframe,phase,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     stat0_re[aa],stat0_im[aa],stat);
-#endif
+            for (unsigned int l = 0; l < (nsymb >> 1); l++) {
+              c16_t tmp =  c16x32div(c32x16mulShift(rxcomp[aa][off], cfo[l], 15),nsymb);
+              stat0_cmul[aa].r += tmp.r;
+              stat0_cmul[aa].i += tmp.i;
+              off++;
             }
 
-            for (l2=0,l=(nsymb>>1); l < nsymb; l++,l2++) {
-              stat1_re[aa] += (((rxcomp[aa][off]*(int32_t)cfo[l2<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l2<<1)])>>15))/nsymb;
-              stat1_im[aa] += (((rxcomp[aa][off]*(int32_t)cfo[1+(l2<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l2<<1)])>>15))/nsymb;
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d,%d) => (%d,%d) x (%d,%d) : (%d,%d), stat %d\n",subframe,phase,l2,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l2<<1],cfo[1+(l2<<1)],
-                     stat1_re[aa],stat1_im[aa],stat);
-#endif
+            for (unsigned int l2 = 0, l = (nsymb >> 1); l < nsymb; l++, l2++) {
+              c16_t tmp = c16x32div(c32x16mulShift(rxcomp[aa][off], cfo[l2], 15),nsymb);
+              stat1_cmul[aa].r += tmp.r;
+              stat1_cmul[aa].i += tmp.i;
+              off++;
             }
-           
-            stat0[aa] += ((stat0_re[aa]*stat0_re[aa]) + (stat0_im[aa]*stat0_im[aa]));
-	    stat1[aa] += ((stat1_re[aa]*stat1_re[aa]) + (stat1_im[aa]*stat1_im[aa]));
-          } //re
+
+            stat0[aa] += squaredMod(stat0_cmul[aa]);
+            stat1[aa] += squaredMod(stat1_cmul[aa]);
+          } // re
           stat+=(stat0[aa]+stat1[aa]);
         } // aa
         if (stat>stat_max) {
           stat_max = stat;
           phase_max = phase;
-          for (aa=0;aa<frame_parms->nb_antennas_rx;aa++) {
-             stat0_max[aa] = stat0[aa];
-             stat1_max[aa] = stat1[aa];
+          for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+            stat0_max[aa] = stat0[aa];
+            stat1_max[aa] = stat1[aa];
           }
         }
-      } //phase
+      } // phase
 
       stat_max /= 12;
 #ifdef DEBUG_PUCCH_RX
@@ -1296,73 +1111,55 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       LOG_D(PHY,"Doing PUCCH detection for format 1a/1b\n");
 #endif
       int stat_re=0,stat_im=0;
-      for (phase=0; phase<7; phase++) {
+      for (unsigned int phase = 0; phase < 7; phase++) {
         int stat=0;
-        for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-          stat0[aa]=0;
-          stat1[aa]=0;
-          for (re=0; re<12; re++) {
+        c64_t stat0_cumul[4] = {};
+        c64_t stat1_cumul[4] = {};
+        c64_t stat0_ref_cumul[4] = {};
+        c64_t stat1_ref_cumul[4] = {};
+        uint32_t stat0[4]={};
+        uint32_t stat1[4]={};
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int re = 0; re < 12; re++) {
             // compute received energy first slot, seperately for data and reference
             // by coherent combining across symbols but not resource elements
             // Note: assumption is that channel is stationary over symbols in slot after CFO
-            stat0_re[aa]=0;
-            stat0_im[aa]=0;
-            stat0_ref_re[aa]=0;
-            stat0_ref_im[aa]=0;
-            off=re<<1;
-            const int16_t *cfo = (frame_parms->Ncp == 0) ? &cfo_pucch_np[14 * phase] : &cfo_pucch_ep[12 * phase];
+            unsigned int off = re;
+            const c16_t *cfo = (c16_t *)(frame_parms->Ncp == 0 ? &cfo_pucch_np[14 * phase] : &cfo_pucch_ep[12 * phase]);
 
-            for (l=0; l<(nsymb>>1); l++) {
+            for (unsigned int l = 0; l < (nsymb >> 1); l++) {
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
               if ((l<2)||(l>(nsymb>>1) - 3)) {  //data symbols
-                stat0_re[aa] += ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-                stat0_im[aa] += ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
+                stat0_cumul[aa].r += tmp.r;
+                stat0_cumul[aa].i += tmp.i;
               } else { //reference symbols
-                stat0_ref_re[aa] += ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-                stat0_ref_im[aa] += ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
+                stat0_ref_cumul[aa].r += tmp.r;
+                stat0_ref_cumul[aa].i += tmp.i;
               }
 
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d)\n",subframe,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     stat_re,stat_im);
-#endif
+              off++;
             }
 
             // this is total energy received, summed over data and reference
-            stat0[aa] += ((((stat0_re[aa]*stat0_re[aa])) + ((stat0_im[aa]*stat0_im[aa])) +
-                      ((stat0_ref_re[aa]*stat0_ref_re[aa])) + ((stat0_ref_im[aa]*stat0_ref_im[aa])))/nsymb);
+            stat0[aa] += (squaredMod(stat0_cumul[aa]) + squaredMod(stat0_ref_cumul[aa]))/nsymb;
             // now second slot
-            stat1_re[aa]=0;
-            stat1_im[aa]=0;
-            stat1_ref_re[aa]=0;
-            stat1_ref_im[aa]=0;
-
-            for (l2=0,l=(nsymb>>1); l< nsymb; l++,l2++) {
+            for (unsigned int l2 = 0, l = (nsymb >> 1); l < nsymb; l++, l2++) {
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l2], 15);
               if ((l2<2) || ((l2>(nsymb>>1) - 3)) ) {  // data symbols
-                stat1_re[aa] += ((rxcomp[aa][off]*(int32_t)cfo[l2<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l2<<1)])>>15);
-                stat1_im[aa] += ((rxcomp[aa][off]*(int32_t)cfo[1+(l2<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l2<<1)])>>15);
+                stat1_cumul[aa].r += tmp.r;
+                stat1_cumul[aa].i += tmp.i;
               } else { //reference_symbols
-                stat1_ref_re[aa] += ((rxcomp[aa][off]*(int32_t)cfo[l2<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l2<<1)])>>15);
-                stat1_ref_im[aa] += ((rxcomp[aa][off]*(int32_t)cfo[1+(l2<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l2<<1)])>>15);
+                stat1_ref_cumul[aa].r += tmp.r;
+                stat1_ref_cumul[aa].i += tmp.i;
               }
-
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d)\n",subframe,l2,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l2<<1],cfo[1+(l2<<1)],
-                     stat_re,stat_im);
-#endif
+              off++;
             }
 
 #ifdef DEBUG_PUCCH_RX
             printf("aa%u re %d : phase %d : stat %d\n",aa,re,phase,stat);
 #endif
-            stat1[aa] += ((((stat1_re[aa]*stat1_re[aa])) + ((stat1_im[aa]*stat1_im[aa])) +
-                      ((stat1_ref_re[aa]*stat1_ref_re[aa])) + ((stat1_ref_im[aa]*stat1_ref_im[aa])))/nsymb);
-          } //re
+            stat1[aa] += (squaredMod(stat1_cumul[aa]) + squaredMod(stat1_ref_cumul[aa]))/nsymb;
+          } // re
           stat+=(stat0[aa]+stat1[aa]);
         } // aa
 
@@ -1374,7 +1171,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
           stat_max = stat;
           phase_max = phase;
         }
-      } //phase
+      } // phase
 
       stat_max/=(12);  //normalize to energy per symbol and RE
 #ifdef DEBUG_PUCCH_RX
@@ -1388,34 +1185,34 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       // Not 100% sure
         
       if (sigma2_dB<(dB_fixed(stat_max) - (IS_SOFTMODEM_IQPLAYER?0:pucch1_thres)) ) {//
-        chL = (nsymb>>1)-4;
+        unsigned int chL = (nsymb >> 1) - 4;
         chest_mag=0;
-        const int16_t *cfo = (frame_parms->Ncp == 0) ? &cfo_pucch_np[14 * phase_max] : &cfo_pucch_ep[12 * phase_max];
+        const c16_t *cfo = (c16_t *)(frame_parms->Ncp == 0 ? &cfo_pucch_np[14 * phase_max] : &cfo_pucch_ep[12 * phase_max]);
+        c16_t chest0[4][12];
+        c16_t chest1[4][12];
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int re = 0; re < 12; re++) {
 
-        for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-          for (re=0; re<12; re++) {
             // channel estimate for first slot
-            chest0_re[aa][re]=0;
-            chest0_im[aa][re]=0;
-
-            for (l=2; l<(nsymb>>1)-2; l++) {
-              off=(re<<1) + (24*l);
-              chest0_re[aa][re] += (((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15))/chL;
-              chest0_im[aa][re] += (((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15))/chL;
+            chest0[aa][re] = (c16_t){0};
+            for (unsigned int l = 2; l < (nsymb >> 1) - 2; l++) {
+              unsigned int off = re + 12 * l;
+              c16_t tmp  = c16x32div(c32x16mulShift(rxcomp[aa][off], cfo[l], 15),chL);
+              chest0[aa][re].r += tmp.r;
+              chest0[aa][re].i += tmp.i;
             }
 
             // channel estimate for second slot
-            chest1_re[aa][re]=0;
-            chest1_im[aa][re]=0;
-
-            for (l=2; l<(nsymb>>1)-2; l++) {
-              off=(re<<1) + (24*l) + (nsymb>>1)*24;
-              chest1_re[aa][re] += (((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15))/chL;
-              chest1_im[aa][re] += (((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15))/chL;
+            chest1[aa][re] = (c16_t){0};
+            for (unsigned int l = 2; l < (nsymb >> 1) - 2; l++) {
+              unsigned int off = re + 12 * l + (nsymb >> 1) * 12;
+              c16_t tmp = c16x32div(c32x16mulShift(rxcomp[aa][off], cfo[l], 15),chL);
+              chest1[aa][re].r += tmp.r;
+              chest1[aa][re].i += tmp.i;
             }
 
-            chest_mag = max(chest_mag,(chest0_re[aa][re]*chest0_re[aa][re]) + (chest0_im[aa][re]*chest0_im[aa][re]));
-            chest_mag = max(chest_mag,(chest1_re[aa][re]*chest1_re[aa][re]) + (chest1_im[aa][re]*chest1_im[aa][re]));
+            chest_mag = max(chest_mag, squaredMod(chest0[aa][re]));
+            chest_mag = max(chest_mag, squaredMod(chest1[aa][re]));
           }
         }
 
@@ -1425,50 +1222,26 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #endif
 
         // now do channel matched filter
-        for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
-          stat0_re[aa]=0;
-          stat0_im[aa]=0;
-          stat1_re[aa]=0;
-          stat1_im[aa]=0;
-
-          for (re=0; re<12; re++) {
-#ifdef DEBUG_PUCCH_RX
-            printf("[eNB] PUCCH subframe %d chest0[%u][%d] => (%d,%d)\n",subframe,aa,re,
-                   chest0_re[aa][re],chest0_im[aa][re]);
-#endif
-
+        c32_t stat0_cumul[4] = {};
+        c32_t stat1_cumul[4] = {};
+        for (unsigned int aa = 0; aa < frame_parms->nb_antennas_rx; aa++) {
+          for (unsigned int re = 0; re < 12; re++) {
             // first slot, left of RS
-            for (l=0; l<2; l++) {
-              off=(re<<1) + (24*l);
-              tmp_re = ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-              tmp_im = ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
-              stat0_re[aa] += (((tmp_re*chest0_re[aa][re])>>log2_maxh) + ((tmp_im*chest0_im[aa][re])>>log2_maxh));
-              stat0_im[aa] += (((tmp_re*chest0_im[aa][re])>>log2_maxh) - ((tmp_im*chest0_re[aa][re])>>log2_maxh));
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d) => (%d,%d)\n",subframe,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     tmp_re,tmp_im,
-                     stat_re,stat_im);
-#endif
+            for (unsigned int l = 0; l < 2; l++) {
+              unsigned int off = re + 12 * l;
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
+              c16_t tmp2 = c16MulConjShift(tmp, chest0[aa][re], log2_maxh);
+              stat0_cumul[aa].r += tmp2.r;
+              stat0_cumul[aa].i += tmp2.i;
             }
 
             // first slot, right of RS
-            for (l=(nsymb>>1)-2; l<(nsymb>>1); l++) {
-              off=(re<<1) + (24*l);
-              tmp_re = ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-              tmp_im = ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
-              stat0_re[aa] += (((tmp_re*chest0_re[aa][re])>>log2_maxh) + ((tmp_im*chest0_im[aa][re])>>log2_maxh));
-              stat0_im[aa] += (((tmp_re*chest0_im[aa][re])>>log2_maxh) - ((tmp_im*chest0_re[aa][re])>>log2_maxh));
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d) => (%d,%d)\n",subframe,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     tmp_re,tmp_im,
-                     stat_re,stat_im);
-#endif
+            for (unsigned int l = (nsymb >> 1) - 2; l < (nsymb >> 1); l++) {
+              unsigned int off = re + 12 * l;
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
+              c16_t tmp2 = c16MulConjShift(tmp, chest0[aa][re], log2_maxh);
+              stat0_cumul[aa].r += tmp2.r;
+              stat0_cumul[aa].i += tmp2.i;
             }
 
 #ifdef DEBUG_PUCCH_RX
@@ -1477,45 +1250,29 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
 #endif
 
             // second slot, left of RS
-            for (l=0; l<2; l++) {
-              off=(re<<1) + (24*l) + (nsymb>>1)*24;
-              tmp_re = ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-              tmp_im = ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
-              stat1_re[aa] += (((tmp_re*chest1_re[aa][re])>>log2_maxh) + ((tmp_im*chest1_im[aa][re])>>log2_maxh));
-              stat1_im[aa] += (((tmp_re*chest1_im[aa][re])>>log2_maxh) - ((tmp_im*chest1_re[aa][re])>>log2_maxh));
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[PHY][eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d) => (%d,%d)\n",subframe,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     tmp_re,tmp_im,
-                     stat_re,stat_im);
-#endif
+            for (unsigned int l = 0; l < 2; l++) {
+              unsigned int off = re + 12 * l + (nsymb >> 1) * 12;
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
+              c16_t tmp2 = c16MulConjShift(tmp, chest1[aa][re], log2_maxh);
+              stat1_cumul[aa].r += tmp2.r;
+              stat1_cumul[aa].i += tmp2.i;
             }
 
             // second slot, right of RS
-            for (l=(nsymb>>1)-2; l<(nsymb>>1)-1; l++) {
-              off=(re<<1) + (24*l) + (nsymb>>1)*24;
-              tmp_re = ((rxcomp[aa][off]*(int32_t)cfo[l<<1])>>15)     - ((rxcomp[aa][1+off]*(int32_t)cfo[1+(l<<1)])>>15);
-              tmp_im = ((rxcomp[aa][off]*(int32_t)cfo[1+(l<<1)])>>15) + ((rxcomp[aa][1+off]*(int32_t)cfo[(l<<1)])>>15);
-              stat1_re[aa] += (((tmp_re*chest1_re[aa][re])>>log2_maxh) + ((tmp_im*chest1_im[aa][re])>>log2_maxh));
-              stat1_im[aa] += (((tmp_re*chest1_im[aa][re])>>log2_maxh) - ((tmp_im*chest1_re[aa][re])>>log2_maxh));
-              off+=2;
-#ifdef DEBUG_PUCCH_RX
-              printf("[PHY][eNB] PUCCH subframe %d (%d,%d) => (%d,%d) x (%d,%d) : (%d,%d) => (%d,%d)\n",subframe,l,re,
-                     rxcomp[aa][off],rxcomp[aa][1+off],
-                     cfo[l<<1],cfo[1+(l<<1)],
-                     tmp_re,tmp_im,
-                     stat_re,stat_im);
-#endif
+            for (unsigned int l = (nsymb >> 1) - 2; l < (nsymb >> 1) - 1; l++) {
+              unsigned int off = re + 12 * l + (nsymb >> 1) * 12;
+              c16_t tmp = c16mulShift(rxcomp[aa][off], cfo[l], 15);
+              c16_t tmp2 = c16MulConjShift(tmp, chest1[aa][re], log2_maxh);
+              stat1_cumul[aa].r += tmp2.r;
+              stat1_cumul[aa].i += tmp2.i;
             }
 
 #ifdef DEBUG_PUCCH_RX
             printf("aa%u re %d : stat %d,%d\n",aa,re,stat_re,stat_im);
 #endif
-          } //re
-          stat_re+=stat0_re[aa]+stat1_re[aa];
-          stat_im+=stat0_im[aa]+stat1_im[aa];
+          } // re
+          stat_re += stat0_cumul[aa].r + stat1_cumul[aa].r;
+          stat_im += stat0_cumul[aa].i + stat1_cumul[aa].i;
         } // aa
 
         LOG_D(PHY,"PUCCH 1a/b: subframe %d : stat %d,%d (pos %d)\n",subframe,stat_re,stat_im,
@@ -1558,7 +1315,9 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     /* PUCCH format3 >> */
   } else {
     /* SubCarrier Demap */
-    Ret = pucchfmt3_subCarrierDeMapping( eNB, SubCarrierDeMapData, n3_pucch );
+    c16_t SubCarrierDeMapData[4][14][12]; //[Antenna][Symbol][Subcarrier][Complex]
+    unsigned int n3_pucch = 20;
+    int Ret = pucchfmt3_subCarrierDeMapping(eNB, SubCarrierDeMapData, n3_pucch);
 
     if(Ret != 0) {
       //***log pucchfmt3_subCarrierDeMapping Error!
@@ -1566,6 +1325,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* cyclic shift hopping remove */
+    c16_t CshData_fmt3[4][14][12]; //[Antenna][Symbol][Subcarrier][Complex]
     Ret = pucchfmt3_Baseseq_csh_remove( SubCarrierDeMapData, CshData_fmt3, frame_parms, subframe, eNB->ncs_cell );
 
     if(Ret != 0) {
@@ -1574,6 +1334,13 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* Channel Estimation */
+    c16_t ChestValue[4][2][12]; //[Antenna][Slot][Subcarrier][Complex]
+    double delta_theta[4][12]; //[Antenna][Subcarrier][Complex]
+    int16_t Interpw;
+    // TODO
+    // When using PUCCH format3, it must be an argument of rx_pucch function
+    uint16_t n3_pucch_array[NUMBER_OF_UE_MAX] = {1};
+    n3_pucch_array[0] = n3_pucch;
     Ret = pucchfmt3_ChannelEstimation( SubCarrierDeMapData, delta_theta, ChestValue, &Interpw, subframe, shortened_format, frame_parms, n3_pucch, n3_pucch_array, eNB->ncs_cell );
 
     if(Ret != 0) {
@@ -1582,6 +1349,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* Channel Equalization */
+    c16_t ChdetAfterValue_fmt3[4][14][12]; //[Antenna][Symbol][Subcarrier][Complex]
     Ret = pucchfmt3_Equalization( CshData_fmt3, ChdetAfterValue_fmt3, ChestValue, frame_parms );
 
     if(Ret != 0) {
@@ -1590,6 +1358,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* Frequency deviation remove AFC */
+    c16_t RemoveFrqDev_fmt3[4][2][5][12]; //[Antenna][Slot][PUCCH_Symbol][Subcarrier][Complex]
     Ret = pucchfmt3_FrqDevRemove( ChdetAfterValue_fmt3, delta_theta, RemoveFrqDev_fmt3, frame_parms );
 
     if(Ret != 0) {
@@ -1598,6 +1367,7 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* orthogonal sequence remove */
+    c16_t Fmt3xDataRmvOrth[4][2][5][12]; //[Antenna][Slot][PUCCH_Symbol][Subcarrier][Complex]
     Ret = pucchfmt3_OrthSeqRemove( RemoveFrqDev_fmt3, Fmt3xDataRmvOrth, shortened_format, n3_pucch, frame_parms );
 
     if(Ret != 0) {
@@ -1606,12 +1376,15 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
     }
 
     /* averaging antenna */
+    c16_t Fmt3xDataAvgAnt[2][5][12]; //[Slot][PUCCH_Symbol][Subcarrier][Complex]
     pucchfmt3_AvgAnt( Fmt3xDataRmvOrth, Fmt3xDataAvgAnt, shortened_format, frame_parms );
     /* averaging symbol */
+    c16_t Fmt3xDataAvgSym[2][12]; //[Slot][Subcarrier][Complex]
     pucchfmt3_AvgSym( Fmt3xDataAvgAnt, Fmt3xDataAvgSym, shortened_format );
     /* IDFT */
-    pucchfmt3_IDft2( (int16_t *)Fmt3xDataAvgSym[0], (int16_t *)IFFTOutData_Fmt3[0] );
-    pucchfmt3_IDft2( (int16_t *)Fmt3xDataAvgSym[1], (int16_t *)IFFTOutData_Fmt3[1] );
+    c16_t IFFTOutData_Fmt3[2][12]; //[Slot][Subcarrier][Complex]
+    pucchfmt3_IDft2(Fmt3xDataAvgSym[0], IFFTOutData_Fmt3[0]);
+    pucchfmt3_IDft2(Fmt3xDataAvgSym[1], IFFTOutData_Fmt3[1]);
     /* descramble */
     pucchfmt3_Descramble(IFFTOutData_Fmt3, b, subframe, frame_parms->Nid_cell, crnti);
 
@@ -1630,8 +1403,8 @@ uint32_t rx_pucch(PHY_VARS_eNB *eNB,
       return(-1);
     }
 
-    for(i=0; i<payload_max; i++) {
-      *(payload+i) = (uint8_t)((payload_entity>>i) & 0x01);
+    for (int i = 0; i < payload_max; i++) {
+      payload[i] = (uint8_t)((payload_entity >> i) & 0x01);
     }
   }
 

@@ -49,12 +49,9 @@
 
 extern const int16_t W4[3][4];
 
-extern const int16_t W3_re[3][6];
-
-extern const int16_t W3_im[3][6];
-
-extern const int16_t alpha_re[12];
-extern const int16_t alpha_im[12];
+static const c16_t W3[3][3] = {{{32767, 0}, {32767, 0}, {32767, 0}},
+                               {{32767, 0}, {-16384, 28377}, {-16384, -28378}},
+                               {{32767, 0}, {-16384, -28378}, {-16384, 28377}}};
 
 static char const* const pucch_format_string[] = {"format 1",
                                                   "format 1a",
@@ -77,15 +74,10 @@ extern const int16_t W4_fmt3[4][4];
 
 extern const int16_t W2[2];
 
-extern const int16_t RotTBL_re[4];
-extern const int16_t RotTBL_im[4];
+extern const c16_t RotTBL[4];
 
 //np4_tbl, np5_tbl
 extern const uint8_t Np5_TBL[5];
 extern const uint8_t Np4_TBL[4];
-
-// alpha_TBL
-extern const int16_t alphaTBL_re[12];
-extern const int16_t alphaTBL_im[12];
 
 #endif

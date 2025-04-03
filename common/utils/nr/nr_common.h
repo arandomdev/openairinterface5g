@@ -232,7 +232,7 @@ static inline int count_bits(uint8_t *arr, int sz)
 {
   AssertFatal(sz % sizeof(int) == 0, "to implement if needed\n");
   int ret = 0;
-  for (uint *ptr = (uint *)arr; (uint8_t *)ptr < arr + sz; ptr++)
+  for (unsigned int *ptr = (unsigned int *)arr; (uint8_t *)ptr < arr + sz; ptr++)
     ret += __builtin_popcount(*ptr);
   return ret;
 }

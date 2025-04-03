@@ -43,7 +43,7 @@ static const int grain = 64 / sizeof(uint32_t);
 static void refresh_table(gold_cache_table_t *t, int sizeIncrease)
 {
   uint32_t *old = t->table;
-  uint oldSz = t->tblSz;
+  unsigned int oldSz = t->tblSz;
   if (t->tblSz == 0)
     t->tblSz = PAGE_SIZE / sizeof(*t->table);
   if (sizeIncrease)
@@ -76,7 +76,7 @@ static void refresh_table(gold_cache_table_t *t, int sizeIncrease)
       entryToCopy->usage = 0;
     }
   } while (maxUsage);
-  const uint usedSz = currentTmp - t->table;
+  const unsigned int usedSz = currentTmp - t->table;
   memset(t->table + usedSz, 0, (t->tblSz - usedSz) * sizeof(*t->table));
   free(old);
   t->calls = 0;

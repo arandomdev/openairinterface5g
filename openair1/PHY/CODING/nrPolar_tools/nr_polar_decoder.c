@@ -51,8 +51,8 @@ static inline void updateCrcChecksum2(int xlen,
                                       uint32_t i2,
                                       uint8_t len)
 {
-  for (uint i = 0; i < listSize; i++) {
-    for (uint j = 0; j < len; j++) {
+  for (unsigned int i = 0; i < listSize; i++) {
+    for (unsigned int j = 0; j < len; j++) {
       crcChecksum[j][i + listSize] = (crcChecksum[j][i] + crcGen[i2][j]) % 2;
     }
   }
@@ -136,12 +136,12 @@ int8_t polar_decoder(double *input,
    * SCL polar decoder.
    */
   uint32_t nonFrozenBit = 0;
-  uint currentListSize = 1;
-  uint decoderIterationCheck = 0;
+  unsigned int currentListSize = 1;
+  unsigned int decoderIterationCheck = 0;
   int checkCrcBits = -1;
   uint8_t listIndex[2 * listSize], copyIndex;
 
-  for (uint currentBit = 0; currentBit < polarParams->N; currentBit++) {
+  for (unsigned int currentBit = 0; currentBit < polarParams->N; currentBit++) {
     updateLLR(currentListSize, currentBit, 0, polarParams->N, polarParams->n + 1, 2 * listSize, llr, llrUpdated, bit, bitUpdated);
 
     if (polarParams->information_bit_pattern[currentBit] == 0) { // Frozen bit.
@@ -180,16 +180,16 @@ int8_t polar_decoder(double *input,
 
       // Keep only the best "listSize" number of entries.
       if (currentListSize > listSize) {
-        for (uint i = 0; i < 2 * listSize; i++)
+        for (unsigned int i = 0; i < 2 * listSize; i++)
           listIndex[i] = i;
 
         nr_sort_asc_double_1D_array_ind(pathMetric, listIndex, currentListSize);
         // sort listIndex[listSize, ..., 2*listSize-1] in descending order.
 
-        for (uint i = 0; i < listSize; i++) {
+        for (unsigned int i = 0; i < listSize; i++) {
           int swaps = 0;
 
-          for (uint j = listSize; j < (2 * listSize - i) - 1; j++) {
+          for (unsigned int j = listSize; j < (2 * listSize - i) - 1; j++) {
             if (listIndex[j + 1] > listIndex[j]) {
               int tempInd = listIndex[j];
               listIndex[j] = listIndex[j + 1];
@@ -270,14 +270,14 @@ int8_t polar_decoder(double *input,
       }
 
       if (checkCrcBits > (-1)) {
-        for (uint i = 0; i < currentListSize; i++) {
+        for (unsigned int i = 0; i < currentListSize; i++) {
           if (crcChecksum[checkCrcBits][i] == 1) {
             crcState[i] = 0; // 0=False, 1=True
           }
         }
       }
 
-      for (uint i = 0; i < currentListSize; i++)
+      for (unsigned int i = 0; i < currentListSize; i++)
         decoderIterationCheck += crcState[i];
 
       if (decoderIterationCheck == 0) {
@@ -292,12 +292,12 @@ int8_t polar_decoder(double *input,
     }
   }
 
-  for (uint i = 0; i < 2 * listSize; i++)
+  for (unsigned int i = 0; i < 2 * listSize; i++)
     listIndex[i] = i;
 
   nr_sort_asc_double_1D_array_ind(pathMetric, listIndex, currentListSize);
   uint8_t nr_polar_A[polarParams->payloadBits];
-  for (uint i = 0; i < fmin(listSize, (pow(2, polarParams->crcCorrectionBits))); i++) {
+  for (unsigned int i = 0; i < fmin(listSize, (pow(2, polarParams->crcCorrectionBits))); i++) {
     if (crcState[listIndex[i]] == 1) {
       uint8_t nr_polar_U[polarParams->N];
       for (int j = 0; j < polarParams->N; j++)
@@ -420,12 +420,12 @@ int8_t polar_decoder_dci(double *input,
   }
 
   uint32_t nonFrozenBit = 0;
-  uint currentListSize = 1;
-  uint decoderIterationCheck = 0;
+  unsigned int currentListSize = 1;
+  unsigned int decoderIterationCheck = 0;
   int checkCrcBits = -1;
   uint8_t listIndex[2 * listSize], copyIndex;
 
-  for (uint currentBit = 0; currentBit < polarParams->N; currentBit++) {
+  for (unsigned int currentBit = 0; currentBit < polarParams->N; currentBit++) {
     updateLLR(currentListSize, currentBit, 0, polarParams->N, polarParams->n + 1, 2 * listSize, llr, llrUpdated, bit, bitUpdated);
 
     if (polarParams->information_bit_pattern[currentBit] == 0) { // Frozen bit.
@@ -464,16 +464,16 @@ int8_t polar_decoder_dci(double *input,
 
       // Keep only the best "listSize" number of entries.
       if (currentListSize > listSize) {
-        for (uint i = 0; i < 2 * listSize; i++)
+        for (unsigned int i = 0; i < 2 * listSize; i++)
           listIndex[i] = i;
 
         nr_sort_asc_double_1D_array_ind(pathMetric, listIndex, currentListSize);
         // sort listIndex[listSize, ..., 2*listSize-1] in descending order.
 
-        for (uint i = 0; i < listSize; i++) {
+        for (unsigned int i = 0; i < listSize; i++) {
           int swaps = 0;
 
-          for (uint j = listSize; j < (2 * listSize - i) - 1; j++) {
+          for (unsigned int j = listSize; j < (2 * listSize - i) - 1; j++) {
             if (listIndex[j + 1] > listIndex[j]) {
               int tempInd = listIndex[j];
               listIndex[j] = listIndex[j + 1];
@@ -554,14 +554,14 @@ int8_t polar_decoder_dci(double *input,
       }
 
       if (checkCrcBits > (-1)) {
-        for (uint i = 0; i < currentListSize; i++) {
+        for (unsigned int i = 0; i < currentListSize; i++) {
           if (crcChecksum[checkCrcBits][i] != extended_crc_scrambling_pattern[checkCrcBits]) {
             crcState[i] = 0; // 0=False, 1=True
           }
         }
       }
 
-      for (uint i = 0; i < currentListSize; i++)
+      for (unsigned int i = 0; i < currentListSize; i++)
         decoderIterationCheck += crcState[i];
 
       if (decoderIterationCheck == 0) {
@@ -576,13 +576,13 @@ int8_t polar_decoder_dci(double *input,
     }
   }
 
-  for (uint i = 0; i < 2 * listSize; i++)
+  for (unsigned int i = 0; i < 2 * listSize; i++)
     listIndex[i] = i;
 
   nr_sort_asc_double_1D_array_ind(pathMetric, listIndex, currentListSize);
   uint8_t nr_polar_A[polarParams->payloadBits];
 
-  for (uint i = 0; i < fmin(listSize, (pow(2, polarParams->crcCorrectionBits))); i++) {
+  for (unsigned int i = 0; i < fmin(listSize, (pow(2, polarParams->crcCorrectionBits))); i++) {
     if (crcState[listIndex[i]] == 1) {
       uint8_t nr_polar_U[polarParams->N];
       for (int j = 0; j < polarParams->N; j++)
@@ -677,7 +677,7 @@ uint32_t polar_decoder_int16(int16_t *input,
                              uint8_t aggregation_level)
 {
   t_nrPolar_params *polarParams = nr_polar_params(messageType, messageLength, aggregation_level);
-  const uint N = polarParams->N;
+  const unsigned int N = polarParams->N;
 #ifdef POLAR_CODING_DEBUG
   printf("\nRX\n");
   printf("rm:");
@@ -691,7 +691,7 @@ uint32_t polar_decoder_int16(int16_t *input,
 #endif
 
   int16_t d_tilde[N];
-  const uint E = polarParams->encoderLength;
+  const unsigned int E = polarParams->encoderLength;
   int16_t inbis[E];
   int16_t *input_deinterleaved;
   if (polarParams->i_bil) {

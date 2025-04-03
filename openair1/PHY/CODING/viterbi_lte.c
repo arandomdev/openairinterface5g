@@ -134,7 +134,7 @@ void phy_viterbi_lte_sse2(int8_t *y,uint8_t *decoded_bytes,uint16_t n)
 
     for (int position = 0; position < n; position++) {
       // get branch metric offsets for the 64 states
-      uint table_offset = (in[0] + 8 + ((in[1] + 8) << 4) + ((in[2] + 8) << 8)) << 6;
+      unsigned int table_offset = (in[0] + 8 + ((in[1] + 8) << 4) + ((in[2] + 8) << 8)) << 6;
 
       simde__m128i *m0_ptr = (simde__m128i *)&m0_table[table_offset];
       simde__m128i *m1_ptr = (simde__m128i *)&m1_table[table_offset];
@@ -213,9 +213,9 @@ void phy_viterbi_lte_sse2(int8_t *y,uint8_t *decoded_bytes,uint16_t n)
   } // iteration
 
   // Traceback
-  uint prev_state0 = 0;
-  uint maxm = 0;
-  uint s = 0;
+  unsigned int prev_state0 = 0;
+  unsigned int maxm = 0;
+  unsigned int s = 0;
   for (uint8_t *ptr = (uint8_t *)&metrics0_15; s < 16; s++, ptr++)
     if (*ptr > maxm) {
       maxm = *ptr;

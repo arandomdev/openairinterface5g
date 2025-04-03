@@ -2254,13 +2254,13 @@ static void nr_ue_prach_scheduler(NR_UE_MAC_INST_t *mac, frame_t frameP, slot_t 
 
 typedef struct {
   uint8_t phr_len;
-  uint sdu_length_total;
+  unsigned int sdu_length_total;
   NR_SINGLE_ENTRY_PHR_MAC_CE phr;
   type_bsr_t bsr;
   uint8_t *pdu_end;
   uint8_t *end_for_tailer;
   uint8_t *cur_ptr;
-  uint num_sdus;
+  unsigned int num_sdus;
   // int highest_priority = 16;
   //  variable used to store the lcid data status during lcp
   bool lcids_data_status[NR_MAX_NUM_LCID];
@@ -2525,7 +2525,7 @@ bool get_dataavailability_buffers(uint8_t total_active_lcids, nr_lcordered_info_
   return false;
 }
 
-static uint select_logical_channels(NR_UE_MAC_INST_t *mac, nr_lcordered_info_t *active_lcids)
+static unsigned int select_logical_channels(NR_UE_MAC_INST_t *mac, nr_lcordered_info_t *active_lcids)
 {
   // (TODO: selection of logical channels for logical channel prioritization procedure as per 5.4.3.1.2 Selection of logical
   // channels, TS38.321)
@@ -2547,17 +2547,17 @@ static bool fill_mac_sdu(NR_UE_MAC_INST_t *mac,
                          slot_t slot,
                          uint8_t gNB_index,
                          int lcid,
-                         uint count_same_priority_lcids,
+                         unsigned int count_same_priority_lcids,
                          uint32_t buflen_ep,
                          uint32_t *lcids_bytes_tot,
                          NR_UE_MAC_CE_INFO *mac_ce_p,
-                         uint *num_lcids_same_priority,
+                         unsigned int *num_lcids_same_priority,
                          uint32_t *LCG_bytes)
 {
   /* prepare the MAC sdu */
   NR_LC_SCHEDULING_INFO *sched_info = get_scheduling_info_from_lcid(mac, lcid);
   int32_t lcid_remain_buffer = sched_info->LCID_buffer_remain;
-  uint usable = mac_ce_p->end_for_tailer - mac_ce_p->cur_ptr;
+  unsigned int usable = mac_ce_p->end_for_tailer - mac_ce_p->cur_ptr;
   LOG_D(NR_MAC,
         "[UE %d] [%d.%d] lcp round = %d, remaining mac pdu length before BSR = %d, lcid buffer remaining = %d, lcid = %d \n",
         mac->ue_id,
@@ -2731,13 +2731,13 @@ static uint8_t nr_ue_get_sdu(NR_UE_MAC_INST_t *mac,
     /*
       go until there is space availabile in the MAC PDU and there is data available in RLC buffers of active logical channels
     */
-    uint num_lcids_same_priority = 0;
-    uint count_same_priority_lcids = 0;
+    unsigned int num_lcids_same_priority = 0;
+    unsigned int count_same_priority_lcids = 0;
 
     // variable used to store the total bytes read from rlc for each lcid
     uint32_t lcids_bytes_tot[NR_MAX_NUM_LCID] = {0};
 
-    for (uint id = 0; id < avail_lcids_count; id++) {
+    for (unsigned int id = 0; id < avail_lcids_count; id++) {
       /*
   loop over all logical channels in the order of priority. As stated in TS138.321 Section 5.4.3.1, in the first run, only
   prioritized number of bytes are taken out from the corresponding RLC buffers of all active logical channels and if there is

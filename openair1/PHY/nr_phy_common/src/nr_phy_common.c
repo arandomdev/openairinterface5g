@@ -115,7 +115,7 @@ void nr_16qam_llr(int32_t *rxdataF_comp, int32_t *ch_mag_in, int16_t *llr, uint3
   int16_t *rxDataF_i16 = (int16_t *)rxF_128;
   int16_t *ch_mag_i16 = (int16_t *)ch_mag_128;
   int16_t *llr_i16 = (int16_t *)llr_128;
-  for (uint i = 0U; i < nb_re; i++) {
+  for (unsigned int i = 0U; i < nb_re; i++) {
     int16_t real = rxDataF_i16[2 * i];
     int16_t imag = rxDataF_i16[2 * i + 1];
     int16_t mag_real = ch_mag_i16[2 * i];

@@ -52,8 +52,8 @@
 
 // structure used for multiple SSB detection
 typedef struct NR_UE_SSB {
-  uint i_ssb; // i_ssb between 0 and 7 (it corresponds to ssb_index only for Lmax=4,8)
-  uint n_hf; // n_hf = 0,1 for Lmax =4 or n_hf = 0 for Lmax =8,64
+  unsigned int i_ssb; // i_ssb between 0 and 7 (it corresponds to ssb_index only for Lmax=4,8)
+  unsigned int n_hf; // n_hf = 0,1 for Lmax =4 or n_hf = 0 for Lmax =8,64
   double metric; // metric to order SSB hypothesis
 } NR_UE_SSB;
 

@@ -1668,16 +1668,7 @@ void ue_ulsch_uespec_procedures(PHY_VARS_UE *ue,
                        ue->ulsch[eNB_id]);
 
       for (aa=0; aa<1/*frame_parms->nb_antennas_tx*/; aa++)
-        generate_drs_pusch(ue,
-                           proc,
-                           (LTE_DL_FRAME_PARMS *)NULL,
-                           (int32_t **)NULL,
-                           eNB_id,
-                           tx_amp,
-                           subframe_tx,
-                           first_rb,
-                           nb_rb,
-                           aa);
+        generate_drs_pusch(ue, proc, (LTE_DL_FRAME_PARMS *)NULL, (c16_t **)NULL, eNB_id, tx_amp, subframe_tx, first_rb, nb_rb, aa);
 
       if (LOG_DEBUGFLAG(DEBUG_UE_TIMING)) {
         stop_meas(&ue->ulsch_modulation_stats);
@@ -1734,7 +1725,7 @@ void ue_srs_procedures(PHY_VARS_UE *ue,
     uint16_t symbol_offset = (int)ue->frame_parms.ofdm_symbol_size*((subframe_tx*nsymb)+(nsymb-1));
     generate_srs(&ue->frame_parms,
                  &ue->soundingrs_ul_config_dedicated[eNB_id],
-                 &ue->common_vars.txdataF[eNB_id][symbol_offset],
+                 (c16_t *)&ue->common_vars.txdataF[eNB_id][symbol_offset],
                  tx_amp,
                  subframe_tx);
   }
@@ -2050,15 +2041,15 @@ void ue_pucch_procedures(PHY_VARS_UE *ue,
               tx_amp);
       }
 
-      generate_pucch2x(ue->common_vars.txdataF,
+      generate_pucch2x((c16_t **)ue->common_vars.txdataF,
                        &ue->frame_parms,
                        ue->ncs_cell,
                        format,
                        &ue->pucch_config_dedicated[eNB_id],
                        pucch_resource,
                        pucch_payload,
-                       len,          // A
-                       0,            // B2 not needed
+                       len, // A
+                       0, // B2 not needed
                        tx_amp,
                        subframe_tx,
                        ue->pdcch_vars[ue->current_thread_id[proc->subframe_rx]][eNB_id]->crnti);

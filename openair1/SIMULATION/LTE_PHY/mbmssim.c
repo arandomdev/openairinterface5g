@@ -135,7 +135,7 @@ void do_OFDM_mod_l(int32_t **txdataF, int32_t **txdata, uint16_t next_slot, LTE_
   }
 }
 
-void DL_channel(RU_t *ru,PHY_VARS_UE *UE,uint subframe,int awgn_flag,double SNR, int tx_lev,int hold_channel,int abstx, int num_rounds, int trials, int round, channel_desc_t *eNB2UE[4],
+void DL_channel(RU_t *ru,PHY_VARS_UE *UE,unsigned int subframe,int awgn_flag,double SNR, int tx_lev,int hold_channel,int abstx, int num_rounds, int trials, int round, channel_desc_t *eNB2UE[4],
                 double *s_re[2],double *s_im[2],double *r_re[2],double *r_im[2],FILE *csv_fd) {
   int i,u;
   int aa,aarx,aatx;

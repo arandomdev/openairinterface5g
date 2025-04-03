@@ -87,7 +87,7 @@ void join_task_ans(task_ans_t* arr);
 ///
 /// @param ans task_ans_t struct
 /// @param num_completed_jobs number of tasks to mark as completed
-void completed_many_task_ans(task_ans_t* ans, uint num_completed_jobs);
+void completed_many_task_ans(task_ans_t* ans, unsigned int num_completed_jobs);
 
 /// @brief Mark 1 tasks as completed.
 ///
