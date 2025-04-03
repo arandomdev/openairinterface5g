@@ -1,3 +1,4 @@
 add_subdirectory(nrLDPC_coding_segment)
 add_subdirectory(nrLDPC_coding_xdma)
 add_subdirectory(nrLDPC_coding_t2)
+add_subdirectory(nrLDPC_coding_aal)
