@@ -2046,6 +2046,44 @@ static void e1_send_bearer_updates(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, int n, f
   rrc->cucp_cuup.bearer_context_mod(assoc_id, &req);
 }
 
+int rrc_gNB_encode_HandoverCommand(gNB_RRC_UE_t *UE, gNB_RRC_INST *rrc, uint8_t *buffer, uint8_t xid)
+{
+  /* 3GPP TS 38.331 RadioBearerConfig: re-establish PDCP whenever the security key
+    used for this radio bearer changes, e.g. for SRB2 when receiving
+    reconfiguration with sync, resuming an RRC connection, or at the first
+    reconfiguration after RRC connection reestablishment in NR */
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, (1 << 1) | (1 << 2)); // re-establish both SRB1 and SRB2
+  NR_DRB_ToAddModList_t *DRBs = createDRBlist(UE, false);
+
+  // modify ue measurement config: remove source gNBs measurement objects
+  const nr_rrc_du_container_t *du = get_du_for_ue(rrc, UE->rrc_ue_id);
+  DevAssert(du != NULL);
+  f1ap_served_cell_info_t *cell_info = &du->setup_req->cell[0].info;
+  NR_MeasConfig_t *measconfig = NULL;
+
+  if (du->mtc != NULL) {
+    int scs = get_ssb_scs(cell_info);
+    int band = get_dl_band(cell_info);
+    const NR_MeasTimingList_t *mtlist = du->mtc->criticalExtensions.choice.c1->choice.measTimingConf->measTiming;
+    const NR_MeasTiming_t *mt = mtlist->list.array[0];
+    const neighbour_cell_configuration_t *neighbour = get_neighbour_by_cell_id(cell_info->nr_cellid);
+    seq_arr_t *neighbour_cells = NULL;
+    if (neighbour)
+      neighbour_cells = neighbour->neighbour_cells;
+    measconfig = get_MeasConfig(mt, band, scs, &rrc->measurementConfiguration, neighbour_cells);
+  }
+
+  DevAssert(measconfig != NULL);
+  free_MeasConfig(UE->measConfig);
+  UE->measConfig = measconfig;
+
+  remove_source_gnb_measConfig(UE);
+  // Free HO Preparation Information
+  free_byte_array(&UE->ue_ho_prep_info);
+
+  return get_HandoverCommandMessage(UE, &SRBs, &DRBs, &buffer, NR_RRC_BUF_SIZE, xid);
+}
+
 static void rrc_CU_process_ue_context_setup_response(MessageDef *msg_p, instance_t instance)
 {
   f1ap_ue_context_setup_t *resp = &F1AP_UE_CONTEXT_SETUP_RESP(msg_p);

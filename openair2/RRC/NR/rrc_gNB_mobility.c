@@ -352,9 +352,42 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
 
 /** @brief This callback is used by the target gNB
  *         to trigger the Handover Request Acknowledge towards the AMF */
-static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t *rrc_reconf_buf, uint32_t rrc_reconf_len)
+static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
 {
-  byte_array_t ba = {.buf = rrc_reconf_buf, .len = rrc_reconf_len};
+  if (!cu_exists_f1_ue_data(UE->rrc_ue_id)) {
+    LOG_E(NR_RRC, "No CU found for rrc_ue_id %d\n", UE->rrc_ue_id);
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_RELEASE_DUE_TO_NGRAN_GENERATED_REASON};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  f1_ue_data_t previous_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+  previous_data.secondary_ue = UE->ho_context->target->du_ue_id;
+  if (!cu_update_f1_ue_data(UE->rrc_ue_id, &previous_data)) {
+    LOG_E(NR_RRC, "Failed to update F1 UE data for UE %d\n", UE->rrc_ue_id);
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_RELEASE_DUE_TO_NGRAN_GENERATED_REASON};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  LOG_I(NR_RRC, "Updated CU F1AP Context for UE %d, DU Id : %u\n", UE->rrc_ue_id, UE->ho_context->target->du_ue_id);
+
+  uint8_t rrc_reconf_buf[NR_RRC_BUF_SIZE] = {0};
+  size_t hoCommandSize = rrc_gNB_encode_HandoverCommand(UE, rrc, rrc_reconf_buf, xid);
+  if (hoCommandSize < 0) {
+    LOG_E(NR_RRC, "Failed to generate Handover Command Message\n");
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  byte_array_t ba = {.buf = rrc_reconf_buf, .len = hoCommandSize};
   rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(rrc, UE, &ba);
 }
 

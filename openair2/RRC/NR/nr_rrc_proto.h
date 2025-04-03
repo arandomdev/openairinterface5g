@@ -140,5 +140,6 @@ f1ap_qos_characteristics_t get_qos_char_from_qos_flow_param(const pdusession_lev
 void openair_rrc_gNB_configuration(gNB_RRC_INST *rrc, gNB_RrcConfigurationReq *configuration);
 byte_array_t *rrc_gNB_generate_HandoverPreparationInformation(gNB_RRC_UE_t *ue, int serving_pci);
 void activate_srbs(gNB_RRC_UE_t *UE);
+int rrc_gNB_encode_HandoverCommand(gNB_RRC_UE_t *UE, gNB_RRC_INST *rrc, uint8_t *buffer, uint8_t xid);
 
 #endif

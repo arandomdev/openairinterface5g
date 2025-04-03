@@ -169,6 +169,15 @@ NR_MeasConfig_t *get_MeasConfig(const NR_MeasTiming_t *mt,
 void free_MeasConfig(NR_MeasConfig_t *mc);
 int do_NR_Paging(uint8_t Mod_id, uint8_t *buffer, uint32_t tmsi);
 
+void remove_source_gnb_measConfig(gNB_RRC_UE_t *UE);
+
+int16_t get_HandoverCommandMessage(const gNB_RRC_UE_t *ue_p,
+                                   NR_SRB_ToAddModList_t **SRBs,
+                                   NR_DRB_ToAddModList_t **DRBs,
+                                   uint8_t **buffer,
+                                   size_t buffer_size,
+                                   uint8_t transactionId);
+
 int16_t get_HandoverPreparationInformation(const gNB_RRC_UE_t *ue_p,
                                            NR_SRB_ToAddModList_t *SRBs,
                                            NR_DRB_ToAddModList_t *DRBs,
