@@ -304,7 +304,7 @@ NR_RLC_BearerConfig_t *get_SRB_RLC_BearerConfig(long channelId,
   rlc_Config->choice.am->dl_AM_RLC.t_StatusProhibit                = NR_T_StatusProhibit_ms0;
   rlc_Config->choice.am->ul_AM_RLC.sn_FieldLength                  = calloc(1, sizeof(NR_SN_FieldLengthAM_t));
   *(rlc_Config->choice.am->ul_AM_RLC.sn_FieldLength)               = NR_SN_FieldLengthAM_size12;
-  rlc_Config->choice.am->ul_AM_RLC.t_PollRetransmit                = NR_T_PollRetransmit_ms45;
+  rlc_Config->choice.am->ul_AM_RLC.t_PollRetransmit                = NR_T_PollRetransmit_ms2000;
   rlc_Config->choice.am->ul_AM_RLC.pollPDU                         = NR_PollPDU_infinity;
   rlc_Config->choice.am->ul_AM_RLC.pollByte                        = NR_PollByte_infinity;
   rlc_Config->choice.am->ul_AM_RLC.maxRetxThreshold                = NR_UL_AM_RLC__maxRetxThreshold_t8;
@@ -348,7 +348,7 @@ static void nr_drb_config(struct NR_RLC_Config *rlc_Config, NR_RLC_Config_PR rlc
       rlc_Config->choice.am = calloc(1, sizeof(*rlc_Config->choice.am));
       rlc_Config->choice.am->ul_AM_RLC.sn_FieldLength = calloc(1, sizeof(*rlc_Config->choice.am->ul_AM_RLC.sn_FieldLength));
       *rlc_Config->choice.am->ul_AM_RLC.sn_FieldLength = NR_SN_FieldLengthAM_size18;
-      rlc_Config->choice.am->ul_AM_RLC.t_PollRetransmit = NR_T_PollRetransmit_ms45;
+      rlc_Config->choice.am->ul_AM_RLC.t_PollRetransmit = NR_T_PollRetransmit_ms2000;
       rlc_Config->choice.am->ul_AM_RLC.pollPDU = NR_PollPDU_p64;
       rlc_Config->choice.am->ul_AM_RLC.pollByte = NR_PollByte_kB500;
       rlc_Config->choice.am->ul_AM_RLC.maxRetxThreshold = NR_UL_AM_RLC__maxRetxThreshold_t32;
