@@ -438,7 +438,7 @@ void rrc_remove_nsa_user(gNB_RRC_INST *rrc, int rnti) {
   mac_remove_nr_ue(RC.nrmac[rrc->module_id], rnti);
   NR_SCHED_UNLOCK(&RC.nrmac[rrc->module_id]->sched_lock);
   gtpv1u_enb_delete_tunnel_req_t tmp={0};
-  tmp.rnti=rnti;
+  tmp.rnti = ue_context->ue_context.rrc_ue_id;
   tmp.from_gnb=1;
   LOG_D(RRC, "ue_context->ue_context.nb_of_e_rabs %d will be deleted for rnti %x\n", ue_context->ue_context.nb_of_e_rabs, rnti);
   for (e_rab = 0; e_rab < ue_context->ue_context.nb_of_e_rabs; e_rab++) {
