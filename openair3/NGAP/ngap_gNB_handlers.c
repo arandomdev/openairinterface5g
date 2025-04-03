@@ -44,22 +44,15 @@
 #include "ngap_common.h"
 #include "ngap_gNB_decoder.h"
 #include "ngap_gNB_defs.h"
+#include "ngap_gNB_nnsf.h"
 #include "ngap_gNB_management_procedures.h"
+#include "ngap_gNB_mobility_management.h"
 #include "ngap_gNB_nas_procedures.h"
 #include "ngap_gNB_trace.h"
 #include "ngap_gNB_ue_context.h"
 #include "ngap_messages_types.h"
 #include "oai_asn1.h"
 #include "queue.h"
-
-static void allocCopy(ngap_pdu_t *out, OCTET_STRING_t in)
-{
-  if (in.size) {
-    out->buffer = malloc(in.size);
-    memcpy(out->buffer, in.buf, in.size);
-  }
-  out->length = in.size;
-}
 
 char *ngap_direction2String(int ngap_dir) {
   static char *ngap_direction_String[] = {
@@ -675,6 +668,43 @@ static int ngap_gNB_handle_error_indication(sctp_assoc_t assoc_id, uint32_t stre
   return 0;
 }
 
+/** @brief Handler for NGAP Handover Request message (AMF -> target NG-RAN)
+ *        Decode the NGAP message and transfer to RRC */
+static int ngap_gNB_handle_handover_request(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
+{
+  DevAssert(pdu != NULL);
+
+  ngap_gNB_amf_data_t *amf_desc_p = ngap_gNB_get_AMF(NULL, assoc_id, 0);
+  if (amf_desc_p == NULL) {
+    NGAP_ERROR("[SCTP %u] Received Handover Request for non existing AMF context\n", assoc_id);
+    return -1;
+  }
+  NGAP_INFO("[SCTP %u] Received NG Handover Request for AMF %s\n", assoc_id, amf_desc_p->amf_name);
+
+  MessageDef *message_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_HANDOVER_REQUEST);
+  ngap_handover_request_t *msg = &NGAP_HANDOVER_REQUEST(message_p);
+  memset(msg, 0, sizeof(*msg));
+
+  if (decode_ng_handover_request(msg, pdu) < 0) {
+    NGAP_ERROR("Failed to decode NG HANDOVER REQUEST\n");
+    ngap_handover_failure_t fail = {
+        .amf_ue_ngap_id = msg->amf_ue_ngap_id,
+        .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+        .cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM,
+    };
+    NGAP_INFO("Send NG Handover Failure message (amf_ue_ngap_id %ld) with cause %d \n ", fail.amf_ue_ngap_id, fail.cause.value);
+    MessageDef *msg_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_HANDOVER_FAILURE);
+    NGAP_HANDOVER_FAILURE(msg_p) = fail;
+    itti_send_msg_to_task(TASK_NGAP, amf_desc_p->ngap_gNB_instance->instance, msg_p);
+    return -1;
+  }
+
+  NGAP_INFO("HO LOG: Handover Request from AMF UE NGAP ID %lu received by target CU-CP \n", msg->amf_ue_ngap_id);
+  itti_send_msg_to_task(TASK_RRC_GNB, amf_desc_p->ngap_gNB_instance->instance, message_p);
+
+  return 0;
+}
+
 static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
 {
   int i;
@@ -728,30 +758,20 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
   msg->gNB_ue_ngap_id = ue_desc_p->gNB_ue_ngap_id;
   msg->amf_ue_ngap_id = ue_desc_p->amf_ue_ngap_id;
   /* id-UEAggregateMaximumBitRate */
-  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
-                             NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate, false);
-
-  if (ie != NULL) { /* checked by macro but cppcheck doesn't see it */
-    asn_INTEGER2ulong(&(ie->value.choice.UEAggregateMaximumBitRate.uEAggregateMaximumBitRateUL),
-                      &(msg->ue_ambr.br_ul));
-    asn_INTEGER2ulong(&(ie->value.choice.UEAggregateMaximumBitRate.uEAggregateMaximumBitRateDL),
-                      &(msg->ue_ambr.br_dl));
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t,
+                             ie,
+                             container,
+                             NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate,
+                             false);
+  if (ie != NULL) {
+    msg->ue_ambr = decode_ngap_UEAggregateMaximumBitRate(&ie->value.choice.UEAggregateMaximumBitRate);
   } else {
     NGAP_WARN("could not find NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate\n");
   }
 
-
   /* id-GUAMI */
-  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
-                             NGAP_ProtocolIE_ID_id_GUAMI, true);
-
-  TBCD_TO_MCC_MNC(&ie->value.choice.GUAMI.pLMNIdentity, msg->guami.mcc,
-                  msg->guami.mnc, msg->guami.mnc_len);
-    
-  msg->guami.amf_region_id = BIT_STRING_to_uint8(&ie->value.choice.GUAMI.aMFRegionID);
-  msg->guami.amf_set_id = BIT_STRING_to_uint16(&ie->value.choice.GUAMI.aMFSetID);
-  msg->guami.amf_pointer = BIT_STRING_to_uint8(&ie->value.choice.GUAMI.aMFPointer);
-
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_GUAMI, true);
+  msg->guami = decode_ngap_guami(&ie->value.choice.GUAMI);
 
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_PDUSessionResourceSetupListCxtReq, false);
   if (ie != NULL) {
@@ -760,88 +780,51 @@ static int ngap_gNB_handle_initial_context_request(sctp_assoc_t assoc_id, uint32
     for (i = 0; i < ie->value.choice.PDUSessionResourceSetupListCxtReq.list.count; i++) {
       NGAP_PDUSessionResourceSetupItemCxtReq_t *item_p = ie->value.choice.PDUSessionResourceSetupListCxtReq.list.array[i];
       msg->pdusession_param[i].pdusession_id = item_p->pDUSessionID;
-
-      OCTET_STRING_TO_INT8(&item_p->s_NSSAI.sST, msg->pdusession_param[i].nssai.sst);
-      if (item_p->s_NSSAI.sD != NULL) {
-        uint8_t *sd_p = (uint8_t *)&msg->pdusession_param[i].nssai.sd;
-        sd_p[0] = item_p->s_NSSAI.sD->buf[0];
-        sd_p[1] = item_p->s_NSSAI.sD->buf[1];
-        sd_p[2] = item_p->s_NSSAI.sD->buf[2];
-      } else {
-        msg->pdusession_param[i].nssai.sd = 0xffffff;
-      }
-
+      msg->pdusession_param[i].nssai = decode_ngap_nssai(&item_p->s_NSSAI);
       if (item_p->nAS_PDU) {
-        allocCopy(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
+        octet_string_to_ngap_pdu(&msg->pdusession_param[i].nas_pdu, *item_p->nAS_PDU);
       }
-      allocCopy(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
+      octet_string_to_ngap_pdu(&msg->pdusession_param[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
     }
   }
 
   /* id-AllowedNSSAI */
-  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
-                               NGAP_ProtocolIE_ID_id_AllowedNSSAI, true);
-  
-  //if (ie != NULL) { /* checked by macro but cppcheck doesn't see it */
-    NGAP_AllowedNSSAI_Item_t *allow_nssai_item_p = NULL;
-
-    //NGAP_DEBUG("AllowedNSSAI.list.count %d\n", ie->value.choice.AllowedNSSAI.list.count);
-    //DevAssert(ie->value.choice.AllowedNSSAI.list.count > 0);
-    //DevAssert(ie->value.choice.AllowedNSSAI.list.count <= NGAP_maxnoofAllowedS_NSSAIs);
-
-    AssertFatal(ie, "AllowedNSSAI not present, forging 2 NSSAI\n");
-
-    NGAP_DEBUG("AllowedNSSAI.list.count %d\n", ie->value.choice.AllowedNSSAI.list.count);
-    msg->nb_allowed_nssais = ie->value.choice.AllowedNSSAI.list.count;
-    
-    for(i = 0; i < ie->value.choice.AllowedNSSAI.list.count; i++) {
-      allow_nssai_item_p = ie->value.choice.AllowedNSSAI.list.array[i];
-
-      OCTET_STRING_TO_INT8(&allow_nssai_item_p->s_NSSAI.sST, msg->allowed_nssai[i].sst);
-
-      if(allow_nssai_item_p->s_NSSAI.sD != NULL) {
-        msg->allowed_nssai[i].sd = 0;
-        BUFFER_TO_INT24((uint8_t *)allow_nssai_item_p->s_NSSAI.sD->buf, msg->allowed_nssai[i].sd);
-      } else {
-        msg->allowed_nssai[i].sd = 0xffffff;
-      }
-    }
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_AllowedNSSAI, true);
+  NGAP_DEBUG("AllowedNSSAI.list.count %d\n", ie->value.choice.AllowedNSSAI.list.count);
+  msg->nb_allowed_nssais = ie->value.choice.AllowedNSSAI.list.count;
+  for (i = 0; i < ie->value.choice.AllowedNSSAI.list.count; i++) {
+    msg->allowed_nssai[i] = decode_ngap_nssai(&ie->value.choice.AllowedNSSAI.list.array[i]->s_NSSAI);
+  }
 
   /* id-UESecurityCapabilities */
-  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
-                             NGAP_ProtocolIE_ID_id_UESecurityCapabilities, true);
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t,
+                             ie,
+                             container,
+                             NGAP_ProtocolIE_ID_id_UESecurityCapabilities,
+                             true);
+  msg->security_capabilities = decode_ngap_security_capabilities(&ie->value.choice.UESecurityCapabilities);
 
-    msg->security_capabilities.nRencryption_algorithms =
-      BIT_STRING_to_uint16(&ie->value.choice.UESecurityCapabilities.nRencryptionAlgorithms);
-    msg->security_capabilities.nRintegrity_algorithms =
-      BIT_STRING_to_uint16(&ie->value.choice.UESecurityCapabilities.nRintegrityProtectionAlgorithms);
-    msg->security_capabilities.eUTRAencryption_algorithms =
-      BIT_STRING_to_uint16(&ie->value.choice.UESecurityCapabilities.eUTRAencryptionAlgorithms);
-    msg->security_capabilities.eUTRAintegrity_algorithms = BIT_STRING_to_uint16(&ie->value.choice.UESecurityCapabilities.eUTRAintegrityProtectionAlgorithms);
+  /* id-SecurityKey : Copy the security key */
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_SecurityKey, true);
+  memcpy(&msg->security_key, ie->value.choice.SecurityKey.buf, ie->value.choice.SecurityKey.size);
 
-    /* id-SecurityKey : Copy the security key */
-    NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_SecurityKey, true);
-    memcpy(&msg->security_key, ie->value.choice.SecurityKey.buf, ie->value.choice.SecurityKey.size);
-
-    /* id-MobilityRestrictionList */
-    NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container, NGAP_ProtocolIE_ID_id_MobilityRestrictionList, false);
-
-    if (ie != NULL) { /* checked by macro but cppcheck doesn't see it */
-      NGAP_MobilityRestrictionList_t *mobility_rest_list_p = NULL;
-      mobility_rest_list_p = &ie->value.choice.MobilityRestrictionList;
-
-      msg->mobility_restriction_flag = 1;
-      TBCD_TO_MCC_MNC(
-          &mobility_rest_list_p->servingPLMN, msg->mobility_restriction.serving_plmn.mcc, msg->mobility_restriction.serving_plmn.mnc, msg->mobility_restriction.serving_plmn.mnc_digit_length);
-  } 
-
+  /* id-MobilityRestrictionList */
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t,
+                             ie,
+                             container,
+                             NGAP_ProtocolIE_ID_id_MobilityRestrictionList,
+                             false);
+  if (ie != NULL) {
+    msg->mobility_restriction = decode_ngap_mobility_restriction(&ie->value.choice.MobilityRestrictionList);
+    msg->mobility_restriction_flag = true;
+  }
 
   /* id-NAS-PDU */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_InitialContextSetupRequestIEs_t, ie, container,
                                  NGAP_ProtocolIE_ID_id_NAS_PDU, false);
 
   if (ie)
-    allocCopy(&msg->nas_pdu, ie->value.choice.NAS_PDU);
+    octet_string_to_ngap_pdu(&msg->nas_pdu, ie->value.choice.NAS_PDU);
 
   itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
 
@@ -964,10 +947,7 @@ static int ngap_gNB_handle_pdusession_setup_request(sctp_assoc_t assoc_id, uint3
   /* UE Aggregated Maximum Bitrate */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_PDUSessionResourceSetupRequestIEs_t, ie, container,
                          NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate, true);
-  asn_INTEGER2ulong(&(ie->value.choice.UEAggregateMaximumBitRate.uEAggregateMaximumBitRateUL),
-                    &msg->ueAggMaxBitRateUplink);
-  asn_INTEGER2ulong(&(ie->value.choice.UEAggregateMaximumBitRate.uEAggregateMaximumBitRateDL),
-                    &msg->ueAggMaxBitRateDownlink);
+  msg->ueAggMaxBitRate = decode_ngap_UEAggregateMaximumBitRate(&ie->value.choice.UEAggregateMaximumBitRate);
 
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_PDUSessionResourceSetupRequestIEs_t, ie, container,
                          NGAP_ProtocolIE_ID_id_PDUSessionResourceSetupListSUReq, true);
@@ -979,17 +959,60 @@ static int ngap_gNB_handle_pdusession_setup_request(sctp_assoc_t assoc_id, uint3
     msg->pdusession_setup_params[i].pdusession_id = item_p->pDUSessionID;
 
     // S-NSSAI
-    OCTET_STRING_TO_INT8(&item_p->s_NSSAI.sST, msg->pdusession_setup_params[i].nssai.sst);
-    if (item_p->s_NSSAI.sD != NULL) {
-      BUFFER_TO_INT24((uint8_t *)item_p->s_NSSAI.sD->buf, msg->pdusession_setup_params[i].nssai.sd);
-    } else {
-      msg->pdusession_setup_params[i].nssai.sd = 0xffffff;
-    }
+    msg->pdusession_setup_params[i].nssai = decode_ngap_nssai(&item_p->s_NSSAI);
 
-    allocCopy(&msg->pdusession_setup_params[i].nas_pdu, *item_p->pDUSessionNAS_PDU);
-    allocCopy(&msg->pdusession_setup_params[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
+    octet_string_to_ngap_pdu(&msg->pdusession_setup_params[i].nas_pdu, *item_p->pDUSessionNAS_PDU);
+    octet_string_to_ngap_pdu(&msg->pdusession_setup_params[i].pdusessionTransfer, item_p->pDUSessionResourceSetupRequestTransfer);
   }
     itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
+
+  return 0;
+}
+
+/** @brief Handler for the NG Handover Command
+ *         AMF -> source NG-RAN */
+static int ngap_gNB_handle_handover_command(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NGAP_PDU_t *pdu)
+{
+  NGAP_INFO("Handover command received by the source gNB\n");
+  ngap_gNB_amf_data_t *amf_desc_p = NULL;
+  DevAssert(pdu != NULL);
+
+  if ((amf_desc_p = ngap_gNB_get_AMF(NULL, assoc_id, 0)) == NULL) {
+    NGAP_ERROR(
+        "[SCTP %u] Received Handover Command for non "
+        "existing AMF context\n",
+        assoc_id);
+    return -1;
+  }
+
+  MessageDef *message_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_HANDOVER_COMMAND);
+  ngap_handover_command_t *msg = &NGAP_HANDOVER_COMMAND(message_p);
+  memset(msg, 0, sizeof(*msg));
+  if (decode_ng_handover_command(msg, pdu) < 0) {
+    NGAP_ERROR("Failed to decode NG Handover Command");
+    return -1;
+  }
+
+  ngap_gNB_ue_context_t *ue_desc_p = ngap_get_ue_context(msg->gNB_ue_ngap_id);
+  if (!ue_desc_p) {
+    NGAP_ERROR(
+        "[SCTP %u] Received HO Command Msg for non existing UE context (gNB_ue_ngap_id %d) \n",
+        assoc_id,
+        msg->gNB_ue_ngap_id);
+    return -1;
+  }
+
+  ue_desc_p->rx_stream = stream;
+
+  if (ue_desc_p->amf_ue_ngap_id != msg->amf_ue_ngap_id) {
+    NGAP_ERROR("UE context amf_ue_ngap_id is different form that of the message (%ld != %ld)",
+               ue_desc_p->amf_ue_ngap_id,
+               msg->amf_ue_ngap_id);
+    return -1;
+  }
+
+  NGAP_DEBUG("Handover Command is parsed with a size of: %u. Sending to RRC GNB!\n", msg->handoverCommand.length);
+  itti_send_msg_to_task(TASK_RRC_GNB, amf_desc_p->ngap_gNB_instance->instance, message_p);
 
   return 0;
 }
@@ -1164,8 +1187,8 @@ static int ngap_gNB_handle_pdusession_modify_request(sctp_assoc_t assoc_id, uint
 
     // check for the NAS PDU
     if (item_p->nAS_PDU != NULL && item_p->nAS_PDU->size > 0) {
-      allocCopy(&msg->pdusession_modify_params[i].nas_pdu, *item_p->nAS_PDU);
-      allocCopy(&msg->pdusession_modify_params[i].pdusessionTransfer, item_p->pDUSessionResourceModifyRequestTransfer);
+      octet_string_to_ngap_pdu(&msg->pdusession_modify_params[i].nas_pdu, *item_p->nAS_PDU);
+      octet_string_to_ngap_pdu(&msg->pdusession_modify_params[i].pdusessionTransfer, item_p->pDUSessionResourceModifyRequestTransfer);
     } else {
       LOG_W(NGAP, "received pdu session modify with void content for UE %u, pdu session %lu\n", msg->gNB_ue_ngap_id, item_p->pDUSessionID);
       continue;
@@ -1241,7 +1264,7 @@ static int ngap_gNB_handle_pdusession_release_command(sctp_assoc_t assoc_id, uin
                              NGAP_ProtocolIE_ID_id_NAS_PDU, false);
 
   if (ie)
-    allocCopy(&msg->nas_pdu, ie->value.choice.NAS_PDU);
+    octet_string_to_ngap_pdu(&msg->nas_pdu, ie->value.choice.NAS_PDU);
 
   /* id-PDUSessionResourceToReleaseListRelCmd */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_PDUSessionResourceReleaseCommandIEs_t, ie, container,
@@ -1253,7 +1276,7 @@ static int ngap_gNB_handle_pdusession_release_command(sctp_assoc_t assoc_id, uin
     NGAP_PDUSessionResourceToReleaseItemRelCmd_t *item_p;
     item_p = ie->value.choice.PDUSessionResourceToReleaseListRelCmd.list.array[i];
     msg->pdusession_release_params[i].pdusession_id = item_p->pDUSessionID;
-    allocCopy(&msg->pdusession_release_params[i].data, item_p->pDUSessionResourceReleaseCommandTransfer);
+    octet_string_to_ngap_pdu(&msg->pdusession_release_params[i].data, item_p->pDUSessionResourceReleaseCommandTransfer);
   }
 
   itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
@@ -1293,8 +1316,8 @@ const ngap_message_decoded_callback ngap_messages_callback[][3] = {
     {ngap_gNB_handle_error_indication, 0, 0}, /* ErrorIndication */
     {0, 0, 0}, /* HandoverCancel */
     {0, 0, 0}, /* HandoverNotification */
-    {0, 0, 0}, /* HandoverPreparation */
-    {0, 0, 0}, /* HandoverResourceAllocation */
+    {0, ngap_gNB_handle_handover_command, 0}, /* HandoverPreparation */
+    {ngap_gNB_handle_handover_request, 0, 0}, /* HandoverResourceAllocation */
     {ngap_gNB_handle_initial_context_request, 0, 0}, /* InitialContextSetup */
     {0, 0, 0}, /* InitialUEMessage */
     {0, 0, 0}, /* LocationReportingControl */

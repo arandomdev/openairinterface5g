@@ -34,6 +34,12 @@
  020002
  030001
  030002
+ 000004
+ 040001
+ 050001
+ 040001
+ 030001
+ 030002
  100001
  222222
         </TestCaseRequestedList>
@@ -62,9 +68,9 @@
 
         <testCase id="000002">
                 <class>Deploy_Object</class>
-                <desc>Deploy OAI 5G gNB+UE RF sim SA</desc>
+                <desc>Deploy OAI 5G gNB PCI 0 + UE RFsim SA</desc>
                 <yaml_path>ci-scripts/yaml_files/5g_rfsimulator_2x2</yaml_path>
-                <services>oai-gnb oai-nr-ue</services>
+                <services>oai-gnb-pci0 oai-nr-ue</services>
                 <eNB_instance>0</eNB_instance>
                 <eNB_serverId>0</eNB_serverId>
         </testCase>
@@ -74,6 +80,15 @@
                 <desc>Attach OAI UE (Wait for IP)</desc>
                 <id>rfsim5g_ue</id>
                 <nodes>cacofonix</nodes>
+        </testCase>
+
+        <testCase id="000004">
+                <class>Deploy_Object</class>
+                <desc>Deploy OAI 5G gNB PCI 1 RFsim SA</desc>
+                <yaml_path>ci-scripts/yaml_files/5g_rfsimulator_24prb</yaml_path>
+                <services>oai-gnb-pci1</services>
+                <eNB_instance>0</eNB_instance>
+                <eNB_serverId>0</eNB_serverId>
         </testCase>
 
         <testCase id="020001">
@@ -120,6 +135,20 @@
                 <svr_node>cacofonix</svr_node>
                 <iperf_packetloss_threshold>5</iperf_packetloss_threshold>
                 <iperf_bitrate_threshold>90</iperf_bitrate_threshold>
+        </testCase>
+
+        <testCase id="040001">
+                <class>IdleSleep</class>
+                <desc>Sleep</desc>
+                <idle_sleep_time_in_sec>5</idle_sleep_time_in_sec>
+        </testCase>
+
+        <testCase id="050001">
+                <class>Custom_Command</class>
+                <desc>Trigger N2 Handover</desc>
+                <node>cacofonix</node>
+                <command>echo ci trigger_n2_ho 0,1,1 | nc -N 192.168.71.140 9090</command>
+                <command_fail>yes</command_fail>
         </testCase>
 
         <testCase id="100001">

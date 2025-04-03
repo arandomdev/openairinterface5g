@@ -28,6 +28,7 @@
  */
 
 #include <stdint.h>
+#include "conversions.h"
 #include "ngap_common.h"
 
 int asn1_xer_print = 0;
@@ -65,4 +66,117 @@ void encode_ngap_cause(NGAP_Cause_t *out, const ngap_cause_t *in)
       AssertFatal(false, "Unknown failure cause %d\n", in->type);
       break;
   }
+}
+
+ngap_cause_t decode_ngap_cause(NGAP_Cause_t *in)
+{
+  ngap_cause_t out = {0};
+  switch (in->present) {
+    case NGAP_Cause_PR_radioNetwork:
+      out.type = NGAP_CAUSE_RADIO_NETWORK;
+      out.value = in->choice.radioNetwork;
+      break;
+
+    case NGAP_Cause_PR_transport:
+      out.type = NGAP_CAUSE_TRANSPORT;
+      out.value = in->choice.transport;
+      break;
+
+    case NGAP_Cause_PR_nas:
+      out.type = NGAP_CAUSE_NAS;
+      out.value = in->choice.nas;
+      break;
+
+    case NGAP_Cause_PR_protocol:
+      out.type = NGAP_CAUSE_PROTOCOL;
+      out.value = in->choice.protocol;
+      break;
+
+    case NGAP_Cause_PR_misc:
+      out.type = NGAP_CAUSE_MISC;
+      out.value = in->choice.misc;
+      break;
+
+    default:
+      out.type = NGAP_CAUSE_NOTHING;
+      NGAP_ERROR("Unknown failure cause %d\n", in->present);
+      break;
+  }
+  return out;
+}
+
+ngap_guami_t decode_ngap_guami(const NGAP_GUAMI_t *in)
+{
+  ngap_guami_t out = {0};
+  TBCD_TO_MCC_MNC(&in->pLMNIdentity, out.mcc, out.mnc, out.mnc_len);
+  OCTET_STRING_TO_INT8(&in->aMFRegionID, out.amf_region_id);
+  OCTET_STRING_TO_INT16(&in->aMFSetID, out.amf_set_id);
+  OCTET_STRING_TO_INT8(&in->aMFPointer, out.amf_pointer);
+  return out;
+}
+
+ngap_ambr_t decode_ngap_UEAggregateMaximumBitRate(const NGAP_UEAggregateMaximumBitRate_t *in)
+{
+  ngap_ambr_t ambr = {0};
+  asn_INTEGER2ulong(&in->uEAggregateMaximumBitRateUL, &ambr.br_ul);
+  asn_INTEGER2ulong(&in->uEAggregateMaximumBitRateDL, &ambr.br_dl);
+  return ambr;
+}
+
+nssai_t decode_ngap_nssai(const NGAP_S_NSSAI_t *in)
+{
+  nssai_t nssai = {0};
+  OCTET_STRING_TO_INT8(&in->sST, nssai.sst);
+  if (in->sD != NULL) {
+    BUFFER_TO_INT24(in->sD->buf, nssai.sd);
+  } else {
+    nssai.sd = 0xffffff;
+  }
+  return nssai;
+}
+
+ngap_security_capabilities_t decode_ngap_security_capabilities(const NGAP_UESecurityCapabilities_t *in)
+{
+  ngap_security_capabilities_t out = {0};
+  out.nRencryption_algorithms = BIT_STRING_to_uint16(&in->nRencryptionAlgorithms);
+  out.nRintegrity_algorithms = BIT_STRING_to_uint16(&in->nRintegrityProtectionAlgorithms);
+  out.eUTRAencryption_algorithms = BIT_STRING_to_uint16(&in->eUTRAencryptionAlgorithms);
+  out.eUTRAintegrity_algorithms = BIT_STRING_to_uint16(&in->eUTRAintegrityProtectionAlgorithms);
+  return out;
+}
+
+ngap_mobility_restriction_t decode_ngap_mobility_restriction(const NGAP_MobilityRestrictionList_t *in)
+{
+  ngap_mobility_restriction_t out = {0};
+  TBCD_TO_MCC_MNC(&in->servingPLMN, out.serving_plmn.mcc, out.serving_plmn.mnc, out.serving_plmn.mnc_digit_length);
+  return out;
+}
+
+void encode_ngap_target_id(NGAP_HandoverRequiredIEs_t *out, const target_ran_node_id_t *in)
+{
+  out->id = NGAP_ProtocolIE_ID_id_TargetID;
+  out->criticality = NGAP_Criticality_reject;
+  out->value.present = NGAP_HandoverRequiredIEs__value_PR_TargetID;
+  // CHOICE Target ID: NG-RAN (M)
+  out->value.choice.TargetID.present = NGAP_TargetID_PR_targetRANNodeID;
+  asn1cCalloc(out->value.choice.TargetID.choice.targetRANNodeID, targetRan);
+  // Global RAN Node ID (M)
+  targetRan->globalRANNodeID.present = NGAP_GlobalRANNodeID_PR_globalGNB_ID;
+  asn1cCalloc(targetRan->globalRANNodeID.choice.globalGNB_ID, globalGnbId);
+  globalGnbId->gNB_ID.present = NGAP_GNB_ID_PR_gNB_ID;
+  MACRO_GNB_ID_TO_BIT_STRING(in->targetgNBId, &globalGnbId->gNB_ID.choice.gNB_ID);
+  MCC_MNC_TO_PLMNID(in->plmn_identity.mcc, in->plmn_identity.mnc, in->plmn_identity.mnc_digit_length, &globalGnbId->pLMNIdentity);
+  // Selected TAI (M)
+  INT24_TO_OCTET_STRING(in->tac, &targetRan->selectedTAI.tAC);
+  MCC_MNC_TO_PLMNID(in->plmn_identity.mcc,
+                    in->plmn_identity.mnc,
+                    in->plmn_identity.mnc_digit_length,
+                    &targetRan->selectedTAI.pLMNIdentity);
+}
+
+void encode_ngap_nr_cgi(NGAP_NR_CGI_t *out, const ngap_plmn_identity_t *plmn, const uint32_t cell_id)
+{
+  out->iE_Extensions = NULL;
+  MCC_MNC_TO_PLMNID(plmn->mcc, plmn->mnc, plmn->mnc_digit_length, &out->pLMNIdentity);
+  NR_CELL_ID_TO_BIT_STRING(cell_id, &out->nRCellIdentity);
 }

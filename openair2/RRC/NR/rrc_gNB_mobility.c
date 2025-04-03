@@ -36,6 +36,8 @@
 #include "openair3/SECU/key_nas_deriver.h"
 #include "openair2/RRC/NR/rrc_gNB_NGAP.h"
 
+#define MAX_UINT32_RANGE 0xFFFFFFFF
+
 typedef enum { HO_CTX_BOTH, HO_CTX_SOURCE, HO_CTX_TARGET } ho_ctx_type_t;
 static nr_handover_context_t *alloc_ho_ctx(ho_ctx_type_t type)
 {
@@ -56,6 +58,46 @@ static void free_ho_ctx(nr_handover_context_t *ho_ctx)
   free(ho_ctx);
 }
 
+static int fill_drb_to_be_setup(const gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, f1ap_drb_to_be_setup_t drbs[MAX_DRBS_PER_UE])
+{
+  int nb_drb = 0;
+  for (int i = 0; i < MAX_DRBS_PER_UE; ++i) {
+    drb_t *rrc_drb = &ue->established_drbs[i];
+    if (rrc_drb->status == DRB_INACTIVE)
+      continue;
+
+    f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
+    nb_drb++;
+    drb->drb_id = rrc_drb->drb_id;
+    drb->rlc_mode = rrc->configuration.um_on_default_drb ? F1AP_RLC_MODE_UM_BIDIR : F1AP_RLC_MODE_AM;
+    memcpy(&drb->up_ul_tnl[0].tl_address, &rrc_drb->cuup_tunnel_config.addr.buffer, sizeof(uint8_t) * 4);
+    drb->up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
+    drb->up_ul_tnl[0].teid = rrc_drb->cuup_tunnel_config.teid;
+    drb->up_ul_tnl_length = 1;
+
+    /* fetch an existing PDU session for this DRB */
+    rrc_pdu_session_param_t *pdu = find_pduSession_from_drbId(ue, drb->drb_id);
+    AssertFatal(pdu != NULL, "no PDU session for DRB ID %ld\n", drb->drb_id);
+    drb->nssai = pdu->param.nssai;
+
+    // for the moment, we only support one QoS flow. Put a reminder in case
+    // this changes
+    AssertFatal(pdu->param.nb_qos == 1, "only 1 Qos flow supported\n");
+    drb->drb_info.flows_to_be_setup_length = 1;
+    drb->drb_info.flows_mapped_to_drb = calloc_or_fail(1, sizeof(drb->drb_info.flows_mapped_to_drb[0]));
+    AssertFatal(drb->drb_info.flows_mapped_to_drb, "could not allocate memory\n");
+    int qfi = rrc_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[0];
+    DevAssert(qfi > 0);
+    drb->drb_info.flows_mapped_to_drb[0].qfi = qfi;
+    pdusession_level_qos_parameter_t *in_qos_char = get_qos_characteristics(qfi, pdu);
+    drb->drb_info.flows_mapped_to_drb[0].qos_params.qos_characteristics = get_qos_char_from_qos_flow_param(in_qos_char);
+
+    /* the DRB QoS parameters: we just reuse the ones from the first flow */
+    drb->drb_info.drb_qos = drb->drb_info.flows_mapped_to_drb[0].qos_params;
+  }
+  return nb_drb;
+}
+
 /* \brief Initiate a handover of UE to a specific target cell handled by this
  * CU.
  * \param ue a UE context for which the handover should be triggered. The UE
@@ -68,17 +110,17 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
                                  gNB_RRC_UE_t *ue,
                                  const nr_rrc_du_container_t *source_du,
                                  const nr_rrc_du_container_t *target_du,
-                                 uint8_t *ho_prep_buf,
-                                 uint32_t ho_prep_len,
+                                 byte_array_t *ho_prep_info,
                                  ho_req_ack_t ack,
                                  ho_success_t success,
-                                 ho_cancel_t cancel)
+                                 ho_cancel_t cancel,
+                                 ho_failure_t failure)
 {
   DevAssert(rrc != NULL);
   DevAssert(ue != NULL);
   DevAssert(target_du != NULL);
   // source_du might be NULL -> inter-CU handover
-  DevAssert(ho_prep_buf != NULL && ho_prep_len > 0);
+  DevAssert(ho_prep_info->buf != NULL && ho_prep_info->len > 0);
 
   if (ue->ho_context != NULL) {
     LOG_E(NR_RRC, "handover for UE %u ongoing, cannot trigger new\n", ue->rrc_ue_id);
@@ -101,6 +143,7 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
   // response
   ho_ctx->target->ho_req_ack = ack;
   ho_ctx->target->ho_success = success;
+  ho_ctx->target->ho_failure = failure;
 
   const f1_ue_data_t ue_data = cu_get_f1_ue_data(ue->rrc_ue_id);
   if (source_du != NULL) {
@@ -125,45 +168,12 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
         target_du->setup_req->cell[0].info.nr_pci);
 
   cu_to_du_rrc_information_t cu2du = {
-      .handoverPreparationInfo = ho_prep_buf,
-      .handoverPreparationInfo_length = ho_prep_len,
+      .handoverPreparationInfo = ho_prep_info->buf,
+      .handoverPreparationInfo_length = ho_prep_info->len,
   };
 
   f1ap_drb_to_be_setup_t drbs[MAX_DRBS_PER_UE] = {0};
-  int nb_drb = 0;
-  for (int i = 0; i < sizeofArray(drbs); ++i) {
-    drb_t *rrc_drb = &ue->established_drbs[i];
-    if (rrc_drb->status == DRB_INACTIVE)
-      continue;
-
-    f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
-    nb_drb++;
-    drb->drb_id = rrc_drb->drb_id;
-    drb->rlc_mode = rrc->configuration.um_on_default_drb ? F1AP_RLC_MODE_UM_BIDIR : F1AP_RLC_MODE_AM;
-    memcpy(&drb->up_ul_tnl[0].tl_address, &rrc_drb->cuup_tunnel_config.addr.buffer, sizeof(uint8_t) * 4);
-    drb->up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
-    drb->up_ul_tnl[0].teid = rrc_drb->cuup_tunnel_config.teid;
-    drb->up_ul_tnl_length = 1;
-
-    /* fetch an existing PDU session for this DRB */
-    rrc_pdu_session_param_t *pdu = find_pduSession_from_drbId(ue, drb->drb_id);
-    AssertFatal(pdu != NULL, "no PDU session for DRB ID %ld\n", drb->drb_id);
-    drb->nssai = pdu->param.nssai;
-
-    // for the moment, we only support one QoS flow. Put a reminder in case
-    // this changes
-    AssertFatal(pdu->param.nb_qos == 1, "only 1 Qos flow supported\n");
-    drb->drb_info.flows_to_be_setup_length = 1;
-    drb->drb_info.flows_mapped_to_drb = calloc_or_fail(1, sizeof(f1ap_flows_mapped_to_drb_t));
-    int qfi = rrc_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[0];
-    DevAssert(qfi > 0);
-    drb->drb_info.flows_mapped_to_drb[0].qfi = qfi;
-    pdusession_level_qos_parameter_t *in_qos_char = get_qos_characteristics(qfi, pdu);
-    drb->drb_info.flows_mapped_to_drb[0].qos_params.qos_characteristics = get_qos_char_from_qos_flow_param(in_qos_char);
-
-    /* the DRB QoS parameters: we just reuse the ones from the first flow */
-    drb->drb_info.drb_qos = drb->drb_info.flows_mapped_to_drb[0].qos_params;
-  }
+  int nb_drb = fill_drb_to_be_setup(rrc, ue, drbs);
 
   f1ap_srb_to_be_setup_t srbs[2] = {{.srb_id = 1, .lcid = 1}, {.srb_id = 2, .lcid = 2}};
   f1ap_served_cell_info_t *cell_info = &target_du->setup_req->cell[0].info;
@@ -185,28 +195,13 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
   rrc->mac_rrc.ue_context_setup_request(target_du->assoc_id, &ue_context_setup_req);
 }
 
-/*
-void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc, int nr_cgi, uint8_t *ho_prep_info, uint32_t *ho_prep_len, void *pdu_session)
-{
-  // call from outside (via NGAP message), with the request for handover for a
-  // (any) UE. This handler should, in order:
-  //
-  // 1. look up the target DU =du= via get_du_by_cell_id(nr_cgi)
-  //    (and reject the request if it can't find the DU)
-  // 2. create a context for a new UE =UE=, based on pdu_session information
-  // 3. call nr_initiate_handover(rrc, UE, NULL, du, ho_prep_info, ho_prep_len);
-  //
-  // after success of the DU, send the result via =success_ptr= to the source
-  // CU.
-}
-*/
-
 typedef struct deliver_ue_ctxt_modification_data_t {
   gNB_RRC_INST *rrc;
   f1ap_ue_context_modif_req_t *modification_req;
   sctp_assoc_t assoc_id;
 } deliver_ue_ctxt_modification_data_t;
-static void rrc_deliver_ue_ctxt_modif_req(void *deliver_pdu_data, ue_id_t ue_id, int srb_id, char *buf, int size, int sdu_id)
+
+void rrc_deliver_ue_ctxt_modif_req(void *deliver_pdu_data, ue_id_t ue_id, int srb_id, char *buf, int size, int sdu_id)
 {
   DevAssert(deliver_pdu_data != NULL);
   deliver_ue_ctxt_modification_data_t *data = deliver_pdu_data;
@@ -214,7 +209,8 @@ static void rrc_deliver_ue_ctxt_modif_req(void *deliver_pdu_data, ue_id_t ue_id,
   data->modification_req->rrc_container_length = size;
   data->rrc->mac_rrc.ue_context_modification_request(data->assoc_id, data->modification_req);
 }
-static void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, uint8_t *rrc_reconf, int rrc_reconf_len)
+
+void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, uint8_t *rrc_reconf, int rrc_reconf_len)
 {
   f1_ue_data_t ue_data = cu_get_f1_ue_data(ue->rrc_ue_id);
 
@@ -244,15 +240,15 @@ static void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_
                        &data);
 }
 
-static void nr_rrc_f1_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t *rrc_reconf_buf, uint32_t rrc_reconf_len)
+static void nr_rrc_f1_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
 {
-  // N2/Xn HO: fill with UE caps, as-context, rrc reconf, send to source CU
-  // also, fill the UE->rnti from the new one (in F1 case, happens after
-  // confirmation of ue ctxt modif
+  uint8_t rrc_reconf_buf[NR_RRC_BUF_SIZE] = {0};
+  int size = rrc_gNB_encode_RRCReconfiguration(rrc, UE, xid, NULL, rrc_reconf_buf, sizeof(rrc_reconf_buf), true);
+  DevAssert(size > 0 && size <= sizeof(rrc_reconf_buf));
 
   // F1 HO: handling of "source CU" information
   DevAssert(UE->ho_context->source != NULL);
-  rrc_gNB_trigger_reconfiguration_for_handover(rrc, UE, rrc_reconf_buf, rrc_reconf_len);
+  rrc_gNB_trigger_reconfiguration_for_handover(rrc, UE, rrc_reconf_buf, size);
   LOG_A(NR_RRC, "HO acknowledged: Send reconfiguration for UE %u/RNTI %04x...\n", UE->rrc_ue_id, UE->rnti);
 
   /* Re-establish SRB2 according to clause 5.3.5.6.3 of 3GPP TS 38.331
@@ -319,7 +315,8 @@ void nr_rrc_trigger_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, nr_rrc_du_contain
   ho_req_ack_t ack = nr_rrc_f1_ho_acknowledge;
   ho_success_t success = nr_rrc_f1_ho_complete;
   ho_cancel_t cancel = nr_rrc_cancel_f1_ho;
-  nr_initiate_handover(rrc, ue, source_du, target_du, buf, size, ack, success, cancel);
+  byte_array_t hpi = {.buf = buf, .len = size};
+  nr_initiate_handover(rrc, ue, source_du, target_du, &hpi, ack, success, cancel, NULL);
 }
 
 void nr_rrc_finalize_ho(gNB_RRC_UE_t *ue)
@@ -352,4 +349,213 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
   }
 
   nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
+}
+
+/** @brief This callback is used by the target gNB
+ *         to trigger the Handover Request Acknowledge towards the AMF */
+static void nr_rrc_n2_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, uint8_t xid)
+{
+  if (!cu_exists_f1_ue_data(UE->rrc_ue_id)) {
+    LOG_E(NR_RRC, "No CU found for rrc_ue_id %d\n", UE->rrc_ue_id);
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_RELEASE_DUE_TO_NGRAN_GENERATED_REASON};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  f1_ue_data_t previous_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+  previous_data.secondary_ue = UE->ho_context->target->du_ue_id;
+  if (!cu_update_f1_ue_data(UE->rrc_ue_id, &previous_data)) {
+    LOG_E(NR_RRC, "Failed to update F1 UE data for UE %d\n", UE->rrc_ue_id);
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_RELEASE_DUE_TO_NGRAN_GENERATED_REASON};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  LOG_I(NR_RRC, "Updated CU F1AP Context for UE %d, DU Id : %u\n", UE->rrc_ue_id, UE->ho_context->target->du_ue_id);
+
+  uint8_t rrc_reconf_buf[NR_RRC_BUF_SIZE] = {0};
+  size_t hoCommandSize = rrc_gNB_encode_HandoverCommand(UE, rrc, rrc_reconf_buf, xid);
+  if (hoCommandSize < 0) {
+    LOG_E(NR_RRC, "Failed to generate Handover Command Message\n");
+    ngap_handover_failure_t fail = {.amf_ue_ngap_id = UE->amf_ue_ngap_id,
+                                    .cause.type = NGAP_CAUSE_RADIO_NETWORK,
+                                    .cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM};
+    UE->ho_context->target->ho_failure(rrc, UE->rrc_ue_id, &fail);
+    return;
+  }
+
+  byte_array_t ba = {.buf = rrc_reconf_buf, .len = hoCommandSize};
+  rrc_gNB_send_NGAP_HANDOVER_REQUEST_ACKNOWLEDGE(rrc, UE, &ba);
+}
+
+/** @brief This callback is used by the target gNB
+ *         to trigger the Handover Notify towards the AMF */
+static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  rrc_gNB_send_NGAP_HANDOVER_NOTIFY(rrc, UE);
+}
+
+/** @brief This callback is used by the source gNB to inform the AMF
+ *         about the cancellation of an ongoing handover */
+static void nr_rrc_n2_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  // TODO 3GPP TS 38.413: 8.4.5, 9.2.3.11
+}
+
+/** @brief Callback function to trigger NG Handover Failure on the target gNB,
+ *         to inform the AMF that the preparation of resources has failed (e.g. unsatisfied criteria,
+ *         gNB is already loaded). This message represents an Unsuccessful Outcome of the Handover Resource Allocation
+ *  @note: As HO Failure may trigger even at preprocessing of AMF message[HO REQ], at that time target gNB
+ *         have not created the UE context. In such case as part API call need to fill the ho_amf_ue_id from ho
+ *         request structure to proceed the HO Failure, rest of the scenario it should be 0xFFFFFFFFFFFFFFFF. */
+void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg)
+{
+  LOG_I(NR_RRC, "Triggering N2 Handover Failure\n");
+  rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, msg);
+
+  if (gnb_ue_id != MAX_UINT32_RANGE) {
+    LOG_I(NR_RRC, "Send UE Context Release for gnb_ue_id %d\n", gnb_ue_id);
+    rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, gnb_ue_id);
+    rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_REQ(rrc->module_id, ue_context_p, msg->cause);
+  }
+
+  return;
+}
+
+struct NR_UE_NR_Capability *get_ue_nr_capability(int rnti, uint8_t *buf, uint32_t len)
+{
+  if (buf == NULL || len == 0)
+    return NULL;
+
+  NR_UE_CapabilityRAT_ContainerList_t *clist = NULL;
+  asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_UE_CapabilityRAT_ContainerList, (void **)&clist, buf, len, 0, 0);
+  if (dec_rval.code != RC_OK) {
+    LOG_W(NR_MAC, "cannot decode UE capability container list of UE RNTI %04x, ignoring capabilities\n", rnti);
+    return NULL;
+  }
+
+  NR_UE_NR_Capability_t *cap = NULL;
+  for (int i = 0; i < clist->list.count; i++) {
+    const NR_UE_CapabilityRAT_Container_t *c = clist->list.array[i];
+    if (cap != NULL || c->rat_Type != NR_RAT_Type_nr) {
+      LOG_W(NR_MAC, "UE RNTI %04x: ignoring capability of type %ld\n", rnti, c->rat_Type);
+      continue;
+    }
+
+    asn_dec_rval_t dec_rval = uper_decode(NULL,
+                                          &asn_DEF_NR_UE_NR_Capability,
+                                          (void **)&cap,
+                                          c->ue_CapabilityRAT_Container.buf,
+                                          c->ue_CapabilityRAT_Container.size,
+                                          0,
+                                          0);
+    if (dec_rval.code != RC_OK) {
+      LOG_W(NR_MAC, "cannot decode NR UE capabilities of UE RNTI %04x, ignoring NR capability\n", rnti);
+      cap = NULL;
+      continue;
+    }
+  }
+  return cap;
+}
+
+/** @brief Trigger N2 Handover on the target gNB:
+ *         1) set up callbacks
+ *         2) initiate N2 handover on target NG-RAN, which triggers the set up
+ *            of HO context and UE Context Setup procedures */
+void nr_rrc_trigger_n2_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue)
+{
+  ho_req_ack_t ack = nr_rrc_n2_ho_acknowledge;
+  ho_success_t success = nr_rrc_n2_ho_complete;
+  ho_cancel_t cancel = nr_rrc_n2_ho_cancel;
+  ho_failure_t failure = nr_rrc_n2_ho_failure;
+
+  const nr_rrc_du_container_t *target_du = get_du_for_ue(rrc, ue->rrc_ue_id);
+  nr_initiate_handover(rrc, ue, NULL, target_du, &ue->ue_ho_prep_info, ack, success, cancel, failure);
+
+  if (!ue->UE_Capability_nr) {
+    NR_UE_NR_Capability_t *ue_cap = NULL;
+    ue_cap = get_ue_nr_capability(ue->rnti, ue->ue_cap_buffer.buf, ue->ue_cap_buffer.len);
+    ue->UE_Capability_nr = ue_cap;
+    ue->UE_Capability_size = ue->ue_cap_buffer.len;
+  }
+
+}
+
+/** @brief Trigger N2 handover on source gNB:
+ *         1) Prepare RRC Container with HandoverPreparationInformation message
+ *         2) send NGAP Handover Required message */
+void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc,
+                          gNB_RRC_UE_t *ue,
+                          int serving_pci,
+                          const nr_neighbour_gnb_configuration_t *neighbour_config)
+{
+  byte_array_t *hoPrepInfo = rrc_gNB_generate_HandoverPreparationInformation(ue, serving_pci);
+  rrc_gNB_send_NGAP_HANDOVER_REQUIRED(rrc, ue, neighbour_config, hoPrepInfo);
+  free(hoPrepInfo);
+}
+
+extern const nr_neighbour_gnb_configuration_t *get_neighbour_by_pci(int pci);
+
+/** @brief Simulate N2 handover on the same cell */
+static bool nr_n2_trigger_intra_cell_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  struct nr_rrc_du_container_t *du = get_du_for_ue(rrc, UE->rrc_ue_id);
+  if (du == NULL) {
+    LOG_E(NR_RRC, "HO LOG: Unknown DU for ue Id: %d\n", UE->rrc_ue_id);
+    return false;
+  }
+
+  uint16_t pci = du->setup_req->cell[0].info.nr_pci;
+  LOG_E(NR_RRC, "HO LOG: Triggering Intra Cell HO for UE %d to cell %d\n", UE->rrc_ue_id, pci);
+
+  nr_neighbour_gnb_configuration_t neighbourConfig = {
+      .isIntraFrequencyNeighbour = true,
+      .gNB_ID = du->setup_req->gNB_DU_id,
+      .nrcell_id = du->setup_req->cell[0].info.nr_cellid,
+      .physicalCellId = du->setup_req->cell[0].info.nr_pci,
+      .plmn.mcc = du->setup_req->cell[0].info.plmn.mcc,
+      .plmn.mnc = du->setup_req->cell[0].info.plmn.mnc,
+      .plmn.mnc_digit_length = du->setup_req->cell[0].info.plmn.mnc_digit_length,
+      .subcarrierSpacing = du->setup_req->cell[0].info.tdd.tbw.scs,
+  };
+
+  nr_rrc_trigger_n2_ho(rrc, UE, pci, &neighbourConfig);
+  return true;
+}
+
+void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t scell_pci, uint32_t rrc_ue_id)
+{
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, rrc_ue_id);
+  if (ue_context_p == NULL) {
+    LOG_E(NR_RRC, "HO LOG: cannot find UE context for UE ID %d\n", rrc_ue_id);
+    return;
+  }
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+
+  // Do handover on the same gNB
+  if (neighbour_pci == scell_pci) {
+    nr_n2_trigger_intra_cell_ho(rrc, UE);
+    return;
+  }
+
+  LOG_E(NR_RRC, "HO LOG: Triggering HO for UE %d to neighbour cell %d\n", rrc_ue_id, neighbour_pci);
+  struct nr_rrc_du_container_t *du = get_du_for_ue(rrc, rrc_ue_id);
+  if (du == NULL) {
+    LOG_E(NR_RRC, "HO LOG: Unknown DU for ue Id: %d\n", rrc_ue_id);
+    return;
+  }
+
+  const f1ap_served_cell_info_t *scell_du = get_cell_information_by_phycellId(du->setup_req->cell[0].info.nr_pci);
+  DevAssert(scell_du);
+  const nr_neighbour_gnb_configuration_t *neighbour = get_neighbour_by_pci(neighbour_pci);
+  if (neighbour == NULL) {
+    LOG_E(NR_RRC, "N2 HO trigger failed: could not find neighbour gNB with PCI %d\n", neighbour_pci);
+    return;
+  }
+
+  nr_rrc_trigger_n2_ho(rrc, UE, scell_du->nr_pci, neighbour);
 }

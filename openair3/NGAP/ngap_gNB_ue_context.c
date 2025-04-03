@@ -73,6 +73,12 @@ struct ngap_gNB_ue_context_s *ngap_get_ue_context(uint32_t gNB_ue_ngap_id)
   return RB_FIND(ngap_ue_map, &ngap_ue_head, &temp);
 }
 
+ngap_gNB_ue_context_t *ngap_get_ue_context_from_amf_ue_ngap_id(uint32_t amf_ue_ngap_id)
+{
+  ngap_gNB_ue_context_t temp = {.amf_ue_ngap_id = amf_ue_ngap_id};
+  return RB_FIND(ngap_ue_map, &ngap_ue_head, &temp);
+}
+
 struct ngap_gNB_ue_context_s *ngap_detach_ue_context(uint32_t gNB_ue_ngap_id)
 {
   struct ngap_gNB_ue_context_s *tmp = ngap_get_ue_context(gNB_ue_ngap_id);
@@ -82,4 +88,17 @@ struct ngap_gNB_ue_context_s *ngap_detach_ue_context(uint32_t gNB_ue_ngap_id)
   }
   RB_REMOVE(ngap_ue_map, &ngap_ue_head, tmp);
   return tmp;
+}
+
+int ngap_create_ue_context(const ngap_gNB_ue_context_t *ue)
+{
+  LOG_I(NGAP, "Create UE context for AMF '%s' (assoc_id %d)\n", ue->amf_ref->amf_name, ue->amf_ref->assoc_id);
+
+  ngap_gNB_ue_context_t *ue_desc_p = calloc_or_fail(1, sizeof(*ue_desc_p));
+
+  *ue_desc_p = *ue;
+
+  ngap_store_ue_context(ue_desc_p);
+
+  return 0;
 }

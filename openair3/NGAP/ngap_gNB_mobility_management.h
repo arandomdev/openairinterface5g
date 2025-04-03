@@ -19,29 +19,18 @@
  *      contact@openairinterface.org
  */
 
-#ifndef BYTE_ARRAY_H 
-#define BYTE_ARRAY_H 
+#ifndef NGAP_GNB_MOBILITY_MANAGEMENT_H_
+#define NGAP_GNB_MOBILITY_MANAGEMENT_H_
 
-/* WARNING: This file is also defined at XXXXX. Both files need to be completely equal. Same applies for *.c */
-
-#include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include "common/platform_types.h"
+#include "ngap_messages_types.h"
 
-typedef struct {
-  size_t len;
-  uint8_t* buf;
-} byte_array_t;
+NGAP_NGAP_PDU_t *encode_ng_handover_required(const ngap_handover_required_t *msg);
+NGAP_NGAP_PDU_t *encode_ng_handover_failure(const ngap_handover_failure_t *msg);
+int decode_ng_handover_request(ngap_handover_request_t *out, const NGAP_NGAP_PDU_t *pdu);
+NGAP_NGAP_PDU_t *encode_ng_handover_request_ack(ngap_handover_request_ack_t *msg);
+int decode_ng_handover_command(ngap_handover_command_t *msg, NGAP_NGAP_PDU_t *pdu);
+NGAP_NGAP_PDU_t *encode_ng_handover_notify(const ngap_handover_notify_t *msg);
 
-typedef struct {
-  uint8_t buf[32];
-} byte_array_32_t;
-
-byte_array_t copy_byte_array(byte_array_t src);
-void free_byte_array(byte_array_t* ba);
-bool eq_byte_array(const byte_array_t* m0, const byte_array_t* m1);
-
-byte_array_t cp_str_to_ba(const char* str);
-char* cp_ba_to_str(const byte_array_t ba);
-
-#endif
+#endif /* NGAP_GNB_MOBILITY_MANAGEMENT_H_ */

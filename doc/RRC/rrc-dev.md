@@ -210,7 +210,7 @@ sequenceDiagram
   end
 ```
 
-## Handover
+## Inter-DU Handover (F1)
 
 The basic handover (HO) structure is as follows. In order to support various
 handover "message passing implementation" (F1AP, NGAP, XnAP), RRC employs
@@ -262,6 +262,64 @@ sequenceDiagram
   Note over cucp: nr_rrc_f1_ho_complete() ("on source CU")
   cucp->>sdu: F1AP UE Context Release Command
   sdu->>cucp: F1AP UE Context Release Complete
+  Note over ue,tdu: UE active on target DU
+```
+## Inter-gNB Handover (N2)
+
+This is an intra-NG-RAN procedure.
+
+```mermaid
+sequenceDiagram
+  participant ue as UE
+  participant sdu as source DU
+  participant scucp as source CU-CP
+  participant scuup as source CU-UP
+  participant tdu as target DU
+  participant tcucp as target CU-CP
+  participant tcuup as target CU-UP
+  participant amf as AMF
+
+  Note over ue,sdu: UE active on source DU
+  alt HO triggered through A3 event
+    ue->>sdu: RRC Measurement Report
+    sdu->>scucp: F1AP UL RRC Msg Transfer (RRC Measurement Report)
+    Note over scucp: Handover decision (A3 event trigger)
+  else Manual Trigger
+    Note over scucp: Handover decision (e.g., telnet)
+  end
+  Note over scucp: nr_rrc_trigger_n2_ho() ("on source CU")
+  scucp->>amf: HANDOVER REQUIRED
+  amf->>tcucp: HANDOVER REQUEST
+  Note over tcucp: nr_initiate_handover() ("on target CU")
+  tcucp<<->>tcuup: Bearer Context Setup
+  tcucp->>tdu: F1AP UE Context Setup Req
+  Note over tdu: Create UE context
+  tdu->>tcucp: F1AP UE Context Setup Resp (incl. CellGroupConfig)
+  Note over tcucp: rrc_CU_process_ue_context_setup_response() ("on target CU")
+  Note over scucp: cuup_notify_reestablishment()
+  scucp->>scuup: E1AP Bearer Context Modification Req
+  tcucp-->>tcucp: callback: ho_req_ack()
+  Note over tcucp: nr_rrc_n2_ho_acknowledge() ("on target CU")
+  tcucp->>amf: HANDOVER REQUEST ACKNOWLEDGE (data forwarding info)
+  amf->>scucp: HANDOVER COMMAND
+  scucp->>sdu: F1 UE Context Modification Req (RRC Reconfiguration)
+  scuup->>scucp: E1AP Bearer Context Modification Resp
+  sdu->>ue: RRC Reconfiguration
+  sdu->>scucp: F1AP Context Modification Resp
+  Note over sdu: Stop scheduling UE
+  Note over ue: UE attachment to target DU
+  Note over ue,tdu: RA (Msg1 + Msg2)
+  ue->>tdu: RRC Reconfiguration Complete
+  tdu->>tcucp: F1AP UL RRC Msg Transfer (RRC Reconfiguration Complete)
+  tcucp-->>tcucp: callback: ho_success()
+  Note over tcucp: nr_rrc_n2_ho_complete() ("on target CU")
+  Note over tcucp: handle_rrcReconfigurationComplete() ("on target CU")
+  tcucp->>amf: HANDOVER NOTIFY
+  amf->>scucp: UE Context Release Command
+  scucp->>amf: UE Context Release Complete
+  scucp->>scuup: E1 Bearer Context Release Command
+  scucp->>sdu: F1 UE Context Release
+  scuup->>scucp: E1 Bearer Context Release Complete
   Note over ue,tdu: UE active on target DU
 ```
 

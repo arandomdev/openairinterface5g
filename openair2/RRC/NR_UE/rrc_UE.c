@@ -360,6 +360,50 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   itti_send_msg_to_task(TASK_MAC_UE, rrc->ue_id, msg);
 }
 
+/** @brief AS security key update procedure (5.3.5.7 3GPP TS 38.331) */
+void as_security_key_update(NR_UE_RRC_INST_t *rrc, NR_MasterKeyUpdate_t *mku)
+{
+  if (mku->nas_Container) {
+    LOG_E(NR_RRC, "forward the nas-Container to the upper layers: not implemented yet\n");
+  }
+  if (mku->keySetChangeIndicator) {
+    LOG_E(NR_RRC, "derive or update the K gNB key based on the K AMF key, as specified in TS 33.501: not implemented yet\n");
+  } else {
+    /* derive or update the K gNB key based on the current K gNB key or the NH, using the nextHopChainingCount
+       value indicated in the received masterKeyUpdate, as specified in 6.9.2.3.3 3GPP TS 33.501 */
+    if (mku->nextHopChainingCount != rrc->nhcc) {
+      LOG_A(NR_RRC, "Received masterKeyUpdate (nextHopChainingCount %ld): update security keys\n", mku->nextHopChainingCount);
+      // - If the UE received an NCC value that was different from the NCC associated with the currently active
+      // K gNB/K eNB, the UE shall first synchronize the locally kept NH parameter by computing the function defined in
+      // Annex A.10 iteratively (and increasing the NCC value until it matches the NCC value received from the source
+      // ng-eNB/gNB via the HO command message.
+      uint8_t nh[SECURITY_KEY_LEN] = {0};
+      nr_ue_nas_t *nas = get_ue_nas_info(rrc->ue_id);
+      uint8_t *kamf = nas->security.kamf;
+      for (int i = rrc->nhcc; i < mku->nextHopChainingCount; i++) {
+        uint8_t *sync_input;
+        if (i == 0) {
+          derive_kgnb(kamf, 0, rrc->kgnb);
+          sync_input = rrc->kgnb;
+        } else {
+          sync_input = nh;
+        }
+        nr_derive_nh(kamf, sync_input, nh);
+      }
+      nr_derive_key_ng_ran_star(rrc->phyCellID, rrc->arfcn_ssb, nh, rrc->kgnb);
+      // When the NCC values match, the UE shall compute the K NG-RAN *
+      // from the synchronized NH parameter and the target PCI and its frequency ARFCN-DL/EARFCN-DL using the
+      // function defined in Annex A.11 and A.12.
+      // The UE shall use the KNG-RAN * as the K gNB when communicating with the target gNB and as the KeNB when
+      // communicating with the target ng-eNB.
+    } else {
+      nr_derive_key_ng_ran_star(rrc->phyCellID, rrc->arfcn_ssb, rrc->kgnb, rrc->kgnb);
+    }
+  }
+  // store the nextHopChainingCount value
+  rrc->nhcc = mku->nextHopChainingCount;
+}
+
 static void nr_rrc_process_reconfiguration_v1530(NR_UE_RRC_INST_t *rrc, NR_RRCReconfiguration_v1530_IEs_t *rec_1530, int gNB_index)
 {
   if (rec_1530->fullConfig) {
@@ -368,10 +412,8 @@ static void nr_rrc_process_reconfiguration_v1530(NR_UE_RRC_INST_t *rrc, NR_RRCRe
   }
   if (rec_1530->masterCellGroup)
     nr_rrc_ue_process_masterCellGroup(rrc, rec_1530->masterCellGroup, rec_1530->fullConfig);
-  if (rec_1530->masterKeyUpdate) {
-    // TODO perform AS security key update procedure as specified in 5.3.5.7
-    LOG_E(NR_RRC, "RRCReconfiguration includes masterKeyUpdate but this is not implemented yet\n");
-  }
+  if (rec_1530->masterKeyUpdate)
+    as_security_key_update(rrc, rec_1530->masterKeyUpdate);
   /* Check if there is dedicated NAS information to forward to NAS */
   if (rec_1530->dedicatedNAS_MessageList) {
     struct NR_RRCReconfiguration_v1530_IEs__dedicatedNAS_MessageList *tmp = rec_1530->dedicatedNAS_MessageList;
@@ -1066,11 +1108,17 @@ static void nr_rrc_process_reconfigurationWithSync(NR_UE_RRC_INST_t *rrc, NR_Rec
     return;
   }
 
-  if (reconfigurationWithSync->spCellConfigCommon &&
-      reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon &&
-      reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL &&
-      reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB)
-    rrc->arfcn_ssb = *reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB;
+  if (reconfigurationWithSync->spCellConfigCommon) {
+    /* if the frequencyInfoDL is included, consider the target SpCell
+       to be one on the SSB frequency indicated by the frequencyInfoDL */
+    if (reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon
+        && reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL
+        && reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB)
+      rrc->arfcn_ssb = *reconfigurationWithSync->spCellConfigCommon->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencySSB;
+
+    // consider the target SpCell to be one with a physical cell identity indicated by the physCellId
+    rrc->phyCellID = *reconfigurationWithSync->spCellConfigCommon->physCellId;
+  }
 
   NR_UE_Timers_Constants_t *tac = &rrc->timers_and_constants;
   nr_timer_stop(&tac->T310);
