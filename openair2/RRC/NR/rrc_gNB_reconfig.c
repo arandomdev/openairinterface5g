@@ -40,6 +40,7 @@
 #include "oai_asn1.h"
 #include "uper_encoder.h"
 
+/* move this to where it belongs */
 NR_RRCReconfiguration_IEs_t *get_default_reconfig(const NR_CellGroupConfig_t *secondaryCellGroup)
 {
   NR_RRCReconfiguration_IEs_t *reconfig = calloc(1, sizeof(NR_RRCReconfiguration_IEs_t));
@@ -65,6 +66,7 @@ NR_RRCReconfiguration_IEs_t *get_default_reconfig(const NR_CellGroupConfig_t *se
 }
 
 /* Function to set or overwrite PTRS DL RRC parameters */
+/* TODO move this elsewhere */
 void rrc_config_dl_ptrs_params(NR_BWP_Downlink_t *bwp, long *ptrsNrb, long *ptrsMcs, long *epre_Ratio, long *reOffset)
 {
   int i=0;

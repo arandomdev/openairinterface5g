@@ -378,9 +378,7 @@ void rrc_remove_nsa_user(gNB_RRC_INST *rrc, int rnti) {
 
   // lock the scheduler before removing the UE. Note: mac_remove_nr_ue() checks
   // that the scheduler is actually locked!
-  NR_SCHED_LOCK(&RC.nrmac[rrc->module_id]->sched_lock);
-  mac_remove_nr_ue(RC.nrmac[rrc->module_id], rnti);
-  NR_SCHED_UNLOCK(&RC.nrmac[rrc->module_id]->sched_lock);
+  /* TODO send ue context release request */
   gtpv1u_enb_delete_tunnel_req_t tmp={0};
   tmp.rnti = ue_context->ue_context.rrc_ue_id;
   tmp.from_gnb=1;

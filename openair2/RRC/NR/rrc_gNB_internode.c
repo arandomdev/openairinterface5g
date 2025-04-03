@@ -66,11 +66,7 @@ NR_CG_Config_t *generate_CG_Config(const NR_RRCReconfiguration_t *reconfig, cons
   FILE *fd; // file to be generated for nr-ue
   if (get_softmodem_params()->phy_test==1 || get_softmodem_params()->do_ra > 0) {
     // This is for phytest only, emulate first X2 message if uecap.raw file is present
-    LOG_I(RRC,"Dumping NR_RRCReconfiguration message (%jd bytes)\n",(enc_rval.encoded+7)>>3);
-    for (int i=0; i<(enc_rval.encoded+7)>>3; i++) {
-      printf("%02x",((uint8_t *)buffer)[i]);
-    }
-    printf("\n");
+    LOG_I(RRC, "Dumping NR_RRCReconfiguration message (%jd bytes) to reconfig.raw\n", (enc_rval.encoded + 7) >> 3);
     fd = fopen("reconfig.raw","w");
     if (fd != NULL) {
       fwrite((void *)buffer,1,(size_t)((enc_rval.encoded+7)>>3),fd);
