@@ -56,6 +56,46 @@ static void free_ho_ctx(nr_handover_context_t *ho_ctx)
   free(ho_ctx);
 }
 
+static int fill_drb_to_be_setup(const gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, f1ap_drb_to_be_setup_t drbs[MAX_DRBS_PER_UE])
+{
+  int nb_drb = 0;
+  for (int i = 0; i < MAX_DRBS_PER_UE; ++i) {
+    drb_t *rrc_drb = &ue->established_drbs[i];
+    if (rrc_drb->status == DRB_INACTIVE)
+      continue;
+
+    f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
+    nb_drb++;
+    drb->drb_id = rrc_drb->drb_id;
+    drb->rlc_mode = rrc->configuration.um_on_default_drb ? F1AP_RLC_MODE_UM_BIDIR : F1AP_RLC_MODE_AM;
+    memcpy(&drb->up_ul_tnl[0].tl_address, &rrc_drb->cuup_tunnel_config.addr.buffer, sizeof(uint8_t) * 4);
+    drb->up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
+    drb->up_ul_tnl[0].teid = rrc_drb->cuup_tunnel_config.teid;
+    drb->up_ul_tnl_length = 1;
+
+    /* fetch an existing PDU session for this DRB */
+    rrc_pdu_session_param_t *pdu = find_pduSession_from_drbId(ue, drb->drb_id);
+    AssertFatal(pdu != NULL, "no PDU session for DRB ID %ld\n", drb->drb_id);
+    drb->nssai = pdu->param.nssai;
+
+    // for the moment, we only support one QoS flow. Put a reminder in case
+    // this changes
+    AssertFatal(pdu->param.nb_qos == 1, "only 1 Qos flow supported\n");
+    drb->drb_info.flows_to_be_setup_length = 1;
+    drb->drb_info.flows_mapped_to_drb = calloc_or_fail(1, sizeof(drb->drb_info.flows_mapped_to_drb[0]));
+    AssertFatal(drb->drb_info.flows_mapped_to_drb, "could not allocate memory\n");
+    int qfi = rrc_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[0];
+    DevAssert(qfi > 0);
+    drb->drb_info.flows_mapped_to_drb[0].qfi = qfi;
+    pdusession_level_qos_parameter_t *in_qos_char = get_qos_characteristics(qfi, pdu);
+    drb->drb_info.flows_mapped_to_drb[0].qos_params.qos_characteristics = get_qos_char_from_qos_flow_param(in_qos_char);
+
+    /* the DRB QoS parameters: we just reuse the ones from the first flow */
+    drb->drb_info.drb_qos = drb->drb_info.flows_mapped_to_drb[0].qos_params;
+  }
+  return nb_drb;
+}
+
 /* \brief Initiate a handover of UE to a specific target cell handled by this
  * CU.
  * \param ue a UE context for which the handover should be triggered. The UE
@@ -68,8 +108,7 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
                                  gNB_RRC_UE_t *ue,
                                  const nr_rrc_du_container_t *source_du,
                                  const nr_rrc_du_container_t *target_du,
-                                 uint8_t *ho_prep_buf,
-                                 uint32_t ho_prep_len,
+                                 byte_array_t *ho_prep_info,
                                  ho_req_ack_t ack,
                                  ho_success_t success,
                                  ho_cancel_t cancel)
@@ -78,7 +117,7 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
   DevAssert(ue != NULL);
   DevAssert(target_du != NULL);
   // source_du might be NULL -> inter-CU handover
-  DevAssert(ho_prep_buf != NULL && ho_prep_len > 0);
+  DevAssert(ho_prep_info->buf != NULL && ho_prep_info->len > 0);
 
   if (ue->ho_context != NULL) {
     LOG_E(NR_RRC, "handover for UE %u ongoing, cannot trigger new\n", ue->rrc_ue_id);
@@ -125,45 +164,12 @@ static void nr_initiate_handover(const gNB_RRC_INST *rrc,
         target_du->setup_req->cell[0].info.nr_pci);
 
   cu_to_du_rrc_information_t cu2du = {
-      .handoverPreparationInfo = ho_prep_buf,
-      .handoverPreparationInfo_length = ho_prep_len,
+      .handoverPreparationInfo = ho_prep_info->buf,
+      .handoverPreparationInfo_length = ho_prep_info->len,
   };
 
   f1ap_drb_to_be_setup_t drbs[MAX_DRBS_PER_UE] = {0};
-  int nb_drb = 0;
-  for (int i = 0; i < sizeofArray(drbs); ++i) {
-    drb_t *rrc_drb = &ue->established_drbs[i];
-    if (rrc_drb->status == DRB_INACTIVE)
-      continue;
-
-    f1ap_drb_to_be_setup_t *drb = &drbs[nb_drb];
-    nb_drb++;
-    drb->drb_id = rrc_drb->drb_id;
-    drb->rlc_mode = rrc->configuration.um_on_default_drb ? F1AP_RLC_MODE_UM_BIDIR : F1AP_RLC_MODE_AM;
-    memcpy(&drb->up_ul_tnl[0].tl_address, &rrc_drb->cuup_tunnel_config.addr.buffer, sizeof(uint8_t) * 4);
-    drb->up_ul_tnl[0].port = rrc->eth_params_s.my_portd;
-    drb->up_ul_tnl[0].teid = rrc_drb->cuup_tunnel_config.teid;
-    drb->up_ul_tnl_length = 1;
-
-    /* fetch an existing PDU session for this DRB */
-    rrc_pdu_session_param_t *pdu = find_pduSession_from_drbId(ue, drb->drb_id);
-    AssertFatal(pdu != NULL, "no PDU session for DRB ID %ld\n", drb->drb_id);
-    drb->nssai = pdu->param.nssai;
-
-    // for the moment, we only support one QoS flow. Put a reminder in case
-    // this changes
-    AssertFatal(pdu->param.nb_qos == 1, "only 1 Qos flow supported\n");
-    drb->drb_info.flows_to_be_setup_length = 1;
-    drb->drb_info.flows_mapped_to_drb = calloc_or_fail(1, sizeof(f1ap_flows_mapped_to_drb_t));
-    int qfi = rrc_drb->cnAssociation.sdap_config.mappedQoS_FlowsToAdd[0];
-    DevAssert(qfi > 0);
-    drb->drb_info.flows_mapped_to_drb[0].qfi = qfi;
-    pdusession_level_qos_parameter_t *in_qos_char = get_qos_characteristics(qfi, pdu);
-    drb->drb_info.flows_mapped_to_drb[0].qos_params.qos_characteristics = get_qos_char_from_qos_flow_param(in_qos_char);
-
-    /* the DRB QoS parameters: we just reuse the ones from the first flow */
-    drb->drb_info.drb_qos = drb->drb_info.flows_mapped_to_drb[0].qos_params;
-  }
+  int nb_drb = fill_drb_to_be_setup(rrc, ue, drbs);
 
   f1ap_srb_to_be_setup_t srbs[2] = {{.srb_id = 1, .lcid = 1}, {.srb_id = 2, .lcid = 2}};
   f1ap_served_cell_info_t *cell_info = &target_du->setup_req->cell[0].info;
@@ -319,7 +325,8 @@ void nr_rrc_trigger_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, nr_rrc_du_contain
   ho_req_ack_t ack = nr_rrc_f1_ho_acknowledge;
   ho_success_t success = nr_rrc_f1_ho_complete;
   ho_cancel_t cancel = nr_rrc_cancel_f1_ho;
-  nr_initiate_handover(rrc, ue, source_du, target_du, buf, size, ack, success, cancel);
+  byte_array_t hpi = {.buf = buf, .len = size};
+  nr_initiate_handover(rrc, ue, source_du, target_du, &hpi, ack, success, cancel);
 }
 
 void nr_rrc_finalize_ho(gNB_RRC_UE_t *ue)

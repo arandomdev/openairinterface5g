@@ -134,7 +134,7 @@ static void freeDRBlist(NR_DRB_ToAddModList_t *list)
   return;
 }
 
-const neighbour_cell_configuration_t *get_neighbour_config(int serving_cell_nr_cellid)
+const neighbour_cell_configuration_t *get_neighbour_by_cell_id(int cell_id)
 {
   const gNB_RRC_INST *rrc = RC.nrrrc[0];
   seq_arr_t *neighbour_cell_configuration = rrc->neighbour_cell_configuration;
@@ -144,29 +144,43 @@ const neighbour_cell_configuration_t *get_neighbour_config(int serving_cell_nr_c
   for (int cellIdx = 0; cellIdx < neighbour_cell_configuration->size; cellIdx++) {
     neighbour_cell_configuration_t *neighbour_config =
         (neighbour_cell_configuration_t *)seq_arr_at(neighbour_cell_configuration, cellIdx);
-    if (neighbour_config->nr_cell_id == serving_cell_nr_cellid)
+    if (neighbour_config->nr_cell_id == cell_id)
       return neighbour_config;
   }
   return NULL;
 }
 
-const nr_neighbour_gnb_configuration_t *get_neighbour_cell_information(int serving_cell_nr_cellid, int neighbour_cell_phy_id)
+const nr_neighbour_gnb_configuration_t *get_neighbour_by_pci(int pci)
 {
   const gNB_RRC_INST *rrc = RC.nrrrc[0];
-  seq_arr_t *neighbour_cell_configuration = rrc->neighbour_cell_configuration;
-  for (int cellIdx = 0; cellIdx < neighbour_cell_configuration->size; cellIdx++) {
-    neighbour_cell_configuration_t *neighbour_config =
-        (neighbour_cell_configuration_t *)seq_arr_at(neighbour_cell_configuration, cellIdx);
-    if (!neighbour_config)
+  seq_arr_t *head = rrc->neighbour_cell_configuration;
+  if (!head) {
+    LOG_E(NR_RRC, "rrc->neighbour_cell_configuration is NULL\n");
+    return NULL;
+  }
+
+  LOG_D(NR_RRC, "Number of neighbour cell configurations: %ld\n", head->size);
+  for (int cellIdx = 0; cellIdx < head->size; cellIdx++) {
+    neighbour_cell_configuration_t *cell = (neighbour_cell_configuration_t *)seq_arr_at(head, cellIdx);
+    if (!cell)
       continue;
 
-    for (int neighbourIdx = 0; neighbourIdx < neighbour_config->neighbour_cells->size; neighbourIdx++) {
+    LOG_D(NR_RRC, "Number of neighbour cells: %ld\n", cell->neighbour_cells->size);
+    for (int neighbourIdx = 0; neighbourIdx < cell->neighbour_cells->size; neighbourIdx++) {
       nr_neighbour_gnb_configuration_t *neighbour =
-          (nr_neighbour_gnb_configuration_t *)seq_arr_at(neighbour_config->neighbour_cells, neighbourIdx);
-      if (neighbour != NULL && neighbour->physicalCellId == neighbour_cell_phy_id)
+          (nr_neighbour_gnb_configuration_t *)seq_arr_at(cell->neighbour_cells, neighbourIdx);
+      if (!neighbour)
+        continue;
+
+      LOG_D(NR_RRC, "Neighbour at index %d: PCI = %d, cell ID = %ld\n", neighbourIdx, neighbour->physicalCellId, neighbour->nrcell_id);
+      if (neighbour->physicalCellId == pci) {
+        LOG_D(NR_RRC, "Found matching neighbour cell with PCI %d and Cell ID %ld\n", neighbour->physicalCellId, neighbour->nrcell_id);
         return neighbour;
+      }
     }
   }
+
+  LOG_E(NR_RRC, "No matching neighbour cell found for Physical Cell ID: %d\n", pci);
   return NULL;
 }
 
@@ -309,10 +323,15 @@ unsigned int rrc_gNB_get_next_transaction_identifier(module_id_t gnb_mod_idP)
   return tmp;
 }
 
-/**
- * @brief Create srb-ToAddModList for RRCSetup and RRCReconfiguration messages
-*/
-static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, bool reestablish)
+/** @brief Create srb-ToAddModList for RRCSetup and RRCReconfiguration messages
+  * @param reestablish bitmap to indicates whether PDCP should be re-established
+  * for the SRB1 and/or SRB2. For convenience the bitmap is 0-based, with index 1
+  * corresponding to SRB1, index 2 to SRB2. 3GPP TS 38.331 RadioBearerConfig
+  * specifies that PDCP shall be re-established whenever the security key used
+  * for the radio bearer changes, with some expections for SRB1 (i.e. when resuming
+  * an RRC connection, or at the first reconfiguration after RRC connection
+  * reestablishment in NR, do not re-establish PDCP) */
+static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, uint8_t reestablish)
 {
   if (!ue->Srb[1].Active) {
     LOG_E(NR_RRC, "Call SRB list while SRB1 doesn't exist\n");
@@ -323,8 +342,8 @@ static NR_SRB_ToAddModList_t *createSRBlist(gNB_RRC_UE_t *ue, bool reestablish)
     if (ue->Srb[i].Active) {
       asn1cSequenceAdd(list->list, NR_SRB_ToAddMod_t, srb);
       srb->srb_Identity = i;
-      /* Set reestablishPDCP only for SRB2 */
-      if (reestablish && i == 2) {
+      /* Based on the bitmap, set reestablishPDCP for SRB1 and SRB2 */
+      if ((i == 1 || i == 2) && (reestablish & (1 << i))) {
         asn1cCallocOne(srb->reestablishPDCP, NR_SRB_ToAddMod__reestablishPDCP_true);
       }
     }
@@ -494,7 +513,7 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
     int band = get_dl_band(cell_info);
     const NR_MeasTimingList_t *mtlist = du->mtc->criticalExtensions.choice.c1->choice.measTimingConf->measTiming;
     const NR_MeasTiming_t *mt = mtlist->list.array[0];
-    const neighbour_cell_configuration_t *neighbour_config = get_neighbour_config(cell_info->nr_cellid);
+    const neighbour_cell_configuration_t *neighbour_config = get_neighbour_by_cell_id(cell_info->nr_cellid);
     seq_arr_t *neighbour_cells = NULL;
     if (neighbour_config)
       neighbour_cells = neighbour_config->neighbour_cells;
@@ -507,20 +526,24 @@ static int rrc_gNB_encode_RRCReconfiguration(gNB_RRC_INST *rrc,
 
   UE->measConfig = measconfig;
 
-  NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish);
+  // Re-establish PDCP for SRB2 only
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(UE, reestablish ? (1 << 2) : 0);
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(UE, reestablish);
 
-  int size = do_RRCReconfiguration(UE,
-                                   buf,
-                                   max_len,
-                                   xid,
-                                   SRBs,
-                                   DRBs,
-                                   UE->DRB_ReleaseList,
-                                   NULL,
-                                   measconfig,
-                                   nas_messages,
-                                   cellGroupConfig);
+  RRCReconfigurationParams_t params = {.buffer.buf = buf,
+                                       .buffer.len = max_len,
+                                       .cell_group_config = cellGroupConfig,
+                                       .dedicated_nas_message_list = nas_messages,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = UE->DRB_ReleaseList,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = UE->nh_ncc,
+                                       .meas_config = measconfig,
+                                       .security_config = NULL,
+                                       .srb_config_list = SRBs,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buf, size, "[MSG] RRC Reconfiguration\n");
   freeSRBlist(SRBs);
   freeDRBlist(DRBs);
@@ -662,17 +685,20 @@ void rrc_gNB_modify_dedicatedRRCReconfiguration(gNB_RRC_INST *rrc, gNB_RRC_UE_t 
 
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(ue_p, false);
   uint8_t buffer[NR_RRC_BUF_SIZE];
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   xid,
-                                   NULL,
-                                   DRBs,
-                                   NULL,
-                                   NULL,
-                                   NULL,
-                                   dedicatedNAS_MessageList,
-                                   NULL);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = NULL,
+                                       .dedicated_nas_message_list = dedicatedNAS_MessageList,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buffer, size, "[MSG] RRC Reconfiguration\n");
   freeDRBlist(DRBs);
 
@@ -713,17 +739,20 @@ void rrc_gNB_generate_dedicatedRRCReconfiguration_release(gNB_RRC_INST *rrc,
   }
 
   uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   xid,
-                                   NULL,
-                                   NULL,
-                                   DRB_Release_configList2,
-                                   NULL,
-                                   NULL,
-                                   dedicatedNAS_MessageList,
-                                   NULL);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = NULL,
+                                       .dedicated_nas_message_list = dedicatedNAS_MessageList,
+                                       .drb_config_list = NULL,
+                                       .drb_release_list = DRB_Release_configList2,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
+
   LOG_DUMPMSG(NR_RRC,DEBUG_RRC,(char *)buffer,size, "[MSG] RRC Reconfiguration\n");
 
   /* Free all NAS PDUs */
@@ -959,25 +988,30 @@ static void rrc_gNB_process_RRCReestablishmentComplete(gNB_RRC_INST *rrc, gNB_RR
   /* PDCP Reestablishment of DRBs according to 5.3.5.6.5 of 3GPP TS 38.331 (over E1) */
   cuup_notify_reestablishment(rrc, ue_p);
 
-  /* Create srb-ToAddModList */
-  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue_p, true);
+  /* Create srb-ToAddModList, 3GPP TS 38.331 RadioBearerConfig:
+    do not re-establish PDCP for SRB1, when resuming an RRC connection,
+    or at the first reconfiguration after RRC connection reestablishment in NR */
+  NR_SRB_ToAddModList_t *SRBs = createSRBlist(ue_p, 1 << 2); // Re-establish PDCP for SRB2 only
   /* Create drb-ToAddModList */
   NR_DRB_ToAddModList_t *DRBs = createDRBlist(ue_p, true);
 
   uint8_t new_xid = rrc_gNB_get_next_transaction_identifier(rrc->module_id);
   ue_p->xids[new_xid] = RRC_REESTABLISH_COMPLETE;
   uint8_t buffer[NR_RRC_BUF_SIZE] = {0};
-  int size = do_RRCReconfiguration(ue_p,
-                                   buffer,
-                                   NR_RRC_BUF_SIZE,
-                                   new_xid,
-                                   SRBs,
-                                   DRBs,
-                                   NULL,
-                                   NULL,
-                                   NULL, // MeasObj_list,
-                                   NULL,
-                                   cellGroupConfig);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = cellGroupConfig,
+                                       .dedicated_nas_message_list = NULL,
+                                       .drb_config_list = DRBs,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = SRBs,
+                                       .transaction_id = new_xid};
+  int size = do_RRCReconfiguration(&params);
+
   freeSRBlist(SRBs);
   freeDRBlist(DRBs);
   LOG_DUMPMSG(NR_RRC, DEBUG_RRC, (char *)buffer, size, "[MSG] RRC Reconfiguration\n");
@@ -1007,7 +1041,19 @@ int nr_rrc_reconfiguration_req(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p, const int 
   }
 
   uint8_t buffer[NR_RRC_BUF_SIZE];
-  int size = do_RRCReconfiguration(ue_p, buffer, NR_RRC_BUF_SIZE, xid, NULL, NULL, NULL, NULL, NULL, NULL, masterCellGroup);
+  RRCReconfigurationParams_t params = {.buffer.buf = buffer,
+                                       .buffer.len = sizeof(buffer),
+                                       .cell_group_config = masterCellGroup,
+                                       .dedicated_nas_message_list = NULL,
+                                       .drb_config_list = NULL,
+                                       .drb_release_list = NULL,
+                                       .masterKeyUpdate = false,
+                                       .nextHopChainingCount = ue_p->nh_ncc,
+                                       .meas_config = NULL,
+                                       .security_config = NULL,
+                                       .srb_config_list = NULL,
+                                       .transaction_id = xid};
+  int size = do_RRCReconfiguration(&params);
 
   nr_rrc_transfer_protected_rrc_message(rrc, ue_p, DL_SCH_LCID_DCCH, buffer, size);
 
@@ -1268,7 +1314,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
 
   int servingCellRSRP = 0;
   int neighbourCellRSRP = 0;
-  int servingCellId = -1;
+  int scell_pci = -1;
 
   switch (event_triggered->eventId.present) {
     case NR_EventTriggerConfig__eventId_PR_eventA2:
@@ -1285,7 +1331,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
 
       for (int serving_cell_idx = 0; serving_cell_idx < measResults->measResultServingMOList.list.count; serving_cell_idx++) {
         const NR_MeasResultServMO_t *meas_result_serv_MO = measResults->measResultServingMOList.list.array[serving_cell_idx];
-        servingCellId = *(meas_result_serv_MO->measResultServingCell.physCellId);
+        scell_pci = *(meas_result_serv_MO->measResultServingCell.physCellId);
         if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell) {
           servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrp) - 157;
         } else {
@@ -1303,7 +1349,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
       const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
       for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
         const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
-        const int neighbourCellId = *(meas_result_neigh_cell->physCellId);
+        const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
 
         // TS 138 133 Table 10.1.6.1-1: SS-RSRP and CSI-RSRP measurement report mapping
         const struct NR_MeasResultNR__measResult__cellResults *cellResults = &(meas_result_neigh_cell->measResult.cellResults);
@@ -1316,13 +1362,12 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
 
         LOG_I(NR_RRC,
               "HO LOG: Measurement Report for the neighbour %d with RSRP: %d\n",
-              neighbourCellId,
+              neighbour_pci,
               neighbourCellRSRP);
 
-        const f1ap_served_cell_info_t *neigh_cell = get_cell_information_by_phycellId(neighbourCellId);
-        const f1ap_served_cell_info_t *serving_cell = get_cell_information_by_phycellId(servingCellId);
-        const nr_neighbour_gnb_configuration_t *neighbour =
-            get_neighbour_cell_information(serving_cell->nr_cellid, neighbourCellId);
+        const f1ap_served_cell_info_t *neigh_cell = get_cell_information_by_phycellId(neighbour_pci);
+        const f1ap_served_cell_info_t *serving_cell = get_cell_information_by_phycellId(scell_pci);
+        const nr_neighbour_gnb_configuration_t *neighbour = get_neighbour_by_pci(neighbour_pci);
         // CU does not have f1 connection with neighbour cell context. So  check does serving cell has this phyCellId as a
         // neighbour.
         if (!neigh_cell && neighbour) {
@@ -1342,7 +1387,7 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_UE_t *ue, NR_ReportCo
           nr_rrc_du_container_t *target_du = get_du_by_cell_id(rrc, neigh_cell->nr_cellid);
           nr_rrc_trigger_f1_ho(rrc, ue, source_du, target_du);
         } else {
-          LOG_W(NR_RRC, "UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", ue->rrc_ue_id, neighbourCellId);
+          LOG_W(NR_RRC, "UE %d: received A3 event for stronger neighbor PCI %d, but no such neighbour in configuration\n", ue->rrc_ue_id, neighbour_pci);
         }
       }
 

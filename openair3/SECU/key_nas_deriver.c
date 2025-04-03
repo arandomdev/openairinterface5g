@@ -41,7 +41,7 @@
 #include <string.h>
 
 #define FC_KENB (0x11)
-#define FC_NH (0x12)
+#define FC_NH (0x6F) // A.10 3GPP TS 33.501
 #define FC_KENB_STAR (0x13)
 /* 33401 #A.7 Algorithm for key derivation function.
  * This FC should be used for:
@@ -138,6 +138,39 @@ void nr_derive_key(algorithm_type_dist_t alg_type, uint8_t alg_id, const uint8_t
  * @param[out] out Pointer to reference where output of KDF will be stored.
  * NOTE: knas is dynamically allocated by the KDF function
  */
+
+/** @brief KgNB derivation (A.9 3GPP TS 33.501) */
+void derive_kgnb(uint8_t kamf[32], uint32_t count, uint8_t *kgnb)
+{
+  /* Compute the KDF input parameter
+   * S = FC(0x6E) || UL NAS Count || 0x00 0x04 || 0x01 || 0x00 0x01
+   */
+  uint8_t input[32] = {0};
+
+  memset(input, 0, 32);
+  input[0] = 0x6E;
+  // P0
+  input[1] = count >> 24;
+  input[2] = (uint8_t)(count >> 16);
+  input[3] = (uint8_t)(count >> 8);
+  input[4] = (uint8_t)count;
+  // L0
+  input[5] = 0;
+  input[6] = 4;
+  // P1
+  input[7] = 0x01;
+  // L1
+  input[8] = 0;
+  input[9] = 1;
+
+  byte_array_t data = {.buf = input, .len = 10};
+  kdf(kamf, data, 32, kgnb);
+
+  printf("kgnb : ");
+  for (int pp = 0; pp < 32; pp++)
+    printf("%02x ", kgnb[pp]);
+  printf("\n");
+}
 
 void derive_keNB(const uint8_t kasme[32], const uint32_t nas_count, uint8_t *keNB)
 {
@@ -247,4 +280,37 @@ void derive_skgNB(const uint8_t *keNB, const uint16_t sk_counter, uint8_t *skgNB
 
   byte_array_t data = {.buf = s, .len = 5};
   kdf(keNB, data, 32, skgNB);
+}
+
+/** @brief NH derivation function (A.10 3GPP TS 33.501)
+ *  @param k_amf: input key
+ *  @param sync_input: pointer to the newly derived KgNB for the initial NH derivation,
+ *                     and the previous NH for all subsequent derivations
+ *  @param nh: pointer to the derivated NH output */
+void nr_derive_nh(const uint8_t k_amf[SECURITY_KEY_LEN], const uint8_t *sync_input, uint8_t *nh)
+{
+  uint8_t s[SECURITY_KEY_LEN + 3] = {0};
+  // FC
+  s[0] = FC_NH;
+  // P0 = SYNC-input
+  memcpy(&s[1], sync_input, SECURITY_KEY_LEN);
+  // L0 = length of SYNC-input (i.e. 0x00 0x20)
+  s[SECURITY_KEY_LEN + 1] = 0x00;
+  s[SECURITY_KEY_LEN + 2] = 0x20;
+
+  printf("s: ");
+  for (int i = 0; i < SECURITY_KEY_LEN + 3; i++)
+    printf("%x ", s[i]);
+  printf("\n");
+
+  byte_array_t data = {.buf = s, .len = sizeof(s)};
+
+  kdf(k_amf, data, SECURITY_KEY_LEN, nh);
+
+  printf("nh: ");
+  for (int i = 0; i < SECURITY_KEY_LEN; i++)
+    printf("%x ", nh[i]);
+  printf("\n");
+  fflush(stdout);
+
 }

@@ -2107,7 +2107,7 @@ uint8_t *allocate_transportBlock_buffer(byte_array_t *tb, uint32_t needed)
 
 void free_transportBlock_buffer(byte_array_t *tb)
 {
-  free_byte_array(*tb);
+  free_byte_array(tb);
 }
 
 void set_max_fb_time(NR_UE_UL_BWP_t *UL_BWP, const NR_UE_DL_BWP_t *DL_BWP)

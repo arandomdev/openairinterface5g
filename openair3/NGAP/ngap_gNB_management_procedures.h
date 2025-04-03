@@ -28,6 +28,9 @@
  * @ingroup _ngap
  */
 
+#include "OCTET_STRING.h"
+#include "BIT_STRING.h"
+
 #ifndef NGAP_GNB_MANAGEMENT_PROCEDURES_H_
 #define NGAP_GNB_MANAGEMENT_PROCEDURES_H_
 
@@ -44,5 +47,11 @@ ngap_gNB_instance_t *ngap_gNB_get_instance(uint8_t mod_id);
 uint16_t ngap_gNB_fetch_add_global_cnx_id(void);
 
 void ngap_gNB_prepare_internal_data(void);
+
+void octet_string_to_ngap_pdu(ngap_pdu_t *out, const OCTET_STRING_t in);
+
+void ngap_pdu_to_octet_string(OCTET_STRING_t *out, ngap_pdu_t in);
+
+void tnl_to_bitstring(BIT_STRING_t *out, const transport_layer_addr_t in);
 
 #endif /* NGAP_GNB_MANAGEMENT_PROCEDURES_H_ */
