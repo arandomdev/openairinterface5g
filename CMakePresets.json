@@ -34,7 +34,8 @@
                 "dfts",
                 "ldpc",
                 "params_libconfig",
-                "params_yaml"
+                "params_yaml",
+                "bictr-sim"
             ]
         },
         {

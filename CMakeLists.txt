@@ -1677,6 +1677,7 @@ set (SIMUSRC
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/random_channel.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/rangen_double.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/phase_noise.c
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/bictr.c
   ${OPENAIR1_DIR}/SIMULATION/RF/rf.c
   ${OPENAIR1_DIR}/SIMULATION/RF/dac.c
   ${OPENAIR1_DIR}/SIMULATION/RF/adc.c
@@ -1695,6 +1696,13 @@ add_library(oai_iqplayer MODULE
 	${OPENAIR_DIR}/radio/iqplayer/iqplayer_lib.c
 	)
 set(CMAKE_MODULE_PATH "${OPENAIR_DIR}/cmake_targets/tools/MODULES" "${CMAKE_MODULE_PATH}")
+
+# BICTR Test binary
+add_executable(bictr-sim
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/bictr.c
+  )
+target_compile_definitions(bictr-sim PUBLIC BICTR_TEST_EXECUTABLE)
+target_link_libraries(bictr-sim PRIVATE m gmt)
 
 #################################
 # add executables for operation

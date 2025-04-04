@@ -31,6 +31,7 @@
 #include "common/config/config_userapi.h"
 #include "common/utils/telnetsrv/telnetsrv.h"
 #include "common/utils/load_module_shlib.h"
+#include "bictr/bictr.h"
 
 
 //#define DEBUG_CH
@@ -1684,6 +1685,65 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       printf("%s: satellite orbit height %f km\n", map_int_to_str(channelmod_names, channel_model), chan_desc->sat_height / 1000);
       break;
 
+    case BICTR:
+      // Define BICTR arguments first
+      /// TODO: Runtime adjustment of parameters
+      chan_desc->bictr.tx_lat = 35.590627;
+      chan_desc->bictr.tx_lon = -111.633156;
+      chan_desc->bictr.tx_height = 10;
+      chan_desc->bictr.rx_lat = 35.596667;
+      chan_desc->bictr.rx_lon = -111.625833;
+      chan_desc->bictr.rx_height = 2;
+      chan_desc->bictr.horizontal_polarization = false;
+
+      chan_desc->bictr.ref_count = 5;
+      chan_desc->bictr.ref_attempt_per_ring = 3;
+      chan_desc->bictr.ring_radius_min = 5;
+      chan_desc->bictr.ring_radius_max = 300;
+      chan_desc->bictr.ring_radius_uncertainty = 15;
+      chan_desc->bictr.ring_count = 100;
+
+      chan_desc->bictr.complex_rel_permittivity_real = 7.058396;
+      chan_desc->bictr.complex_rel_permittivity_real_std = 0.007131;
+      chan_desc->bictr.complex_rel_permittivity_imag = -0.862227;
+      chan_desc->bictr.complex_rel_permittivity_imag_std = 0.001397;
+
+      chan_desc->bictr.fading_paths = 1024;
+      chan_desc->bictr.fading_doppler_spread = 1;
+
+      // Set the FIR filter size to the theoretical maximum delay spread
+      Td = 2 * (chan_desc->bictr.ring_radius_max + chan_desc->bictr.ring_radius_uncertainty) / 299792458.0 * 1e6;
+      nb_taps = delay_samples(sampling_rate, Td) + 1;
+      channel_length = nb_taps; // The same
+
+      // initialize
+      chan_desc->free_flags = chan_desc->free_flags | CHANMODEL_FREE_BICTR;
+      bictr_initialize(&chan_desc->bictr);
+
+      /// Other parameters that are not used
+      ricean_factor = 0.0;
+      aoa = 0.0;
+      maxDoppler = 0;
+      fill_channel_desc(chan_desc,
+                        nb_tx,
+                        nb_rx,
+                        nb_taps,
+                        channel_length,
+                        default_amp_lin,
+                        NULL,
+                        NULL,
+                        Td,
+                        sampling_rate,
+                        channel_bandwidth,
+                        ricean_factor,
+                        aoa,
+                        forgetting_factor,
+                        maxDoppler,
+                        channel_offset,
+                        path_loss_dB,
+                        0);
+      break;
+
     default:
       LOG_W(OCM,"channel model not yet supported\n");
       free(chan_desc);
@@ -1740,6 +1800,9 @@ void free_channel_desc_scm(channel_desc_t *ch) {
   if(ch->free_flags&CHANMODEL_FREE_RSQRT_NTAPS)
     for (int i = 0; i<ch->nb_taps; i++)
       free(ch->R_sqrt[i]);
+
+  if (ch->free_flags & CHANMODEL_FREE_BICTR)
+    bictr_free(&ch->bictr);
 
   free(ch->R_sqrt);
   free(ch->Doppler_phase_cur);

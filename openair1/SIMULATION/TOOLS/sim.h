@@ -23,6 +23,7 @@
 #define __SIMULATION_TOOLS_DEFS_H__
 #include "PHY/defs_common.h"
 #include <pthread.h>
+#include "bictr/bictr.h"
 /** @defgroup _numerical_ Useful Numerical Functions
  *@{
 The present clause specifies several numerical functions for testing of digital communication systems.
@@ -50,6 +51,7 @@ typedef enum {
 #define CHANMODEL_FREE_RSQRT_6     1<<1
 #define CHANMODEL_FREE_RSQRT_NTAPS 1<<2
 #define CHANMODEL_FREE_AMPS        1<<3
+#define CHANMODEL_FREE_BICTR       1<<4
 #define SHR3 (jz = jsr, jsr ^= (jsr << 13), jsr ^= (jsr >> 17), jsr ^= (jsr << 5), jz + jsr)
 
 typedef enum {
@@ -139,6 +141,8 @@ typedef struct {
   float Doppler_phase_inc;
   /// current Doppler phase of each RX antenna (for continuous phase from one block to the next)
   float *Doppler_phase_cur;
+  /// Parameters for BICTR
+  bictr_desc_t bictr;
 } channel_desc_t;
 
 typedef struct {
@@ -233,6 +237,7 @@ typedef enum {
   EPA_high,
   SAT_LEO_TRANS,
   SAT_LEO_REGEN,
+  BICTR,
 } SCM_t;
 #define CHANNELMOD_MAP_INIT \
   {"custom",custom},\
@@ -270,6 +275,7 @@ typedef enum {
   {"EPA_high",EPA_high},\
   {"SAT_LEO_TRANS",SAT_LEO_TRANS},\
   {"SAT_LEO_REGEN",SAT_LEO_REGEN},\
+  {"BICTR",BICTR},\
   {NULL, -1}
 
 #define CONFIG_HLP_SNR     "Set average SNR in dB (for --siml1 option)\n"
