@@ -1713,8 +1713,11 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
       // Set the FIR filter size to the theoretical maximum delay spread
       Td = 2 * (chan_desc->bictr.ring_radius_max + chan_desc->bictr.ring_radius_uncertainty) / 299792458.0 * 1e6;
-      nb_taps = delay_samples(sampling_rate, Td) + 1;
+      nb_taps = bictr_delay_samples(sampling_rate, Td) + 1;
       channel_length = nb_taps; // The same
+
+      chan_desc->bictr.max_channel_length = nb_taps;
+      chan_desc->bictr.sampling_freq = sampling_rate * 1e6;
 
       // initialize
       chan_desc->free_flags = chan_desc->free_flags | CHANMODEL_FREE_BICTR;

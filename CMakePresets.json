@@ -21,6 +21,14 @@
                 "SANITIZE_ADDRESS": "ON",
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
+        },
+        {
+            "name": "debug",
+            "displayName": "Default with debug",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -34,8 +42,14 @@
                 "dfts",
                 "ldpc",
                 "params_libconfig",
-                "params_yaml",
-                "bictr-sim"
+                "params_yaml"
+            ]
+        },
+        {
+            "name": "bictr_debug",
+            "configurePreset": "debug",
+            "targets": [
+                "bictr"
             ]
         },
         {

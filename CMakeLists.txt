@@ -2094,7 +2094,7 @@ endforeach(myExe)
 if (${T_TRACER})
   foreach(i
         #all "add_executable" definitions (except tests, updatefw)
-        lte-softmodem lte-uesoftmodem nr-softmodem
+        lte-softmodem lte-uesoftmodem nr-softmodem bictr-sim
         nr-uesoftmodem dlsim dlsim_tm4 dlsim_tm7
         ulsim pbchsim scansim mbmssim pdcchsim pucchsim prachsim
         syncsim nr_ulsim nr_dlsim nr_dlschsim nr_pbchsim nr_pucchsim
