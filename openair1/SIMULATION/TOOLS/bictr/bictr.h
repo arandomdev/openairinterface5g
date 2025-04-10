@@ -27,7 +27,6 @@ typedef struct {
   double lat;
 } bictr_point_geo_t;
 
-
 /// @brief Structure for BICTR parameters and resources
 typedef struct {
   /// Antenna params
@@ -82,7 +81,7 @@ typedef struct {
   /// Coordinate region that is loaded
   bictr_point_geo_t region_min;
   bictr_point_geo_t region_max;
-  
+
   /// Loaded body information
   bictr_body_info_t body;
 
@@ -92,7 +91,6 @@ typedef struct {
   /// DEM VF reference name
   char vf_grid[GMT_VF_LEN];
 } bictr_desc_t;
-
 
 /// @brief Supported celestial bodies
 typedef enum { BICTR_BODY_EARTH, BICTR_BODY_MOON } bictr_body_e;
@@ -135,4 +133,12 @@ int _bictr_load_region(bictr_desc_t *desc);
 /// @param vf_heights The VF to write the heights (GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT)
 /// @return 0 if successful, non-zero otherwise
 int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_points, char *vf_heights);
+
+/// @brief Sample the elevation along a great-circle track
+/// @param desc Bictr descriptor
+/// @param start Starting point of the track
+/// @param end End point of the track
+/// @param vf_heights The VF to write the heights (GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT)
+/// @return 0 if successful, non-zero otherwise
+int _bictr_get_track_heights(bictr_desc_t *desc, bictr_point_geo_t start, bictr_point_geo_t end, char *vf_heights);
 #endif // __SIMULATION_TOOLS_BICTR_H__

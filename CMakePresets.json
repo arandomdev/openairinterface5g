@@ -49,7 +49,7 @@
             "name": "bictr_debug",
             "configurePreset": "debug",
             "targets": [
-                "bictr"
+                "bictr-sim"
             ]
         },
         {

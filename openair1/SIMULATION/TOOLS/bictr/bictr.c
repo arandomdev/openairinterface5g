@@ -1,5 +1,6 @@
 #include "bictr.h"
 #include <math.h>
+#include <assert.h>
 
 unsigned int bictr_delay_samples(double fs, double delay)
 {
@@ -131,7 +132,7 @@ int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_
   char grid[GMT_VF_LEN + 2] = "-G";
   memcpy(&grid[2], desc->vf_grid, GMT_VF_LEN);
 
-  // Grid option
+  // output option
   char output[GMT_VF_LEN + 2] = "->";
   memcpy(&output[2], vf_heights, GMT_VF_LEN);
 
@@ -142,6 +143,57 @@ int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_
   // Cleanup
   /// NOTE: Since GMT_Create_Data is an empty container, no need to destroy it.
   err |= GMT_Close_VirtualFile(desc->gmt_sess, vf_table);
+  return err;
+}
+
+int _bictr_get_track_heights(bictr_desc_t *desc, bictr_point_geo_t start, bictr_point_geo_t end, char *vf_heights)
+{
+  // Prepare call to project
+  char center_arg[64] = "-C";
+  snprintf(&center_arg[2], 62, "%.10f/%.10f", start.lon, start.lat);
+
+  char end_arg[64] = "-E";
+  snprintf(&end_arg[2], 62, "%.10f/%.10f", end.lon, end.lat);
+
+  char generate_arg[32] = "-G";
+  snprintf(&generate_arg[2], 30, "%.16f", desc->body.grid_size);
+
+  int err;
+  char vf_track[GMT_VF_LEN];
+  if ((err = GMT_Open_VirtualFile(desc->gmt_sess, GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT, NULL, vf_track))) {
+    return err;
+  }
+
+  char vf_track_arg[GMT_VF_LEN + 2] = "->";
+  memcpy(&vf_track_arg[2], vf_track, GMT_VF_LEN);
+
+  // Call project
+  char *project_args[] = {&center_arg[0],
+                          &end_arg[0],
+                          &generate_arg[0], // generate equal points
+                          &vf_track_arg[0]};
+  if ((err = GMT_Call_Module(desc->gmt_sess, "project", 4, project_args))) {
+    GMT_Close_VirtualFile(desc->gmt_sess, vf_track);
+    return err;
+  }
+
+  // Forward track to get heights
+  struct GMT_DATASET *ds_track = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc->gmt_sess, vf_track);
+  if (ds_track == NULL) {
+    GMT_Close_VirtualFile(desc->gmt_sess, vf_track);
+    return -1;
+  }
+  assert(ds_track->n_tables == 1);
+  assert(ds_track->n_segments == 1);
+  assert(ds_track->n_columns == 3);
+  size_t n_points = ds_track->n_records; // Since there is only one table and segment, this is equal to the number of rows
+  double *lons = ds_track->table[0][0].segment[0][0].data[0]; // First column
+  double *lats = ds_track->table[0][0].segment[0][0].data[1]; // Second column
+
+  err = _bictr_get_heights(desc, lons, lats, n_points, vf_heights);
+
+  // Clean up
+  err |= GMT_Close_VirtualFile(desc->gmt_sess, vf_track);
   return err;
 }
 
@@ -179,7 +231,8 @@ int main(int argc, char const *argv[])
     return -1;
   }
 
-  double points[2][1] = {{-111.633156}, {35.590627}};
+  bictr_point_geo_t start = {-111.633156, 35.590627};
+  bictr_point_geo_t end = {-111.634156, 35.600627};
 
   char vf_heights[GMT_VF_LEN];
   if ((err = GMT_Open_VirtualFile(desc.gmt_sess, GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT, NULL, vf_heights))) {
@@ -187,13 +240,17 @@ int main(int argc, char const *argv[])
     return -1;
   }
 
-  if ((err = _bictr_get_heights(&desc, (double *)&points[0][0], (double *)&points[1][0], 1, vf_heights))) {
-    printf("Failed to sample heights\n");
+  if ((err = _bictr_get_track_heights(&desc, start, end, vf_heights))) {
+    printf("Failed to sample track heights\n");
     return -1;
   }
 
   struct GMT_DATASET *heightsDS = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc.gmt_sess, vf_heights);
   printf("Height: %f\n", heightsDS->table[0][0].segment[0][0].data[2][0]);
+
+  for (size_t i = 0; i < heightsDS->n_records; i++) {
+    printf("%f\n", heightsDS->table[0][0].segment[0][0].data[2][i]);
+  }
 
   if ((err = GMT_Close_VirtualFile(desc.gmt_sess, vf_heights))) {
     printf("Failed to close VF for heights\n");
