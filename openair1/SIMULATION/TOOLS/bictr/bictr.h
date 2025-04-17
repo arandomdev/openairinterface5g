@@ -27,6 +27,12 @@ typedef struct {
   double lat;
 } bictr_point_geo_t;
 
+typedef struct {
+  double x;
+  double y;
+  double z;
+} bictr_point_3D_t;
+
 /// @brief Structure for BICTR parameters and resources
 typedef struct {
   /// Antenna params
@@ -108,7 +114,10 @@ unsigned int bictr_delay_samples(double fs, double delay);
 /// @param region_min Minimum coordinate of the boundary box to load
 /// @param region_max Maximum coordinate of the boundary box to load
 /// @returns 0 if successful, non zero otherwise
-int bictr_initialize(bictr_desc_t *desc, bictr_body_e body, bictr_point_geo_t region_min, bictr_point_geo_t region_max);
+int bictr_initialize(bictr_desc_t *desc,
+                     bictr_body_e body,
+                     const bictr_point_geo_t *region_min,
+                     const bictr_point_geo_t *region_max);
 
 /// @brief Free any resources used by bictr
 /// @param desc Model descriptor
@@ -118,8 +127,8 @@ void bictr_free(bictr_desc_t *desc);
 /// @param desc Bictr descriptor
 /// @param ch The channel array to write to
 /// @param [out] channel_offset Additional offset the generated channel has
-/// @return The length of the channel
-unsigned int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset);
+/// @return 0 if successful, non zero otherwise
+int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset);
 
 /// @brief Load the region into memory, will download the relief if needed
 /// @param desc Bictr descriptor
@@ -140,5 +149,39 @@ int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_
 /// @param end End point of the track
 /// @param vf_heights The VF to write the heights (GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT)
 /// @return 0 if successful, non-zero otherwise
-int _bictr_get_track_heights(bictr_desc_t *desc, bictr_point_geo_t start, bictr_point_geo_t end, char *vf_heights);
+int _bictr_get_track_heights(bictr_desc_t *desc, const bictr_point_geo_t *start, const bictr_point_geo_t *end, char *vf_heights);
+
+/// @brief Convert a coordinate to a 3D point
+/// @param coord The coordinate to convert.
+/// @param height The absolute height of the point from the center of the body.
+/// @param [out] point Struct to write converted point.
+void _bictr_geo_to_3D(const bictr_point_geo_t *coord, double height, bictr_point_3D_t *point);
+
+/// @brief Compute the distance between two points
+/// @param a The first point
+/// @param b The second point
+/// @return The distance between them
+double _bictr_compute_distance(const bictr_point_3D_t *a, const bictr_point_3D_t *b);
+
+/// @brief Computes the free space pathloss of the E field, i.e without the square.
+/// @param freq The frequency of the signal in Hz.
+/// @param dist The distance traveled in meters.
+/// @return The amplitude gain due to fspl.
+double _bictr_fspl(double freq, double dist);
+
+/// @brief Check if two points have LOS
+/// @param desc Bictr descriptor
+/// @param start Starting coordinate
+/// @param start_height_bias The height of the starting coordinate relative to the ground
+/// @param end Ending coordinate
+/// @param end_height_bias The height of the ending coordinate relative to the ground
+/// @param [out] has_los If the two points have LOS
+/// @return 0 if successful, non-zero otherwise
+int _bictr_check_los(bictr_desc_t *desc,
+                     const bictr_point_geo_t *start,
+                     double start_height_bias,
+                     const bictr_point_geo_t *end,
+                     double end_height_bias,
+                     bool *has_los);
+
 #endif // __SIMULATION_TOOLS_BICTR_H__

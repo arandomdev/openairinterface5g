@@ -2,12 +2,17 @@
 #include <math.h>
 #include <assert.h>
 
+#define SPEED_OF_LIGHT 299792458
+
 unsigned int bictr_delay_samples(double fs, double delay)
 {
   return (int)round(fs * delay);
 }
 
-int bictr_initialize(bictr_desc_t *desc, bictr_body_e body, bictr_point_geo_t region_min, bictr_point_geo_t region_max)
+int bictr_initialize(bictr_desc_t *desc,
+                     bictr_body_e body,
+                     const bictr_point_geo_t *region_min,
+                     const bictr_point_geo_t *region_max)
 {
   // Set safe default values for resources in case initialization fails
   desc->gmt_sess = NULL;
@@ -15,8 +20,8 @@ int bictr_initialize(bictr_desc_t *desc, bictr_body_e body, bictr_point_geo_t re
 
   desc->gmt_sess = GMT_Create_Session("BICTR", 2, 0, NULL);
 
-  desc->region_min = region_min;
-  desc->region_max = region_max;
+  desc->region_min = *region_min;
+  desc->region_max = *region_max;
 
   switch (body) {
     case BICTR_BODY_EARTH: {
@@ -53,7 +58,7 @@ void bictr_free(bictr_desc_t *desc)
   }
 }
 
-unsigned int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset)
+int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset)
 {
   /// TODO: IMP
   return 0;
@@ -146,14 +151,14 @@ int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_
   return err;
 }
 
-int _bictr_get_track_heights(bictr_desc_t *desc, bictr_point_geo_t start, bictr_point_geo_t end, char *vf_heights)
+int _bictr_get_track_heights(bictr_desc_t *desc, const bictr_point_geo_t *start, const bictr_point_geo_t *end, char *vf_heights)
 {
   // Prepare call to project
   char center_arg[64] = "-C";
-  snprintf(&center_arg[2], 62, "%.10f/%.10f", start.lon, start.lat);
+  snprintf(&center_arg[2], 62, "%.10f/%.10f", start->lon, start->lat);
 
   char end_arg[64] = "-E";
-  snprintf(&end_arg[2], 62, "%.10f/%.10f", end.lon, end.lat);
+  snprintf(&end_arg[2], 62, "%.10f/%.10f", end->lon, end->lat);
 
   char generate_arg[32] = "-G";
   snprintf(&generate_arg[2], 30, "%.16f", desc->body.grid_size);
@@ -193,8 +198,75 @@ int _bictr_get_track_heights(bictr_desc_t *desc, bictr_point_geo_t start, bictr_
   err = _bictr_get_heights(desc, lons, lats, n_points, vf_heights);
 
   // Clean up
-  err |= GMT_Close_VirtualFile(desc->gmt_sess, vf_track);
+  GMT_Close_VirtualFile(desc->gmt_sess, vf_track);
   return err;
+}
+
+void _bictr_geo_to_3D(const bictr_point_geo_t *coord, double height, bictr_point_3D_t *point)
+{
+  double inc = (90 - coord->lat) * M_PI / 180.0;
+  double azi = coord->lon * M_PI / 180.0;
+  point->x = height * sin(inc) * cos(azi);
+  point->y = height * sin(inc) * sin(azi);
+  point->z = height * cos(inc);
+}
+
+double _bictr_compute_distance(const bictr_point_3D_t *a, const bictr_point_3D_t *b)
+{
+  double dist_x = a->x - b->x;
+  double dist_y = a->y - b->y;
+  double dist_z = a->z - b->z;
+  return sqrt(pow(dist_x, 2) + pow(dist_y, 2) + pow(dist_z, 2));
+}
+
+double _bictr_fspl(double freq, double dist)
+{
+  return (double)SPEED_OF_LIGHT / (4 * M_PI * dist * freq);
+}
+
+int _bictr_check_los(bictr_desc_t *desc,
+                     const bictr_point_geo_t *start,
+                     double start_height_bias,
+                     const bictr_point_geo_t *end,
+                     double end_height_bias,
+                     bool *has_los)
+{
+  // get heights
+  int err;
+  char vf_heights[GMT_VF_LEN];
+  if ((err = GMT_Open_VirtualFile(desc->gmt_sess, GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT, NULL, vf_heights))) {
+    return err;
+  }
+
+  if ((err = _bictr_get_track_heights(desc, start, end, vf_heights))) {
+    GMT_Close_VirtualFile(desc->gmt_sess, vf_heights);
+    return err;
+  }
+
+  // Check if there is LOS
+  struct GMT_DATASET *ds_heights = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc->gmt_sess, vf_heights);
+  size_t n_points = ds_heights->n_records;
+  if (n_points == 0) {
+    return -1;
+  }
+
+  double *heights = ds_heights->table[0][0].segment[0][0].data[2];
+  double slope = ((heights[n_points-1] + end_height_bias) - (heights[0] + start_height_bias)) / n_points;
+  double lineHeight = heights[0] + start_height_bias;
+
+  *has_los = true;
+  for (size_t i = 0; i < n_points; i++)
+  {
+    if (lineHeight < heights[i]) {
+      *has_los = false;
+      break;
+    }
+
+    lineHeight += slope;
+  }
+  
+  // Clean up
+  return GMT_Close_VirtualFile(desc->gmt_sess, vf_heights);
 }
 
 #ifdef BICTR_TEST_EXECUTABLE
@@ -226,36 +298,26 @@ int main(int argc, char const *argv[])
   bictr_point_geo_t region_max = {-111.610698, 35.613086};
 
   int err;
-  if ((err = bictr_initialize(&desc, BICTR_BODY_EARTH, region_min, region_max))) {
+  if ((err = bictr_initialize(&desc, BICTR_BODY_EARTH, &region_min, &region_max))) {
     printf("Failed to initialize BICTR\n");
     return -1;
   }
 
   bictr_point_geo_t start = {-111.633156, 35.590627};
-  bictr_point_geo_t end = {-111.634156, 35.600627};
+  bictr_point_geo_t end1 = {-111.634156, 35.600627};
+  bictr_point_geo_t end2 = {-111.630278, 35.579444};
 
-  char vf_heights[GMT_VF_LEN];
-  if ((err = GMT_Open_VirtualFile(desc.gmt_sess, GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT, NULL, vf_heights))) {
-    printf("Failed to open VF for heights\n");
+  bool has_los;
+  if ((err = _bictr_check_los(&desc, &start, 10, &end1, 2, &has_los))) {
+    printf("Unable to check for LOS for end1\n");
     return -1;
   }
+  printf("end1, has LOS: %d\n", has_los);
 
-  if ((err = _bictr_get_track_heights(&desc, start, end, vf_heights))) {
-    printf("Failed to sample track heights\n");
-    return -1;
+  if ((err = _bictr_check_los(&desc, &start, 10, &end2, 2, &has_los))) {
+    printf("Unable to check for LOS for end2\n");
   }
-
-  struct GMT_DATASET *heightsDS = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc.gmt_sess, vf_heights);
-  printf("Height: %f\n", heightsDS->table[0][0].segment[0][0].data[2][0]);
-
-  for (size_t i = 0; i < heightsDS->n_records; i++) {
-    printf("%f\n", heightsDS->table[0][0].segment[0][0].data[2][i]);
-  }
-
-  if ((err = GMT_Close_VirtualFile(desc.gmt_sess, vf_heights))) {
-    printf("Failed to close VF for heights\n");
-    return -1;
-  }
+  printf("end2, has LOS: %d\n", has_los);
 
   bictr_free(&desc);
   return 0;
