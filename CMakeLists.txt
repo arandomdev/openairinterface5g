@@ -1682,6 +1682,7 @@ set (SIMUSRC
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/rangen_double.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/phase_noise.c
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/bictr.c
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/mtwister.c
   ${OPENAIR1_DIR}/SIMULATION/RF/rf.c
   ${OPENAIR1_DIR}/SIMULATION/RF/dac.c
   ${OPENAIR1_DIR}/SIMULATION/RF/adc.c
@@ -1704,6 +1705,7 @@ set(CMAKE_MODULE_PATH "${OPENAIR_DIR}/cmake_targets/tools/MODULES" "${CMAKE_MODU
 # BICTR Test binary
 add_executable(bictr-sim
   ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/bictr.c
+  ${OPENAIR1_DIR}/SIMULATION/TOOLS/bictr/mtwister.c
   )
 target_compile_definitions(bictr-sim PUBLIC BICTR_TEST_EXECUTABLE)
 target_link_libraries(bictr-sim PRIVATE m gmt)

@@ -3,6 +3,7 @@
 
 #include "PHY/TOOLS/tools_defs.h"
 #include <gmt/gmt.h>
+#include "mtwister.h"
 
 #define BICTR_BODY_DATASET_EARTH "@earth_relief_01s_g"
 #define BICTR_BODY_DATASET_MOON "@moon_relief_01m_g"
@@ -36,12 +37,12 @@ typedef struct {
 /// @brief Structure for BICTR parameters and resources
 typedef struct {
   /// Antenna params
-  double tx_lat;
-  double tx_lon;
+  /// Transmitter coordinates
+  bictr_point_geo_t tx_coord;
   /// Height in meters above the ground
   double tx_height;
-  double rx_lat;
-  double rx_lon;
+  /// Receiver coordinates
+  bictr_point_geo_t rx_coord;
   /// Height in meters above the ground
   double rx_height;
   /// If the antenna is horizontally polarized
@@ -96,6 +97,8 @@ typedef struct {
   void *gmt_sess;
   /// DEM VF reference name
   char vf_grid[GMT_VF_LEN];
+  /// PRNG
+  MTRand prng_state;
 } bictr_desc_t;
 
 /// @brief Supported celestial bodies
@@ -113,11 +116,13 @@ unsigned int bictr_delay_samples(double fs, double delay);
 /// @param body The body to load the region for
 /// @param region_min Minimum coordinate of the boundary box to load
 /// @param region_max Maximum coordinate of the boundary box to load
+/// @param prng_seed Seed value for mtwister
 /// @returns 0 if successful, non zero otherwise
 int bictr_initialize(bictr_desc_t *desc,
                      bictr_body_e body,
                      const bictr_point_geo_t *region_min,
-                     const bictr_point_geo_t *region_max);
+                     const bictr_point_geo_t *region_max,
+                     uint32_t prng_seed);
 
 /// @brief Free any resources used by bictr
 /// @param desc Model descriptor
@@ -126,7 +131,7 @@ void bictr_free(bictr_desc_t *desc);
 /// @brief Generate a new channel
 /// @param desc Bictr descriptor
 /// @param ch The channel array to write to
-/// @param [out] channel_offset Additional offset the generated channel has
+/// @param[out] channel_offset Additional offset the generated channel has
 /// @return 0 if successful, non zero otherwise
 int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset);
 
@@ -137,7 +142,8 @@ int _bictr_load_region(bictr_desc_t *desc);
 
 /// @brief Sample heights at a list of points
 /// @param desc Bictr descriptor
-/// @param points The list of coordinate points to sample
+/// @param lons Longitude components of the list of coordinates to sample at
+/// @param lans Latitude components of the list of coordinates to sample at
 /// @param n_points The number of points in the list
 /// @param vf_heights The VF to write the heights (GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT)
 /// @return 0 if successful, non-zero otherwise
@@ -152,10 +158,11 @@ int _bictr_get_heights(bictr_desc_t *desc, double *lons, double *lats, size_t n_
 int _bictr_get_track_heights(bictr_desc_t *desc, const bictr_point_geo_t *start, const bictr_point_geo_t *end, char *vf_heights);
 
 /// @brief Convert a coordinate to a 3D point
+/// @param desc Bictr descriptor
 /// @param coord The coordinate to convert.
-/// @param height The absolute height of the point from the center of the body.
-/// @param [out] point Struct to write converted point.
-void _bictr_geo_to_3D(const bictr_point_geo_t *coord, double height, bictr_point_3D_t *point);
+/// @param height_bias The relative height of the point from the radius of the body
+/// @param[out] point Struct to write converted point.
+void _bictr_geo_to_3D(const bictr_desc_t *desc, const bictr_point_geo_t *coord, double height_bias, bictr_point_3D_t *point);
 
 /// @brief Compute the distance between two points
 /// @param a The first point
@@ -175,7 +182,7 @@ double _bictr_fspl(double freq, double dist);
 /// @param start_height_bias The height of the starting coordinate relative to the ground
 /// @param end Ending coordinate
 /// @param end_height_bias The height of the ending coordinate relative to the ground
-/// @param [out] has_los If the two points have LOS
+/// @param[out] has_los If the two points have LOS
 /// @return 0 if successful, non-zero otherwise
 int _bictr_check_los(bictr_desc_t *desc,
                      const bictr_point_geo_t *start,
@@ -183,5 +190,31 @@ int _bictr_check_los(bictr_desc_t *desc,
                      const bictr_point_geo_t *end,
                      double end_height_bias,
                      bool *has_los);
+
+/// @brief Find reflectors
+/// @param desc Bictr descriptor
+/// @param[out] reflectors An empty array to write reflectors to. Must allocate enough space for maximum number of reflectors.
+/// @param[out] n_found The number of reflectors found.
+/// @return 0 if successful, non-zero otherwise
+int _bictr_generate_reflectors(bictr_desc_t *desc, bictr_point_3D_t *reflectors, size_t *n_found);
+
+/// @brief Compute the destination coordinate with bearing and distance
+/// @param desc Bictr descriptor
+/// @param loc The starting coordinate
+/// @param bearing Direction of travel, clockwise from north
+/// @param distance Distance of travel in meters
+/// @param[out] dest Pointer to write destination to
+void _bictr_destination(const bictr_desc_t *desc,
+                        const bictr_point_geo_t *loc,
+                        double bearing,
+                        double distance,
+                        bictr_point_geo_t *dest);
+
+/// @brief Generate a uniform random number on [a, b]
+/// @param desc Bictr descriptor
+/// @param a Low bound
+/// @param b High bound
+/// @return The random number
+double _bictr_uniform_random(bictr_desc_t *desc, double a, double b);
 
 #endif // __SIMULATION_TOOLS_BICTR_H__
