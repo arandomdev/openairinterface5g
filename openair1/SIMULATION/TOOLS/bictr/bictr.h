@@ -4,6 +4,7 @@
 #include "PHY/TOOLS/tools_defs.h"
 #include <gmt/gmt.h>
 #include "mtwister.h"
+#include <complex.h>
 
 #define BICTR_BODY_DATASET_EARTH "@earth_relief_01s_g"
 #define BICTR_BODY_DATASET_MOON "@moon_relief_01m_g"
@@ -83,6 +84,8 @@ typedef struct {
   unsigned int max_channel_length;
   /// Sampling rate of the system
   double sampling_freq;
+  /// Carrier frequency
+  double carr_freq;
 
   /// Runtime information
   /// Coordinate region that is loaded
@@ -132,8 +135,15 @@ void bictr_free(bictr_desc_t *desc);
 /// @param desc Bictr descriptor
 /// @param ch The channel array to write to
 /// @param[out] channel_offset Additional offset the generated channel has
+/// @param[out] channel_length The length of the generated channel
 /// @return 0 if successful, non zero otherwise
-int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset);
+int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset, unsigned int *channel_length);
+
+/// @brief Generate the fast fading component of the channel
+/// @param desc Bictr descriptor
+/// @param ch The channel to write the fast fading channel
+/// @param channel_length The number of samples to generate
+void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned int channel_length);
 
 /// @brief Load the region into memory, will download the relief if needed
 /// @param desc Bictr descriptor
@@ -161,8 +171,8 @@ int _bictr_get_track_heights(bictr_desc_t *desc, const bictr_point_geo_t *start,
 /// @param desc Bictr descriptor
 /// @param coord The coordinate to convert.
 /// @param height_bias The relative height of the point from the radius of the body
-/// @param[out] point Struct to write converted point.
-void _bictr_geo_to_3D(const bictr_desc_t *desc, const bictr_point_geo_t *coord, double height_bias, bictr_point_3D_t *point);
+/// @returns Converted point
+bictr_point_3D_t _bictr_geo_to_3D(const bictr_desc_t *desc, const bictr_point_geo_t *coord, double height_bias);
 
 /// @brief Compute the distance between two points
 /// @param a The first point
@@ -201,14 +211,10 @@ int _bictr_generate_reflectors(bictr_desc_t *desc, bictr_point_3D_t *reflectors,
 /// @brief Compute the destination coordinate with bearing and distance
 /// @param desc Bictr descriptor
 /// @param loc The starting coordinate
-/// @param bearing Direction of travel, clockwise from north
+/// @param bearing Direction of travel, clockwise from north, in radians [0, 2pi]
 /// @param distance Distance of travel in meters
-/// @param[out] dest Pointer to write destination to
-void _bictr_destination(const bictr_desc_t *desc,
-                        const bictr_point_geo_t *loc,
-                        double bearing,
-                        double distance,
-                        bictr_point_geo_t *dest);
+/// @returns Resulting destination
+bictr_point_geo_t _bictr_destination(const bictr_desc_t *desc, const bictr_point_geo_t *loc, double bearing, double distance);
 
 /// @brief Generate a uniform random number on [a, b]
 /// @param desc Bictr descriptor
@@ -216,5 +222,12 @@ void _bictr_destination(const bictr_desc_t *desc,
 /// @param b High bound
 /// @return The random number
 double _bictr_uniform_random(bictr_desc_t *desc, double a, double b);
+
+/// @brief Generate a random number on a normal distribution
+/// @param desc Bictr descriptor
+/// @param mu mean
+/// @param sigma standard deviation
+/// @return The random number
+double _bictr_normal_variate(bictr_desc_t *desc, double mu, double sigma);
 
 #endif // __SIMULATION_TOOLS_BICTR_H__

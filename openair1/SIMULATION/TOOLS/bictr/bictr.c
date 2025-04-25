@@ -61,10 +61,239 @@ void bictr_free(bictr_desc_t *desc)
   }
 }
 
-int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset)
+int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int *channel_offset, unsigned int *channel_length)
 {
-  /// TODO: IMP
-  return 0;
+  int err = 0;
+  char vf_heights[GMT_VF_LEN] = "";
+
+  // defaults for out parameters
+  *channel_offset = 0;
+  *channel_length = 0;
+
+  // Allocate pair of buffers to store delays and paths. Max number of paths is ref_count + los
+  unsigned int *path_delay_samples = malloc((desc->ref_count + 1) * sizeof(*path_delay_samples)); // delay of a path in samples
+  double complex *path_phasors = malloc((desc->ref_count + 1) * sizeof(*path_phasors));
+  size_t n_paths = 0;
+
+  // Allocate buffer to store reflectors
+  bictr_point_3D_t *reflectors = malloc(desc->ref_count * sizeof(*reflectors));
+
+  // Buffer for rayleigh fading channel
+  double complex *rayleigh_ch = NULL;
+
+  // Convert tx and rx to point locations
+  double trx_lons[2] = {desc->tx_coord.lon, desc->rx_coord.lon};
+  double trx_lats[2] = {desc->tx_coord.lat, desc->rx_coord.lat};
+
+  if ((err = GMT_Open_VirtualFile(desc->gmt_sess, GMT_IS_DATASET, GMT_IS_PLP, GMT_OUT, NULL, vf_heights))) {
+    goto cleanup;
+  }
+
+  if ((err = _bictr_get_heights(desc, trx_lons, trx_lats, 2, vf_heights))) {
+    goto cleanup;
+  }
+
+  struct GMT_DATASET *ds_heights = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc->gmt_sess, vf_heights);
+  if (ds_heights->n_records != 2) {
+    err = -1;
+    goto cleanup;
+  }
+
+  double *trx_heights = ds_heights->table[0][0].segment[0][0].data[2];
+
+  bictr_point_3D_t tx_loc = _bictr_geo_to_3D(desc, &desc->tx_coord, trx_heights[0] + desc->tx_height);
+  bictr_point_3D_t rx_loc = _bictr_geo_to_3D(desc, &desc->rx_coord, trx_heights[1] + desc->rx_height);
+
+  // Compute LOS delay path if it exists
+  double los_dist = _bictr_compute_distance(&tx_loc, &rx_loc);
+  double los_delay = los_dist / SPEED_OF_LIGHT;
+  double los_pl = _bictr_fspl(desc->carr_freq, los_dist);
+
+  bool has_los;
+  if ((err = _bictr_check_los(desc, &desc->tx_coord, desc->tx_height, &desc->rx_coord, desc->rx_height, &has_los))) {
+    goto cleanup;
+  }
+  if (has_los) {
+    double complex los_phasor = cexp(I * (-2 * M_PI * desc->carr_freq * los_delay));
+    unsigned int los_delay_samples = bictr_delay_samples(desc->sampling_freq, los_delay);
+    path_phasors[n_paths] = los_phasor;
+    path_delay_samples[n_paths] = los_delay_samples;
+    n_paths += 1;
+  }
+
+  // Compute reflector paths
+  size_t n_reflectors;
+  if ((err = _bictr_generate_reflectors(desc, reflectors, &n_reflectors))) {
+    goto cleanup;
+  }
+  if (n_reflectors) {
+    // Generate random variables
+    /// NOTE: Originally calls to generate random variables were called as needed, but in order to match the call order in Python,
+    /// they need to be called in bulk.
+    double complex *complex_rel_perms = malloc(n_reflectors * sizeof(*complex_rel_perms));
+    double *phases = malloc(n_reflectors * sizeof(*phases));
+    for (size_t i = 0; i < n_reflectors; i++) {
+      double real = _bictr_normal_variate(desc, desc->complex_rel_permittivity_real, desc->complex_rel_permittivity_real_std);
+      double imag = _bictr_normal_variate(desc, desc->complex_rel_permittivity_imag, desc->complex_rel_permittivity_imag_std);
+      complex_rel_perms[i] = real + (I * imag);
+    }
+    for (size_t i = 0; i < n_reflectors; i++) {
+      phases[i] = _bictr_uniform_random(desc, 0, 2 * M_PI);
+    }
+
+    // Process reflectors
+    for (size_t i = 0; i < n_reflectors; i++) {
+      bictr_point_3D_t *ref_loc = &reflectors[i];
+
+      // Compute path distances
+      double tx_ref_dist = _bictr_compute_distance(&tx_loc, ref_loc);
+      double ref_rx_dist = _bictr_compute_distance(ref_loc, &rx_loc);
+      double ref_dist = tx_ref_dist + ref_rx_dist;
+
+      // Compute time delay and pathloss
+      double ref_delay = ref_dist / SPEED_OF_LIGHT;
+      double ref_pl = _bictr_fspl(desc->carr_freq, ref_dist);
+
+      // Compute reflection angle with law of cosines
+      double ref_angle = (M_PI
+                          - acos(((tx_ref_dist * tx_ref_dist) + (ref_rx_dist * ref_rx_dist) - (los_dist * los_dist))
+                                 / (2 * tx_ref_dist * ref_rx_dist)))
+                         / 2;
+
+      // Compute reflection coefficient
+      double complex ref_polarization;
+      if (desc->horizontal_polarization) {
+        ref_polarization = csqrt(complex_rel_perms[i] - (pow(cos(ref_angle), 2)));
+      } else {
+        ref_polarization = csqrt(complex_rel_perms[i] - (pow(cos(ref_angle), 2))) / complex_rel_perms[i];
+      }
+
+      double complex ref_coeff = (sin(ref_angle) - ref_polarization) / (sin(ref_angle) + ref_polarization);
+
+      // Compute phasor and delay samples
+      double complex ref_phasor = ref_pl * ref_coeff * cexp(I * phases[i]);
+      unsigned int ref_delay_samples = bictr_delay_samples(desc->sampling_freq, ref_delay);
+
+      // Record
+      path_phasors[n_paths] = ref_phasor;
+      path_delay_samples[n_paths] = ref_delay_samples;
+      n_paths += 1;
+    }
+
+    free(complex_rel_perms);
+    free(phases);
+  }
+
+  if (n_paths == 0) {
+    goto cleanup;
+  }
+
+  // Get the minimum delay for LOS optimization
+  *channel_offset = UINT_MAX;
+  for (size_t i = 0; i < n_paths; i++) {
+    if (path_delay_samples[i] < *channel_offset) {
+      *channel_offset = path_delay_samples[i];
+    }
+  }
+
+  // Zero out channel
+  memset(ch, 0, desc->max_channel_length * sizeof(*ch));
+
+  for (size_t i = 0; i < n_paths; i++) {
+    // Subtract los offset
+    unsigned int delay_samples = path_delay_samples[i] - *channel_offset;
+
+    // Check delay does not overrun channel buffer
+    /// TODO: Emit warning or error if it does
+    if (delay_samples >= desc->max_channel_length) {
+      continue;
+    }
+
+    // update max channel length
+    if (delay_samples >= *channel_length) {
+      *channel_length = delay_samples + 1; // delay_samples is an index, +1 for channel length
+    }
+
+    // Add phasor
+    ch[delay_samples].r += creal(path_phasors[i]);
+    ch[delay_samples].i += cimag(path_phasors[i]);
+  }
+
+  // generate rayleigh fading
+  rayleigh_ch = malloc(*channel_length * sizeof(*rayleigh_ch));
+  _bictr_generate_rayleigh(desc, rayleigh_ch, *channel_length);
+
+  // Normalize rayleigh fading and add to channel
+  for (size_t i = 0; i < *channel_length; i++) {
+    double complex sample = rayleigh_ch[i] * los_pl / *channel_length;
+    ch[i].r += creal(sample);
+    ch[i].i += cimag(sample);
+  }
+
+  // Normalize
+  for (size_t i = 0; i < *channel_length; i++) {
+    ch[i].r /= desc->ref_count + 1;
+    ch[i].i /= desc->ref_count + 1;
+  }
+
+cleanup:
+  GMT_Close_VirtualFile(desc->gmt_sess, vf_heights);
+  free(reflectors);
+  free(path_phasors);
+  free(path_delay_samples);
+
+  if (rayleigh_ch) {
+    free(rayleigh_ch);
+  }
+  return err;
+}
+
+void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned int channel_length)
+{
+  unsigned int m = desc->fading_paths / 4;
+  double wd = 2 * M_PI * desc->fading_doppler_spread * desc->carr_freq / SPEED_OF_LIGHT;
+
+  // Zero out channel
+  memset(ch, 0, channel_length * sizeof(*ch));
+
+  // Generate real component
+  for (size_t n = 1; n < m + 1; n++) {
+    double theta = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double phi = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double psi = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double angle = (2 * M_PI * n - M_PI + theta) / (4 * m);
+
+    for (size_t i = 0; i < channel_length; i++) {
+      ch[i] += cos(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
+    }
+  }
+
+  // Generate imaginary component
+  for (size_t n = 1; n < m + 1; n++) {
+    double theta = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double phi = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double psi = _bictr_uniform_random(desc, -M_PI, M_PI);
+    double angle = (2 * M_PI * n - M_PI + theta) / (4 * m);
+
+    for (size_t i = 0; i < channel_length; i++) {
+      ch[i] += I * sin(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
+    }
+  }
+
+  // Normalize
+  for (size_t i = 0; i < channel_length; i++) {
+    ch[i] *= 2 / sqrt(m);
+  }
+
+  double sum = 0;
+  for (size_t i = 0; i < channel_length; i++) {
+    sum += pow(cabs(ch[i]), 2);
+  }
+  double avgPower = sum / channel_length;
+
+  for (size_t i = 0; i < channel_length; i++) {
+    ch[i] *= sqrt(1 / avgPower);
+  }
 }
 
 int _bictr_load_region(bictr_desc_t *desc)
@@ -205,14 +434,17 @@ int _bictr_get_track_heights(bictr_desc_t *desc, const bictr_point_geo_t *start,
   return err;
 }
 
-void _bictr_geo_to_3D(const bictr_desc_t *desc, const bictr_point_geo_t *coord, double height_bias, bictr_point_3D_t *point)
+bictr_point_3D_t _bictr_geo_to_3D(const bictr_desc_t *desc, const bictr_point_geo_t *coord, double height_bias)
 {
   double inc = (90 - coord->lat) * M_PI / 180.0;
   double azi = coord->lon * M_PI / 180.0;
   double h = desc->body.radius + height_bias;
-  point->x = h * sin(inc) * cos(azi);
-  point->y = h * sin(inc) * sin(azi);
-  point->z = h * cos(inc);
+
+  bictr_point_3D_t point;
+  point.x = h * sin(inc) * cos(azi);
+  point.y = h * sin(inc) * sin(azi);
+  point.z = h * cos(inc);
+  return point;
 }
 
 double _bictr_compute_distance(const bictr_point_3D_t *a, const bictr_point_3D_t *b)
@@ -251,16 +483,17 @@ int _bictr_check_los(bictr_desc_t *desc,
   struct GMT_DATASET *ds_heights = (struct GMT_DATASET *)GMT_Read_VirtualFile(desc->gmt_sess, vf_heights);
   size_t n_points = ds_heights->n_records;
   if (n_points == 0) {
+    GMT_Close_VirtualFile(desc->gmt_sess, vf_heights);
     return -1;
   }
 
   double *heights = ds_heights->table[0][0].segment[0][0].data[2];
-  double slope = ((heights[n_points - 1] + end_height_bias) - (heights[0] + start_height_bias)) / (n_points-1);
-  
+  double slope = ((heights[n_points - 1] + end_height_bias) - (heights[0] + start_height_bias)) / (n_points - 1);
+
   // Skip first and last points, only want to check the path in between
   double line_height = heights[0] + start_height_bias + slope;
   *has_los = true;
-  for (size_t i = 1; i < n_points-1; i++) {
+  for (size_t i = 1; i < n_points - 1; i++) {
     if (line_height < heights[i]) {
       *has_los = false;
       break;
@@ -297,9 +530,7 @@ int _bictr_generate_reflectors(bictr_desc_t *desc, bictr_point_3D_t *reflectors,
     for (int i = 0; i < ref_attempt_per_ring; i++) {
       double radius = _bictr_uniform_random(desc, curr_radius - ring_radius_uncertainty, curr_radius + ring_radius_uncertainty);
       double theta = _bictr_uniform_random(desc, 0, 2 * M_PI);
-
-      bictr_point_geo_t ref_coord;
-      _bictr_destination(desc, &desc->rx_coord, theta, radius, &ref_coord);
+      bictr_point_geo_t ref_coord = _bictr_destination(desc, &desc->rx_coord, theta, radius);
 
       // Check LOS from tx to ref and from ref to rx
       bool has_los1 = false;
@@ -345,7 +576,8 @@ int _bictr_generate_reflectors(bictr_desc_t *desc, bictr_point_3D_t *reflectors,
     double *heights = ds_heights->table[0][0].segment[0][0].data[2];
     for (size_t i = 0; i < *n_found; i++) {
       bictr_point_geo_t ref_coord = {ref_lons[i], ref_lats[i]};
-      _bictr_geo_to_3D(desc, &ref_coord, heights[i], &reflectors[i]);
+      bictr_point_3D_t ref_loc = _bictr_geo_to_3D(desc, &ref_coord, heights[i]);
+      memcpy(&reflectors[i], &ref_loc, sizeof(bictr_point_3D_t));
     }
   }
 
@@ -357,11 +589,7 @@ cleanup:
   return err;
 }
 
-void _bictr_destination(const bictr_desc_t *desc,
-                        const bictr_point_geo_t *loc,
-                        double bearing,
-                        double distance,
-                        bictr_point_geo_t *dest)
+bictr_point_geo_t _bictr_destination(const bictr_desc_t *desc, const bictr_point_geo_t *loc, double bearing, double distance)
 {
   double dist_rad = distance / desc->body.radius;
   double lon1 = loc->lon * M_PI / 180.0;
@@ -370,23 +598,46 @@ void _bictr_destination(const bictr_desc_t *desc,
   double lat2;
   double lon2;
   if (loc->lat == 90) {
-    lon2 = bearing;
+    lon2 = bearing - M_PI;
     lat2 = (M_PI / 2) - dist_rad;
   } else if (loc->lat == -90) {
-    lon2 = bearing;
+    lon2 = bearing - M_PI;
     lat2 = (-M_PI / 2) + dist_rad;
   } else {
     lat2 = asin(sin(lat1) * cos(dist_rad) + cos(lat1) * sin(dist_rad) * cos(bearing));
     lon2 = lon1 + atan2(sin(bearing) * sin(dist_rad) * cos(lat1), cos(dist_rad) - sin(lat1) * sin(lat2));
   }
 
-  dest->lat = lat2 * 180 / M_PI;
-  dest->lon = lon2 * 180 / M_PI;
+  bictr_point_geo_t dest;
+  dest.lat = lat2 * 180 / M_PI;
+  dest.lon = lon2 * 180 / M_PI;
+  return dest;
 }
 
 double _bictr_uniform_random(bictr_desc_t *desc, double a, double b)
 {
   return a + (b - a) * genRand(&desc->prng_state);
+}
+
+double _bictr_normal_variate(bictr_desc_t *desc, double mu, double sigma)
+{
+  // Adapted from python's implementation
+  // https://github.com/python/cpython/blob/a94c7528b596e9ec234f12ebeeb45fc731412b18/Lib/random.py#L536
+
+  const double NV_MAGICCONST = 4.0 * exp(-0.5) / sqrt(2.0);
+
+  double z;
+  while (true) {
+    double u1 = genRand(&desc->prng_state);
+    double u2 = 1.0 - genRand(&desc->prng_state);
+    z = NV_MAGICCONST * (u1 - 0.5) / u2;
+    double zz = z * z / 4.0;
+    if (zz <= -log(u2)) {
+      break;
+    }
+  }
+
+  return mu + z * sigma;
 }
 
 #ifdef BICTR_TEST_EXECUTABLE
@@ -410,7 +661,8 @@ int main(int argc, char const *argv[])
                        .fading_paths = 1024,
                        .fading_doppler_spread = 1,
                        .max_channel_length = 3000,
-                       .sampling_freq = 3e9};
+                       .sampling_freq = 3e9,
+                       .carr_freq = 913e6};
 
   bictr_point_geo_t region_min = {-111.655615, 35.568169};
   bictr_point_geo_t region_max = {-111.610698, 35.613086};
@@ -488,14 +740,8 @@ int main(int argc, char const *argv[])
       789127738,  4027610014, 1057334138, 2902720905};
   memcpy(desc.prng_state.mt, mt, sizeof(uint32_t) * STATE_VECTOR_LENGTH);
 
-  bictr_point_3D_t reflectors[5];
-  size_t n_found;
-  if ((err = _bictr_generate_reflectors(&desc, reflectors, &n_found))) {
-    printf("Unable to find reflectors\n");
-    return -1;
-  }
-  for (size_t i = 0; i < n_found; i++) {
-    printf("%.9f, %.9f, %.9f\n", reflectors[i].x, reflectors[i].y, reflectors[i].z);
+  for (size_t i = 0; i < 10; i++) {
+    printf("%.15f\n", _bictr_normal_variate(&desc, 1, 1));
   }
 }
 

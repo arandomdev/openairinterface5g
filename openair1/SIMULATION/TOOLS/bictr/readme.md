@@ -1,5 +1,47 @@
 # BICTR Channel Model
+TODO: Description of BICTR
+
 This document is used documentation and implementation notes for BICTR.
+
+## Table of Contents
+- [BICTR Channel Model](#bictr-channel-model)
+  - [Table of Contents](#table-of-contents)
+  - [Building](#building)
+  - [Running the model](#running-the-model)
+  - [Testing the model](#testing-the-model)
+  - [Implementation](#implementation)
+  - [Ensuring Output Matches Python](#ensuring-output-matches-python)
+  - [OAI Integration](#oai-integration)
+
+## Building
+BICTR was implemented to easily integrate into OAI. As such it uses the same build system.
+
+The following instructions were tested on Ubuntu 22.04.
+
+First additional library will need to be installed, mainly GMT and its development files. Additional work can be done to include this step into the `build_oai` script.
+```sh
+sudo apt install gmt gmt-dcw gmt-gshhg libgmt-dev
+```
+
+Then use the OAI build script can be used to build RFSimulator, which will include the BICTR model. Ensure the correct branch is active.
+```sh
+# Install dependencies and build
+./build_oai -I -w SIMU --eNB --gNB --UE --nrUE --ninja
+```
+When building OAI the example program in `bictr.c` is also built. The executable is called `bictr_sim` and located in the same place as other executables.
+
+Additionally there is a test suite at `./openair1/SIMULATION/TOOLS/bictr/TESTBENCH` with basic unit tests. The following snippet demonstrates how to build and run it.
+```sh
+cd openairinterface5g/openair1/SIMULATION/TOOLS/bictr/TESTBENCH
+make
+./test_bictr
+```
+
+## Running the model
+TODO: Write
+
+## Testing the model
+TODO: Write
 
 ## Implementation
 BICTR is defined similarly to a library. There is a main header file, `bictr.h`. All definitions, functions, and structures have `bictr` prepended to avoid namespace collisions. Public functions are prepended with `bictr` and are meant to be used in the OAI integration. Functions with `_bictr` prepended are private functions meant to be used by BICTR. They have also been included in the header file for consistency and documentation.
@@ -36,8 +78,3 @@ $$
 
 After the channel descriptor is defined, the wireless channel can be defined in `random_channel.c:random_channel()`. The length of the impulse response can be reduced from the maximum to the correct length by modifying `channel_length`. This change will automatically be applied in `apply_channelmod.c:rxAddInput()`. This change should not cause a memory leak as `random_channel.c:free_channel_desc_scm()` does not depend on `channel_length`. Additionally, the `channel_offset` can be set to perform the LOS optimization.
 
-## Building
-Additional library will need to be installed, mainly GMT.
-```sh
-sudo apt install gmt gmt-dcw gmt-gshhg libgmt-dev
-```
