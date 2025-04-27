@@ -4,7 +4,6 @@
 #include "PHY/TOOLS/tools_defs.h"
 #include <gmt/gmt.h>
 #include "mtwister.h"
-#include <complex.h>
 
 #define BICTR_BODY_DATASET_EARTH "@earth_relief_01s_g"
 #define BICTR_BODY_DATASET_MOON "@moon_relief_01m_g"
@@ -48,6 +47,8 @@ typedef struct {
   double rx_height;
   /// If the antenna is horizontally polarized
   bool horizontal_polarization;
+  /// Carrier frequency
+  double carr_freq;
 
   /// Ring search params
   /// Number of reflectors to search for
@@ -84,8 +85,6 @@ typedef struct {
   unsigned int max_channel_length;
   /// Sampling rate of the system
   double sampling_freq;
-  /// Carrier frequency
-  double carr_freq;
 
   /// Runtime information
   /// Coordinate region that is loaded
@@ -143,7 +142,7 @@ int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int
 /// @param desc Bictr descriptor
 /// @param ch The channel to write the fast fading channel
 /// @param channel_length The number of samples to generate
-void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned int channel_length);
+void _bictr_generate_rayleigh(bictr_desc_t *desc, struct complexd *ch, unsigned int channel_length);
 
 /// @brief Load the region into memory, will download the relief if needed
 /// @param desc Bictr descriptor

@@ -1,6 +1,7 @@
 #include "bictr.h"
-#include <math.h>
 #include <assert.h>
+#include <math.h>
+#include <complex.h>
 
 #define SPEED_OF_LIGHT 299792458
 
@@ -79,7 +80,7 @@ int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int
   bictr_point_3D_t *reflectors = malloc(desc->ref_count * sizeof(*reflectors));
 
   // Buffer for rayleigh fading channel
-  double complex *rayleigh_ch = NULL;
+  struct complexd *rayleigh_ch = NULL;
 
   // Convert tx and rx to point locations
   double trx_lons[2] = {desc->tx_coord.lon, desc->rx_coord.lon};
@@ -185,6 +186,12 @@ int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int
   }
 
   if (n_paths == 0) {
+    // Set channel to null any signal
+    *channel_offset = 0;
+    *channel_length = 1;
+    ch[0].r = 0;
+    ch[0].i = 0;
+
     goto cleanup;
   }
 
@@ -225,9 +232,11 @@ int bictr_generate_channel(bictr_desc_t *desc, struct complexd *ch, unsigned int
 
   // Normalize rayleigh fading and add to channel
   for (size_t i = 0; i < *channel_length; i++) {
-    double complex sample = rayleigh_ch[i] * los_pl / *channel_length;
-    ch[i].r += creal(sample);
-    ch[i].i += cimag(sample);
+    rayleigh_ch[i].r *= los_pl / *channel_length;
+    rayleigh_ch[i].i *= los_pl / *channel_length;
+
+    ch[i].r += rayleigh_ch[i].r;
+    ch[i].i += rayleigh_ch[i].i;
   }
 
   // Normalize
@@ -248,13 +257,12 @@ cleanup:
   return err;
 }
 
-void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned int channel_length)
+void _bictr_generate_rayleigh(bictr_desc_t *desc, struct complexd *ch, unsigned int channel_length)
 {
   unsigned int m = desc->fading_paths / 4;
   double wd = 2 * M_PI * desc->fading_doppler_spread * desc->carr_freq / SPEED_OF_LIGHT;
 
-  // Zero out channel
-  memset(ch, 0, channel_length * sizeof(*ch));
+  double complex *temp_ch = malloc(channel_length * sizeof(*temp_ch));
 
   // Generate real component
   for (size_t n = 1; n < m + 1; n++) {
@@ -264,7 +272,7 @@ void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned i
     double angle = (2 * M_PI * n - M_PI + theta) / (4 * m);
 
     for (size_t i = 0; i < channel_length; i++) {
-      ch[i] += cos(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
+      temp_ch[i] += cos(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
     }
   }
 
@@ -276,24 +284,33 @@ void _bictr_generate_rayleigh(bictr_desc_t *desc, double complex *ch, unsigned i
     double angle = (2 * M_PI * n - M_PI + theta) / (4 * m);
 
     for (size_t i = 0; i < channel_length; i++) {
-      ch[i] += I * sin(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
+      temp_ch[i] += I * sin(psi) * cos(wd * (i / desc->sampling_freq) * cos(angle) + phi);
     }
   }
 
   // Normalize
   for (size_t i = 0; i < channel_length; i++) {
-    ch[i] *= 2 / sqrt(m);
+    temp_ch[i] *= 2 / sqrt(m);
   }
 
   double sum = 0;
   for (size_t i = 0; i < channel_length; i++) {
-    sum += pow(cabs(ch[i]), 2);
+    sum += pow(cabs(temp_ch[i]), 2);
   }
   double avgPower = sum / channel_length;
 
   for (size_t i = 0; i < channel_length; i++) {
-    ch[i] *= sqrt(1 / avgPower);
+    temp_ch[i] *= sqrt(1 / avgPower);
   }
+
+  // Zero out channel and copy
+  memset(ch, 0, channel_length * sizeof(*ch));
+  for (size_t i = 0; i < channel_length; i++) {
+    ch[i].r = creal(temp_ch[i]);
+    ch[i].i = cimag(temp_ch[i]);
+  }
+
+  free(temp_ch);
 }
 
 int _bictr_load_region(bictr_desc_t *desc)

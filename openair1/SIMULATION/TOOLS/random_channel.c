@@ -1688,13 +1688,14 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
     case BICTR:
       // Define BICTR arguments first
       /// TODO: Runtime adjustment of parameters
-      chan_desc->bictr.tx_lat = 35.590627;
-      chan_desc->bictr.tx_lon = -111.633156;
+      chan_desc->bictr.tx_coord.lon = -111.633156;
+      chan_desc->bictr.tx_coord.lat = 35.590627;
       chan_desc->bictr.tx_height = 10;
-      chan_desc->bictr.rx_lat = 35.596667;
-      chan_desc->bictr.rx_lon = -111.625833;
+      chan_desc->bictr.rx_coord.lon = -111.625833;
+      chan_desc->bictr.rx_coord.lat = 35.596667;
       chan_desc->bictr.rx_height = 2;
       chan_desc->bictr.horizontal_polarization = false;
+      chan_desc->bictr.carr_freq = 913e6;
 
       chan_desc->bictr.ref_count = 5;
       chan_desc->bictr.ref_attempt_per_ring = 3;
@@ -1713,15 +1714,20 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
       // Set the FIR filter size to the theoretical maximum delay spread
       Td = 2 * (chan_desc->bictr.ring_radius_max + chan_desc->bictr.ring_radius_uncertainty) / 299792458.0 * 1e6;
-      nb_taps = bictr_delay_samples(sampling_rate, Td) + 1;
+      /// NOTE: Dispite the comment for channel_desc_t::sampling_rate saying that it's in Mhz, it seems to be in hz
+      nb_taps = bictr_delay_samples(sampling_rate / 1e6, Td) + 1;
       channel_length = nb_taps; // The same
 
       chan_desc->bictr.max_channel_length = nb_taps;
-      chan_desc->bictr.sampling_freq = sampling_rate * 1e6;
+      chan_desc->bictr.sampling_freq = sampling_rate;
 
       // initialize
+      bictr_point_geo_t region_min = {-111.655615, 35.568169};
+      bictr_point_geo_t region_max = {-111.610698, 35.613086};
+  
+      LOG_D(OCM, "[BICTR] Pre-init\n");
       chan_desc->free_flags = chan_desc->free_flags | CHANMODEL_FREE_BICTR;
-      bictr_initialize(&chan_desc->bictr);
+      bictr_initialize(&chan_desc->bictr, BICTR_BODY_EARTH, &region_min, &region_max, (uint32_t)rand());
 
       /// Other parameters that are not used
       ricean_factor = 0.0;
@@ -1862,6 +1868,53 @@ int random_channel(channel_desc_t *desc, uint8_t abstraction_flag) {
     desc->first_run = 0;
     return 0;
   }
+
+  if (desc->modelid == BICTR) {
+    desc->channel_length = 0;
+    desc->channel_offset = 0;
+
+    LOG_D(OCM, "[BICTR] Generating channels\n");
+    for (aarx = 0; aarx < desc->nb_rx; aarx++) {
+      for (aatx = 0; aatx < desc->nb_tx; aatx++) {
+        if (aarx % desc->nb_tx != aatx) {
+          continue;
+        }
+
+        int err;
+        unsigned int ch_offset;
+        unsigned int ch_length;
+        if ((err = bictr_generate_channel(&desc->bictr, desc->ch[aarx + (aatx * desc->nb_rx)], &ch_offset, &ch_length))) {
+          LOG_E(OCM, "random_channel.c: Failed to generate BICTR channel\n");
+          return -1;
+        }
+        LOG_D(OCM,
+              "[BICTR] Generated channel for transceiver pair (rx=%i, tx=%i), ch_offset=%d, ch_length=%d\n",
+              aarx,
+              aatx,
+              ch_offset,
+              ch_length);
+
+        /// NOTE: I assume that all tx and rx are in the same nodes, which should that they have the same channel offset. This is
+        /// not confirmed though. Use the longest channel offset and length
+        if (ch_offset > desc->channel_offset) {
+          desc->channel_offset = ch_offset;
+        }
+        if (ch_length > desc->channel_length) {
+          desc->channel_length = ch_length;
+        }
+      }
+
+      LOG_D(OCM,
+            "[BICTR] Finished channel generation, final ch_offset=%ld, ch_length=%d\n",
+            desc->channel_offset,
+            desc->channel_length);
+    }
+
+    stop_meas(&desc->random_channel);
+    desc->first_run = 0;
+    return 0;
+  }
+
   bzero(acorr,desc->nb_tx*desc->nb_rx*sizeof(struct complexd));
 
   for (i=0; i<(int)desc->nb_taps; i++) {

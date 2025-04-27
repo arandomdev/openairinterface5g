@@ -1689,6 +1689,7 @@ set (SIMUSRC
 )
 add_library(SIMU STATIC ${SIMUSRC} )
 target_include_directories(SIMU PUBLIC ${OPENAIR1_DIR}/SIMULATION/TOOLS ${OPENAIR1_DIR}/SIMULATION/RF)
+target_link_libraries(SIMU PRIVATE gmt)
 
 include_directories("${NFAPI_DIR}/nfapi/public_inc")
 include_directories("${NFAPI_DIR}/common/public_inc")
