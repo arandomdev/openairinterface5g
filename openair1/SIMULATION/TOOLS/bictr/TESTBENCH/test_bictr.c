@@ -689,5 +689,6 @@ int main(int argc, char const *argv[])
   printf("\nTest: bictr_generate_channel()\n");
   test_bictr_generate_channel(&desc);
 
+  bictr_free(&desc);
   return 0;
 }

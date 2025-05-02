@@ -1715,6 +1715,7 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       // Set the FIR filter size to the theoretical maximum delay spread
       Td = 2 * (chan_desc->bictr.ring_radius_max + chan_desc->bictr.ring_radius_uncertainty) / 299792458.0 * 1e6;
       /// NOTE: Dispite the comment for channel_desc_t::sampling_rate saying that it's in Mhz, it seems to be in hz
+      /// TODO: The number of taps is uint8_t, which doesn't allow for large channels (only 256 coefficients). This might be an issue...
       nb_taps = bictr_delay_samples(sampling_rate / 1e6, Td) + 1;
       channel_length = nb_taps; // The same
 
