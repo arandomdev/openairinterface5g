@@ -55,11 +55,6 @@
 #include "NR_UE-NR-Capability.h"
 #include "intertask_interface.h"
 
-// 3GPP TS 38.331 Section 12 Table 12.1-1: UE performance requirements for RRC procedures for UEs
-#define NR_RRC_SETUP_DELAY_MS           10
-#define NR_RRC_RECONFIGURATION_DELAY_MS 10
-#define NR_RRC_BWP_SWITCHING_DELAY_MS   6
-
 typedef enum {
   NR_RRC_OK=0,
   NR_RRC_ConnSetup_failed,
@@ -72,7 +67,6 @@ typedef enum {
 #define MAX_MEAS_CONFIG                               7
 #define MAX_MEAS_ID                                   7
 
-#define NR_RRC_BUF_SIZE                               4096
 #define UNDEF_SECURITY_MODE                           0xff
 #define NO_SECURITY_MODE                              0x20
 
@@ -227,9 +221,9 @@ typedef struct gNB_RRC_UE_s {
 
   ngap_security_capabilities_t       security_capabilities;
   //NSA block
-  /* Number of NSA e_rab */
+  sctp_assoc_t x2_target_assoc;
+  int MeNB_ue_x2_id;
   int                                nb_of_e_rabs;
-  /* list of pdu session to be setup by RRC layers */
   nr_e_rab_param_t                   e_rab[NB_RB_MAX];//[S1AP_MAX_E_RAB];
   uint32_t                           nsa_gtp_teid[S1AP_MAX_E_RAB];
   transport_layer_addr_t             nsa_gtp_addrs[S1AP_MAX_E_RAB];
@@ -244,7 +238,7 @@ typedef struct gNB_RRC_UE_s {
   uint32_t ue_rrc_inactivity_timer;
   uint32_t                           ue_reestablishment_counter;
   uint32_t                           ue_reconfiguration_counter;
-
+  bool ongoing_reconfiguration;
   bool an_release; // flag if core requested UE release
 
   /* NGUEContextSetup might come with PDU sessions, but setup needs to be

@@ -279,20 +279,28 @@ void phy_procedures_gNB_TX(processingData_L1tx_t *msgTx,
                                           csi_bitmap);
 
       nr_generate_csi_rs(&gNB->frame_parms,
-                         (int32_t **)gNB->common_vars.txdataF[beam_nb],
+                         &mapping_parms,
                          gNB->TX_AMP,
-                         csi_params,
                          slot,
-                         &mapping_parms);
+                         csi_params->freq_density,
+                         csi_params->start_rb,
+                         csi_params->nr_of_rbs,
+                         csi_params->symb_l0,
+                         csi_params->symb_l1,
+                         csi_params->row,
+                         csi_params->scramb_id,
+                         csi_params->power_control_offset_ss,
+                         csi_params->cdm_type,
+                         gNB->common_vars.txdataF[beam_nb]);
       csirs->active = 0;
     }
   }
 
   //apply the OFDM symbol rotation here
-  if (gNB->phase_comp) {
-    start_meas(&gNB->phase_comp_stats);
-    for(int i = 0; i < gNB->common_vars.num_beams_period; ++i) {
-      for (int aa = 0; aa < cfg->carrier_config.num_tx_ant.value; aa++) {
+  start_meas(&gNB->phase_comp_stats);
+  for (int i = 0; i < gNB->common_vars.num_beams_period; ++i) {
+    for (int aa = 0; aa < cfg->carrier_config.num_tx_ant.value; aa++) {
+      if (gNB->phase_comp) {
         apply_nr_rotation_TX(fp,
                              &gNB->common_vars.txdataF[i][aa][txdataF_offset],
                              fp->symbol_rotation[0],
@@ -300,13 +308,16 @@ void phy_procedures_gNB_TX(processingData_L1tx_t *msgTx,
                              fp->N_RB_DL,
                              0,
                              fp->Ncp == EXTENDED ? 12 : 14);
-        T(T_GNB_PHY_DL_OUTPUT_SIGNAL, T_INT(0),
-          T_INT(frame), T_INT(slot),
-          T_INT(aa), T_BUFFER(&gNB->common_vars.txdataF[aa][txdataF_offset], fp->samples_per_slot_wCP*sizeof(int32_t)));
       }
+      T(T_GNB_PHY_DL_OUTPUT_SIGNAL,
+        T_INT(0),
+        T_INT(frame),
+        T_INT(slot),
+        T_INT(aa),
+        T_BUFFER(&gNB->common_vars.txdataF[i][aa][txdataF_offset], fp->samples_per_slot_wCP * sizeof(int32_t)));
     }
-    stop_meas(&gNB->phase_comp_stats);
   }
+  stop_meas(&gNB->phase_comp_stats);
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_PROCEDURES_gNB_TX + gNB->CC_id, 0);
 }

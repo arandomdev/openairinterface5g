@@ -379,7 +379,7 @@ void fill_scc_sim(NR_ServingCellConfigCommon_t *scc, uint64_t *ssb_bitmap, int N
   initialUplinkBWP->genericParameters.subcarrierSpacing = mu_ul;
 
   struct NR_SetupRelease_RACH_ConfigCommon *rach_ConfigCommon = initialUplinkBWP->rach_ConfigCommon;
-  rach_ConfigCommon->choice.setup->rach_ConfigGeneric.prach_ConfigurationIndex = 98;
+  rach_ConfigCommon->choice.setup->rach_ConfigGeneric.prach_ConfigurationIndex = mu_ul == 3 ? 52 : 98;
   rach_ConfigCommon->choice.setup->rach_ConfigGeneric.msg1_FDM = NR_RACH_ConfigGeneric__msg1_FDM_one;
   rach_ConfigCommon->choice.setup->rach_ConfigGeneric.msg1_FrequencyStart = 0;
   rach_ConfigCommon->choice.setup->rach_ConfigGeneric.zeroCorrelationZoneConfig = 13;
@@ -437,12 +437,11 @@ static void fix_tdd_pattern(NR_ServingCellConfigCommon_t *scc)
   int pattern_ext = pattern1->dl_UL_TransmissionPeriodicity - 8;
   // Check if the pattern1 extension is configured and set the value accordingly
   if (pattern_ext >= 0) {
-    pattern1->ext1 = calloc_or_fail(1, sizeof(struct NR_TDD_UL_DL_Pattern__ext1));
-    pattern1->ext1->dl_UL_TransmissionPeriodicity_v1530 =
-        calloc_or_fail(1, sizeof(*pattern1->ext1->dl_UL_TransmissionPeriodicity_v1530));
     *pattern1->ext1->dl_UL_TransmissionPeriodicity_v1530 = pattern_ext;
     pattern1->dl_UL_TransmissionPeriodicity = 5;
   } else {
+    free(pattern1->ext1->dl_UL_TransmissionPeriodicity_v1530);
+    free(pattern1->ext1);
     pattern1->ext1 = NULL;
   }
   struct NR_TDD_UL_DL_Pattern *pattern2 = scc->tdd_UL_DL_ConfigurationCommon->pattern2;
@@ -505,7 +504,8 @@ void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap)
   }
 
   // fix SS0 and Coreset0
-  NR_PDCCH_ConfigCommon_t *pdcch_cc = scc->downlinkConfigCommon->initialDownlinkBWP->pdcch_ConfigCommon->choice.setup;
+  NR_DownlinkConfigCommon_t *dlcc = scc->downlinkConfigCommon;
+  NR_PDCCH_ConfigCommon_t *pdcch_cc = dlcc->initialDownlinkBWP->pdcch_ConfigCommon->choice.setup;
   if((int)*pdcch_cc->searchSpaceZero == -1) {
     free(pdcch_cc->searchSpaceZero);
     pdcch_cc->searchSpaceZero = NULL;
@@ -521,16 +521,26 @@ void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap)
      scc->uplinkConfigCommon->frequencyInfoUL->absoluteFrequencyPointA = NULL;
   }
 
+  NR_RACH_ConfigCommon_t *rach_ConfigCommon = scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup;
+  long config_index = rach_ConfigCommon->rach_ConfigGeneric.prach_ConfigurationIndex;
+  frequency_range_t freq_range = get_freq_range_from_arfcn(dlcc->frequencyInfoDL->absoluteFrequencyPointA);
+  frame_type_t frame_type = get_frame_type((int)*dlcc->frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
+  nr_prach_info_t prach_info =  get_nr_prach_occasion_info_from_index(config_index, freq_range, frame_type);
+  AssertFatal(prach_info.start_symbol + prach_info.N_t_slot * prach_info.N_dur < 14,
+              "PRACH with configuration index %ld goes to the last symbol of the slot, for optimal performance pick another index. "
+              "See Tables 6.3.3.2-2 to 6.3.3.2-4 in 38.211\n",
+              config_index);
   // default value for msg3 precoder is NULL (0 means enabled)
-  if (*scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg3_transformPrecoder!=0)
-    scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg3_transformPrecoder = NULL;
-
-  frame_type_t frame_type = get_frame_type((int)*scc->downlinkConfigCommon->frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
+  if (*rach_ConfigCommon->msg3_transformPrecoder != 0) {
+    free(rach_ConfigCommon->msg3_transformPrecoder);
+    rach_ConfigCommon->msg3_transformPrecoder = NULL;
+  }
 
   // prepare DL Allocation lists
-  nr_rrc_config_dl_tda(scc->downlinkConfigCommon->initialDownlinkBWP->pdsch_ConfigCommon->choice.setup->pdsch_TimeDomainAllocationList,
-                       frame_type, scc->tdd_UL_DL_ConfigurationCommon,
-                       scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
+  nr_rrc_config_dl_tda(dlcc->initialDownlinkBWP->pdsch_ConfigCommon->choice.setup->pdsch_TimeDomainAllocationList,
+                       frame_type,
+                       scc->tdd_UL_DL_ConfigurationCommon,
+                       dlcc->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth);
 
   if (frame_type == FDD) {
     ASN_STRUCT_FREE(asn_DEF_NR_TDD_UL_DL_ConfigCommon, scc->tdd_UL_DL_ConfigurationCommon);
@@ -539,17 +549,19 @@ void fix_scc(NR_ServingCellConfigCommon_t *scc, uint64_t ssbmap)
     fix_tdd_pattern(scc);
   }
 
-  if ((int)*scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg1_SubcarrierSpacing == -1) {
-    free(scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg1_SubcarrierSpacing);
-    scc->uplinkConfigCommon->initialUplinkBWP->rach_ConfigCommon->choice.setup->msg1_SubcarrierSpacing=NULL;
+  if ((int)*rach_ConfigCommon->msg1_SubcarrierSpacing == -1) {
+    free(rach_ConfigCommon->msg1_SubcarrierSpacing);
+    rach_ConfigCommon->msg1_SubcarrierSpacing = NULL;
   }
 
   if (scc->uplinkConfigCommon->initialUplinkBWP->ext1
       && (int)scc->uplinkConfigCommon->initialUplinkBWP->ext1->msgA_ConfigCommon_r16->choice.setup->msgA_PUSCH_Config_r16
                  ->msgA_PUSCH_ResourceGroupA_r16->msgA_PUSCH_TimeDomainOffset_r16
              == 0) {
-    free(scc->uplinkConfigCommon->initialUplinkBWP->ext1);
-    scc->uplinkConfigCommon->initialUplinkBWP->ext1 = NULL;
+    NR_BWP_UplinkCommon_t *ulcc = scc->uplinkConfigCommon->initialUplinkBWP;
+    ASN_STRUCT_FREE(asn_DEF_NR_SetupRelease_MsgA_ConfigCommon_r16, ulcc->ext1->msgA_ConfigCommon_r16);
+    free(ulcc->ext1);
+    ulcc->ext1 = NULL;
   }
 
   if ((int)*scc->n_TimingAdvanceOffset == -1) {
@@ -636,14 +648,14 @@ void prepare_scd(NR_ServingCellConfig_t *scd) {
         calloc_or_fail(1, sizeof(*NR_DMRS_DownlinkCfg->phaseTrackingRS->choice.setup));
     NR_PTRS_DownlinkConfig_t *NR_PTRS_DownlinkCfg = NR_DMRS_DownlinkCfg->phaseTrackingRS->choice.setup;
     NR_PTRS_DownlinkCfg->frequencyDensity = calloc_or_fail(1, sizeof(*NR_PTRS_DownlinkCfg->frequencyDensity));
-    long *dl_rbs = calloc_or_fail(2, sizeof(*dl_rbs));
     for (int i=0;i<2;i++) {
-      asn1cSeqAdd(&NR_PTRS_DownlinkCfg->frequencyDensity->list, &dl_rbs[i]);
+      long *a = calloc_or_fail(1, sizeof(*a));
+      asn1cSeqAdd(&NR_PTRS_DownlinkCfg->frequencyDensity->list, a);
     }
     NR_PTRS_DownlinkCfg->timeDensity = calloc_or_fail(1, sizeof(*NR_PTRS_DownlinkCfg->timeDensity));
-    long *dl_mcs = calloc_or_fail(3, sizeof(*dl_mcs));
     for (int i=0;i<3;i++) {
-      asn1cSeqAdd(&NR_PTRS_DownlinkCfg->timeDensity->list, &dl_mcs[i]);
+      long *dl_mcs = calloc_or_fail(1, sizeof(*dl_mcs));
+      asn1cSeqAdd(&NR_PTRS_DownlinkCfg->timeDensity->list, dl_mcs);
     }
     NR_PTRS_DownlinkCfg->epre_Ratio = calloc_or_fail(1, sizeof(*NR_PTRS_DownlinkCfg->epre_Ratio));
     NR_PTRS_DownlinkCfg->resourceElementOffset = calloc_or_fail(1, sizeof(*NR_PTRS_DownlinkCfg->resourceElementOffset));
@@ -668,15 +680,15 @@ void prepare_scd(NR_ServingCellConfig_t *scd) {
     NR_PTRS_UplinkConfig->transformPrecoderDisabled = calloc_or_fail(1, sizeof(*NR_PTRS_UplinkConfig->transformPrecoderDisabled));
     NR_PTRS_UplinkConfig->transformPrecoderDisabled->frequencyDensity =
         calloc_or_fail(1, sizeof(*NR_PTRS_UplinkConfig->transformPrecoderDisabled->frequencyDensity));
-    long *n_rbs = calloc_or_fail(2, sizeof(*n_rbs));
     for (int i=0;i<2;i++) {
-      asn1cSeqAdd(&NR_PTRS_UplinkConfig->transformPrecoderDisabled->frequencyDensity->list, &n_rbs[i]);
+      long *n_rbs = calloc_or_fail(1, sizeof(*n_rbs));
+      asn1cSeqAdd(&NR_PTRS_UplinkConfig->transformPrecoderDisabled->frequencyDensity->list, n_rbs);
     }
     NR_PTRS_UplinkConfig->transformPrecoderDisabled->timeDensity =
         calloc_or_fail(1, sizeof(*NR_PTRS_UplinkConfig->transformPrecoderDisabled->timeDensity));
-    long *ptrs_mcs = calloc_or_fail(3, sizeof(*ptrs_mcs));
     for (int i = 0; i < 3; i++) {
-      asn1cSeqAdd(&NR_PTRS_UplinkConfig->transformPrecoderDisabled->timeDensity->list, &ptrs_mcs[i]);
+      long *ptrs_mcs = calloc_or_fail(1, sizeof(*ptrs_mcs));
+      asn1cSeqAdd(&NR_PTRS_UplinkConfig->transformPrecoderDisabled->timeDensity->list, ptrs_mcs);
     }
     NR_PTRS_UplinkConfig->transformPrecoderDisabled->resourceElementOffset =
         calloc_or_fail(1, sizeof(*NR_PTRS_UplinkConfig->transformPrecoderDisabled->resourceElementOffset));
@@ -703,6 +715,7 @@ void fix_scd(NR_ServingCellConfig_t *scd) {
   int b = 0;
   while (b<scd->downlinkBWP_ToAddModList->list.count) {
     if (scd->downlinkBWP_ToAddModList->list.array[b]->bwp_Common->genericParameters.locationAndBandwidth == 0) {
+      ASN_STRUCT_FREE(asn_DEF_NR_BWP_Downlink, scd->downlinkBWP_ToAddModList->list.array[b]);
       asn_sequence_del(&scd->downlinkBWP_ToAddModList->list,b,1);
     } else {
       b++;
@@ -712,6 +725,7 @@ void fix_scd(NR_ServingCellConfig_t *scd) {
   b = 0;
   while (b<scd->uplinkConfig->uplinkBWP_ToAddModList->list.count) {
     if (scd->uplinkConfig->uplinkBWP_ToAddModList->list.array[b]->bwp_Common->genericParameters.locationAndBandwidth == 0) {
+      ASN_STRUCT_FREE(asn_DEF_NR_BWP_Uplink, scd->uplinkConfig->uplinkBWP_ToAddModList->list.array[b]);
       asn_sequence_del(&scd->uplinkConfig->uplinkBWP_ToAddModList->list,b,1);
     } else {
       b++;
@@ -806,11 +820,13 @@ void fix_scd(NR_ServingCellConfig_t *scd) {
   }
 
   if (scd->downlinkBWP_ToAddModList->list.count == 0) {
+    free(scd->downlinkBWP_ToAddModList->list.array);
     free(scd->downlinkBWP_ToAddModList);
     scd->downlinkBWP_ToAddModList = NULL;
   }
 
   if (scd->uplinkConfig->uplinkBWP_ToAddModList->list.count == 0) {
+    free(scd->uplinkConfig->uplinkBWP_ToAddModList->list.array);
     free(scd->uplinkConfig->uplinkBWP_ToAddModList);
     scd->uplinkConfig->uplinkBWP_ToAddModList = NULL;
   }
@@ -1124,12 +1140,8 @@ static NR_ServingCellConfigCommon_t *get_scc_config(configmodule_interface_t *cf
 
     if (is_pattern2) {
       LOG_I(GNB_APP, "tdd->pattern2 present\n");
-      // allocate memory
       struct NR_TDD_UL_DL_ConfigCommon *tdd = scc->tdd_UL_DL_ConfigurationCommon;
       tdd->pattern2 = calloc_or_fail(1, sizeof(*tdd->pattern2));
-      tdd->pattern2->ext1 = calloc_or_fail(1, sizeof(struct NR_TDD_UL_DL_Pattern__ext1));
-      tdd->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530 = calloc_or_fail(1, sizeof(*tdd->pattern2->ext1->dl_UL_TransmissionPeriodicity_v1530));
-      // fill in scc
       *scc->tdd_UL_DL_ConfigurationCommon->pattern2 = p2;
       AssertFatal(p2.nrofUplinkSlots ^ scc->tdd_UL_DL_ConfigurationCommon->pattern1.nrofUplinkSlots,
                   "UL slots in pattern1 (%ld) and pattern2 (%ld) are mutually exclusive (e.g. DDDFUU DDDD, DDDD DDDFUU)\n",
@@ -1682,7 +1694,7 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
         ul_bler_options->harq_round_max = 1;
       else
         ul_bler_options->harq_round_max = *(MacRLC_ParamList.paramarray[j][MACRLC_UL_HARQ_ROUND_MAX_IDX].u8ptr);
-      RC.nrmac[j]->min_grant_prb = *(MacRLC_ParamList.paramarray[j][MACRLC_MIN_GRANT_PRB_IDX].u8ptr);
+      RC.nrmac[j]->min_grant_prb = *(MacRLC_ParamList.paramarray[j][MACRLC_MIN_GRANT_PRB_IDX].u16ptr);
       RC.nrmac[j]->identity_pm = *(MacRLC_ParamList.paramarray[j][MACRLC_IDENTITY_PM_IDX].u8ptr);
       // PRB Blacklist
       uint16_t prbbl[MAX_BWP_SIZE] = {0};
@@ -2133,7 +2145,8 @@ gNB_RRC_INST *RCconfig_NRRRC()
     openair_rrc_gNB_configuration(rrc, &nrrrc_config);
   }//End if (num_gnbs>0)
 
-  config_security(rrc);
+  if (!NODE_IS_DU(rrc->node_type))
+    config_security(rrc);
 
   return rrc;
 }

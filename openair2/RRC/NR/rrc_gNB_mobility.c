@@ -35,6 +35,7 @@
 #include "nr_pdcp/nr_pdcp_oai_api.h"
 #include "openair3/SECU/key_nas_deriver.h"
 #include "openair2/RRC/NR/rrc_gNB_NGAP.h"
+#include "NR_DL-DCCH-MessageType.h"
 
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
@@ -230,7 +231,6 @@ static void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_
       .plmn = rrc->configuration.plmn[0],
       .nr_cellid = rrc->nr_cellid, // TODO target cell ID
       .servCellId = 0, // TODO: correct value?
-      .ReconfigComplOutcome = RRCreconf_success,
       .transm_action_ind = &transmission_action_indicator,
   };
   deliver_ue_ctxt_modification_data_t data = {.rrc = rrc,

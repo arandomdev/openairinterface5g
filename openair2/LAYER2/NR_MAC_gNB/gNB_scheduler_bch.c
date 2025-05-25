@@ -344,6 +344,7 @@ static uint32_t get_tbs_bch(NR_Type0_PDCCH_CSS_config_t *type0_PDCCH_CSS_config,
 
 static uint32_t schedule_control_sib1(gNB_MAC_INST *gNB_mac,
                                       int CC_id,
+                                      NR_sched_pdcch_t *pdcch,
                                       NR_Type0_PDCCH_CSS_config_t *type0_PDCCH_CSS_config,
                                       int time_domain_allocation,
                                       NR_pdsch_dmrs_t *dmrs_parms,
@@ -374,7 +375,7 @@ static uint32_t schedule_control_sib1(gNB_MAC_INST *gNB_mac,
                                                               gNB_mac->sched_ctrlCommon->aggregation_level,
                                                               nr_of_candidates,
                                                               beam,
-                                                              &gNB_mac->sched_ctrlCommon->sched_pdcch,
+                                                              pdcch,
                                                               gNB_mac->sched_ctrlCommon->coreset,
                                                               0);
 
@@ -388,7 +389,7 @@ static uint32_t schedule_control_sib1(gNB_MAC_INST *gNB_mac,
   // Mark the corresponding RBs as used
   fill_pdcch_vrb_map(gNB_mac,
                      CC_id,
-                     &gNB_mac->sched_ctrlCommon->sched_pdcch,
+                     pdcch,
                      gNB_mac->sched_ctrlCommon->cce_index,
                      gNB_mac->sched_ctrlCommon->aggregation_level,
                      beam);
@@ -604,6 +605,9 @@ void schedule_nr_sib1(module_id_t module_idP,
        (type0_PDCCH_CSS_config->num_rbs > 0) &&
        (type0_PDCCH_CSS_config->active == true)) {
 
+      AssertFatal(is_dl_slot(slotP, &gNB_mac->frame_structure),
+                  "Trying to schedule SIB1 in slot %d which is not DL. Check searchSpaceZero configuration.\n",
+                  slotP);
       const int n_slots_frame = gNB_mac->frame_structure.numb_slots_frame;
       int beam_index = get_fapi_beamforming_index(gNB_mac, i);
       NR_beam_alloc_t beam = beam_allocation_procedure(&gNB_mac->beam_info, frameP, slotP, beam_index, n_slots_frame);
@@ -612,20 +616,26 @@ void schedule_nr_sib1(module_id_t module_idP,
 
       default_table_type_t table_type = get_default_table_type(type0_PDCCH_CSS_config->type0_pdcch_ss_mux_pattern);
       // assuming normal CP
-      NR_tda_info_t tda_info = get_info_from_tda_tables(table_type, time_domain_allocation, gNB_mac->common_channels->ServingCellConfigCommon->dmrs_TypeA_Position, true);
+      NR_tda_info_t tda_info = get_info_from_tda_tables(table_type, time_domain_allocation, scc->dmrs_TypeA_Position, true);
 
-      AssertFatal((tda_info.startSymbolIndex + tda_info.nrOfSymbols) < 14, "SIB1 TDA %d would cause overlap with CSI-RS. Please select a different SIB1 TDA.\n", time_domain_allocation);
+      AssertFatal((tda_info.startSymbolIndex + tda_info.nrOfSymbols) < 14,
+                   "SIB1 TDA %d would cause overlap with CSI-RS. Please select a different SIB1 TDA.\n",
+                   time_domain_allocation);
 
-      NR_pdsch_dmrs_t dmrs_parms = get_dl_dmrs_params(scc,
-                                                      NULL,
-                                                      &tda_info,
-                                                      1);
+      NR_pdsch_dmrs_t dmrs_parms = get_dl_dmrs_params(scc, NULL, &tda_info, 1);
 
+      NR_sched_pdcch_t sched_pdcch = set_pdcch_structure(NULL,
+                                                         gNB_mac->sched_ctrlCommon->search_space,
+                                                         gNB_mac->sched_ctrlCommon->coreset,
+                                                         scc,
+                                                         NULL,
+                                                         type0_PDCCH_CSS_config);
 
       NR_COMMON_channels_t *cc = &gNB_mac->common_channels[0];
       // Configure sched_ctrlCommon for SIB1
       uint32_t TBS = schedule_control_sib1(gNB_mac,
                                            CC_id,
+                                           &sched_pdcch,
                                            type0_PDCCH_CSS_config,
                                            time_domain_allocation,
                                            &dmrs_parms,
@@ -638,7 +648,7 @@ void schedule_nr_sib1(module_id_t module_idP,
       int pdu_index = gNB_mac->pdu_index[0]++;
       nr_fill_nfapi_dl_SIB_pdu(gNB_mac,
                                &gNB_mac->sched_ctrlCommon->sched_pdsch,
-                               &gNB_mac->sched_ctrlCommon->sched_pdcch,
+                               &sched_pdcch,
                                gNB_mac->sched_ctrlCommon->search_space,
                                gNB_mac->sched_ctrlCommon->coreset,
                                gNB_mac->sched_ctrlCommon->aggregation_level,
@@ -705,6 +715,9 @@ static void other_sib_sched_control(module_id_t module_idP,
                                     int payload_idx)
 {
   gNB_MAC_INST *gNB_mac = RC.nrmac[module_idP];
+  AssertFatal(is_dl_slot(slot, &gNB_mac->frame_structure),
+              "Trying to schedule otherSIB in slot %d which is not DL. Wrong Configuration\n",
+              slot);
   NR_ServingCellConfigCommon_t *scc = gNB_mac->common_channels[0].ServingCellConfigCommon;
   int n_slots_frame = gNB_mac->frame_structure.numb_slots_frame;
   NR_beam_alloc_t beam = beam_allocation_procedure(&gNB_mac->beam_info, frame, slot, beam_index, n_slots_frame);

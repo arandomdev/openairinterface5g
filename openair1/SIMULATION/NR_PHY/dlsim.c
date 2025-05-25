@@ -62,7 +62,6 @@
 #include "PHY/impl_defs_nr.h"
 #include "PHY/phy_vars_nr_ue.h"
 #include "RRC/NR/nr_rrc_config.h"
-#include "RRC/NR/nr_rrc_proto.h"
 #include "SCHED_NR/fapi_nr_l1.h"
 #include "SCHED_NR/sched_nr.h"
 #include "SCHED_NR_UE/defs.h"
@@ -86,7 +85,6 @@
 #include "oai_asn1.h"
 #include "openair1/SIMULATION/NR_PHY/nr_unitary_defs.h"
 #include "openair1/SIMULATION/TOOLS/sim.h"
-#include "openair2/RRC/LTE/rrc_vars.h"
 #include "thread-pool.h"
 #include "time_meas.h"
 #include "utils.h"
@@ -121,6 +119,43 @@ void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t
 {
 }
 
+/* Function to set or overwrite PTRS DL RRC parameters */
+static void rrc_config_dl_ptrs_params(NR_BWP_Downlink_t *bwp, long *ptrsNrb, long *ptrsMcs, long *epre_Ratio, long *reOffset)
+{
+  int i=0;
+  NR_DMRS_DownlinkConfig_t *tmp = bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup;
+  // struct NR_SetupRelease_PTRS_DownlinkConfig *tmp=bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->phaseTrackingRS;
+  /* check for memory allocation  */
+  if (tmp->phaseTrackingRS == NULL) {
+    asn1cCalloc(tmp->phaseTrackingRS, TrackingRS);
+    TrackingRS->present = NR_SetupRelease_PTRS_DownlinkConfig_PR_setup;
+    asn1cCalloc(TrackingRS->choice.setup, setup);
+    asn1cCalloc(setup->frequencyDensity, freqD);
+    /* Fill the given values */
+    for(i = 0; i < 2; i++) {
+      asn1cSequenceAdd(freqD->list, long, nbr);
+      *nbr = ptrsNrb[i];
+    }
+    asn1cCalloc(setup->timeDensity, timeD);
+    for(i = 0; i < 3; i++) {
+      asn1cSequenceAdd(timeD->list, long, mcs);
+      *mcs = ptrsMcs[i];
+    }
+    asn1cCallocOne(setup->epre_Ratio, epre_Ratio[0]);
+    asn1cCallocOne(setup->resourceElementOffset, reOffset[0]);
+  } else {
+    NR_PTRS_DownlinkConfig_t *TrackingRS = tmp->phaseTrackingRS->choice.setup;
+    for(i = 0; i < 2; i++) {
+      *TrackingRS->frequencyDensity->list.array[i] = ptrsNrb[i];
+    }
+    for(i = 0; i < 3; i++) {
+      *TrackingRS->timeDensity->list.array[i] = ptrsMcs[i];
+    }
+    *TrackingRS->epre_Ratio = epre_Ratio[0];
+    *TrackingRS->resourceElementOffset = reOffset[0];
+  }
+}
+
 int dummy_nr_ue_ul_indication(nr_uplink_indication_t *ul_info) { return(0);  }
 
 void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req) { abort(); }
@@ -149,8 +184,8 @@ int g_mcsIndex = -1, g_mcsTableIdx = 0, g_rbStart = -1, g_rbSize = -1, g_nrOfLay
 
 void nr_dlsim_preprocessor(module_id_t module_id, frame_t frame, slot_t slot)
 {
-  NR_UE_info_t *UE_info = RC.nrmac[module_id]->UE_info.list[0];
-  AssertFatal(RC.nrmac[module_id]->UE_info.list[1]==NULL, "can have only a single UE\n");
+  NR_UE_info_t *UE_info = RC.nrmac[module_id]->UE_info.connected_ue_list[0];
+  AssertFatal(RC.nrmac[module_id]->UE_info.connected_ue_list[1] == NULL, "Only single UE allowed in dlsim\n");
   NR_UE_sched_ctrl_t *sched_ctrl = &UE_info->UE_sched_ctrl;
   NR_UE_DL_BWP_t *current_BWP = &UE_info->current_DL_BWP;
   NR_ServingCellConfigCommon_t *scc = RC.nrmac[0]->common_channels[0].ServingCellConfigCommon;
@@ -261,7 +296,6 @@ void validate_input_pmi(nfapi_nr_config_request_scf_t *gNB_config,
 }
 
 
-int NB_UE_INST = 1;
 configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char **argv)
 {
@@ -746,8 +780,10 @@ printf("%d\n", slot);
 
   NR_UE_NR_Capability_t *UE_Capability_nr = CALLOC(1,sizeof(NR_UE_NR_Capability_t));
   prepare_sim_uecap(UE_Capability_nr, scc, mu, N_RB_DL, g_mcsTableIdx, 0);
-
-  NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(scc, scd, UE_Capability_nr, 0, 1, &conf, 0);
+  rnti_t rnti = 0x1234;
+  int uid = 0;
+  NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(scc, scd, UE_Capability_nr, 0, 1, &conf, uid);
+  secondaryCellGroup->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(rnti, uid, scc);
 
   /* -U option modify DMRS */
   if(modify_dmrs) {
@@ -762,15 +798,15 @@ printf("%d\n", slot);
   //xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, (const void*)secondaryCellGroup);
 
   // UE dedicated configuration
-  nr_mac_add_test_ue(RC.nrmac[0], secondaryCellGroup->spCellConfig->reconfigurationWithSync->newUE_Identity, secondaryCellGroup);
+  nr_mac_add_test_ue(RC.nrmac[0], rnti, secondaryCellGroup);
   // reset preprocessor to the one of DLSIM after it has been set during
   // nr_mac_config_scc()
   gNB_mac->pre_processor_dl = nr_dlsim_preprocessor;
   phy_init_nr_gNB(gNB);
   N_RB_DL = gNB->frame_parms.N_RB_DL;
-  NR_UE_info_t *UE_info = RC.nrmac[0]->UE_info.list[0];
+  NR_UE_info_t *UE_info = RC.nrmac[0]->UE_info.connected_ue_list[0];
 
-  configure_UE_BWP(RC.nrmac[0], scc, &UE_info->UE_sched_ctrl, NULL, UE_info, -1, -1);
+  configure_UE_BWP(RC.nrmac[0], scc, UE_info, false, NR_SearchSpace__searchSpaceType_PR_ue_Specific, -1, -1);
 
   // stub to configure frame_parms
   //  nr_phy_config_request_sim(gNB,N_RB_DL,N_RB_DL,mu,Nid_cell,SSB_positions);
@@ -907,8 +943,7 @@ printf("%d\n", slot);
 
   nr_ue_phy_config_request(&UE_mac->phy_config);
   //NR_COMMON_channels_t *cc = RC.nrmac[0]->common_channels;
-  int n_errs = 0;
-
+  int ret = 1;
   initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
   initNotifiedFIFO(&gNB->L1_tx_free);
   initNotifiedFIFO(&gNB->L1_tx_filled);
@@ -1335,10 +1370,10 @@ printf("%d\n", slot);
 
     if (effRate > (eff_tp_check*TBS)) {
       printf("PDSCH test OK\n");
+      ret = 0;
       break;
     }
 
-    n_errs = n_errors[0];
   } // NSR
 
   free(Sched_INFO);
@@ -1387,7 +1422,7 @@ printf("%d\n", slot);
     free(filename_csv);
   }
 
-  return n_errs;
+  return ret;
 }
 
 

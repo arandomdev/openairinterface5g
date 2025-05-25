@@ -314,7 +314,7 @@ typedef struct {
 
 typedef struct {
   uint8_t csi_rs_generated_signal_bits;
-  int32_t **csi_rs_generated_signal;
+  c16_t **csi_rs_generated_signal;
   bool csi_im_meas_computed;
   uint32_t interference_plus_noise_power;
 } nr_csi_info_t;
@@ -578,7 +578,6 @@ typedef struct nr_phy_data_tx_s {
   // Sidelink Rx action decided by MAC
   sl_nr_tx_config_type_enum_t sl_tx_action;
   sl_nr_tx_config_psbch_pdu_t psbch_vars;
-
 } nr_phy_data_tx_t;
 
 typedef struct nr_phy_data_s {

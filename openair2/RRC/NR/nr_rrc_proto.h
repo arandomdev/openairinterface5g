@@ -41,16 +41,12 @@
 
 #define NR_MAX_SUPPORTED_DL_LAYERS 4
 
-void rrc_parse_ue_capabilities(gNB_RRC_INST *rrc,NR_UE_CapabilityRAT_ContainerList_t *UE_CapabilityRAT_ContainerList, x2ap_ENDC_sgnb_addition_req_t *m, NR_CG_ConfigInfo_IEs_t * cg_config_info);
+void rrc_add_nsa_user(gNB_RRC_INST *rrc, x2ap_ENDC_sgnb_addition_req_t *m, sctp_assoc_t assoc_id);
+void rrc_add_nsa_user_resp(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const f1ap_ue_context_setup_t *resp);
+void rrc_release_nsa_user(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context);
+void rrc_remove_nsa_user_context(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context);
 
-void rrc_add_nsa_user(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p, x2ap_ENDC_sgnb_addition_req_t *m);
-
-void rrc_remove_nsa_user(gNB_RRC_INST *rrc, int rnti);
 void rrc_remove_ue(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p);
-
-NR_RRCReconfiguration_IEs_t *get_default_reconfig(const NR_CellGroupConfig_t *secondaryCellGroup);
-
-NR_CG_Config_t *generate_CG_Config(const NR_RRCReconfiguration_t *reconfig, const NR_RadioBearerConfig_t *rbconfig);
 
 int parse_CG_ConfigInfo(gNB_RRC_INST *rrc, NR_CG_ConfigInfo_t *CG_ConfigInfo, x2ap_ENDC_sgnb_addition_req_t *m);
 
@@ -65,14 +61,6 @@ void rrc_gNB_generate_RRCRelease(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE);
 /**\brief RRC eNB task.
    \param args_p Pointer on arguments to start the task. */
 void *rrc_gnb_task(void *args_p);
-
-/**\ Function to set or overwrite PTRS DL RRC parameters.
-   \ *bwp Pointer to dedicated RC config structure
-   \ *ptrsNrb Pointer to K_ptrs N_RB related parameters
-   \ *ptrsMcs Pointer to L_ptrs MCS related parameters
-   \ *epre_Ratio Pointer to ep_ratio
-   \ *reOffset Pointer to RE Offset Value */
-void rrc_config_dl_ptrs_params(NR_BWP_Downlink_t *bwp, long *ptrsNrb, long *ptrsMcs, long *epre_Ratio, long *reOffset);
 
 int nr_rrc_reconfiguration_req(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue_p, const int dl_bwp_id, const int ul_bwp_id);
 

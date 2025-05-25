@@ -50,8 +50,10 @@
 #define E1AP_SETUP_FAIL(mSGpTR)                           (mSGpTR)->ittiMsg.e1ap_setup_fail
 #define E1AP_BEARER_CONTEXT_SETUP_REQ(mSGpTR)             (mSGpTR)->ittiMsg.e1ap_bearer_setup_req
 #define E1AP_BEARER_CONTEXT_SETUP_RESP(mSGpTR)            (mSGpTR)->ittiMsg.e1ap_bearer_setup_resp
+#define E1AP_BEARER_CONTEXT_SETUP_FAILURE(mSGpTR)         (mSGpTR)->ittiMsg.e1ap_bearer_setup_fail
 #define E1AP_BEARER_CONTEXT_MODIFICATION_REQ(mSGpTR)      (mSGpTR)->ittiMsg.e1ap_bearer_mod_req
 #define E1AP_BEARER_CONTEXT_MODIFICATION_RESP(mSGpTR)     (mSGpTR)->ittiMsg.e1ap_bearer_modif_resp
+#define E1AP_BEARER_CONTEXT_MODIFICATION_FAIL(mSGpTR)     (mSGpTR)->ittiMsg.e1ap_bearer_modif_fail
 #define E1AP_BEARER_CONTEXT_RELEASE_CMD(mSGpTR)           (mSGpTR)->ittiMsg.e1ap_bearer_release_cmd
 #define E1AP_BEARER_CONTEXT_RELEASE_CPLT(mSGpTR)          (mSGpTR)->ittiMsg.e1ap_bearer_release_cplt
 #define E1AP_LOST_CONNECTION(mSGpTR)                      (mSGpTR)->ittiMsg.e1ap_lost_connection
@@ -344,6 +346,7 @@ typedef enum qos_flow_mapping_indication_e {
   QF_BOTH
 } qos_flow_mapping_indication_t;
 
+// 9.3.1.12 QoS Flow List
 typedef struct qos_flow_list_s {
   long qfi; // qos flow identifier
   qos_flow_mapping_indication_t *indication;
@@ -477,6 +480,16 @@ typedef struct e1ap_bearer_setup_req_s {
   pdu_session_to_setup_t pduSession[E1AP_MAX_NUM_PDU_SESSIONS];
 } e1ap_bearer_setup_req_t;
 
+/** Bearer Context Setup Failure (9.2.2.3 3GPP TS 38.463) */
+typedef struct e1ap_bearer_context_setup_failure_s {
+  // gNB-CU-CP UE E1AP ID (M)
+  uint32_t gNB_cu_cp_ue_id;
+  // gNB-CU-UP UE E1AP ID (O)
+  uint32_t *gNB_cu_up_ue_id;
+  // Cause (M)
+  e1ap_cause_t cause;
+} e1ap_bearer_context_setup_failure_t;
+
 /**
  * Bearer Context Modification Request, clause 9.2.2.4 of 3GPP TS 38.463
  */
@@ -508,14 +521,19 @@ typedef struct e1ap_bearer_mod_req_s {
 typedef struct e1ap_bearer_release_cmd_s {
   uint32_t gNB_cu_cp_ue_id;
   uint32_t gNB_cu_up_ue_id;
-  long cause_type;
-  long cause;
+  e1ap_cause_t cause;
 } e1ap_bearer_release_cmd_t;
 
 typedef struct e1ap_bearer_release_cplt_s {
   uint32_t gNB_cu_cp_ue_id;
   uint32_t gNB_cu_up_ue_id;
 } e1ap_bearer_release_cplt_t;
+
+// 9.3.1.45 Flow Failed List
+typedef struct qos_flow_failed_s {
+  long qfi;
+  e1ap_cause_t cause;
+} qos_flow_failed_t;
 
 typedef struct DRB_nGRAN_setup_s {
   // DRB ID (M)
@@ -525,6 +543,9 @@ typedef struct DRB_nGRAN_setup_s {
   // Flow Setup List (M)
   int numQosFlowSetup;
   qos_flow_list_t qosFlows[E1AP_MAX_NUM_QOS_FLOWS];
+  // Flow Failed List (O)
+  int numQosFlowFailed;
+  qos_flow_failed_t qosFlowsFailed[E1AP_MAX_NUM_QOS_FLOWS];
 } DRB_nGRAN_setup_t;
 
 /* DRB Modified Item */
@@ -537,6 +558,9 @@ typedef struct DRB_nGRAN_modified_s {
   // Flow Setup List (O)
   int numQosFlowSetup;
   qos_flow_list_t qosFlows[E1AP_MAX_NUM_QOS_FLOWS];
+  // Flow Failed List (O)
+  int numQosFlowFailed;
+  qos_flow_failed_t qosFlowsFailed[E1AP_MAX_NUM_QOS_FLOWS];
   // Old QoS Flow List (O)
   int numOldQosFlow;
   qos_flow_list_t oldQosFlows[E1AP_MAX_NUM_QOS_FLOWS];
@@ -569,9 +593,15 @@ typedef struct pdu_session_modif_s {
   // DRB Modified List (O)
   int numDRBModified;
   DRB_nGRAN_modified_t DRBnGRanModList[E1AP_MAX_NUM_DRBS];
+  // DRB Failed to Modify List (O)
+  int numDRBFailedToMod;
+  DRB_nGRAN_failed_t DRBnGRanFailedModList[E1AP_MAX_NUM_DRBS];
   // DRB Setup List (O)
   int numDRBSetup;
   DRB_nGRAN_setup_t DRBnGRanSetupList[E1AP_MAX_NUM_DRBS];
+  // DRB Failed List (O)
+  int numDRBFailed;
+  DRB_nGRAN_failed_t DRBnGRanFailedList[E1AP_MAX_NUM_DRBS];
 } pdu_session_modif_t;
 
 typedef struct e1ap_bearer_setup_resp_s {
@@ -596,5 +626,14 @@ typedef struct e1ap_lost_connection_t {
   int dummy;
 } e1ap_lost_connection_t;
 
+/// @brief 9.2.2.6 BEARER CONTEXT MODIFICATION FAILURE
+typedef struct e1ap_bearer_context_mod_failure_s {
+  // gNB-CU-CP UE E1AP ID (M)
+  uint32_t gNB_cu_cp_ue_id;
+  // gNB-CU-UP UE E1AP ID (M)
+  uint32_t gNB_cu_up_ue_id;
+  // NG-RAN PDU Session Resource Modified List (O)
+  e1ap_cause_t cause;
+} e1ap_bearer_context_mod_failure_t;
 
 #endif /* E1AP_MESSAGES_TYPES_H */
