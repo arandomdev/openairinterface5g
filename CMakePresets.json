@@ -8,7 +8,7 @@
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/cmake_targets/ran_build/build",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+                "CMAKE_BUILD_TYPE": "Debug"
             }
         },
         {
@@ -42,7 +42,8 @@
                 "dfts",
                 "ldpc",
                 "params_libconfig",
-                "params_yaml"
+                "params_yaml",
+                "nrscope"
             ]
         },
         {

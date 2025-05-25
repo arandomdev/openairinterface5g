@@ -1702,7 +1702,7 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->bictr.ring_radius_min = 5;
       chan_desc->bictr.ring_radius_max = 300;
       chan_desc->bictr.ring_radius_uncertainty = 15;
-      chan_desc->bictr.ring_count = 100;
+      chan_desc->bictr.ring_count = 10;
 
       chan_desc->bictr.complex_rel_permittivity_real = 7.058396;
       chan_desc->bictr.complex_rel_permittivity_real_std = 0.007131;

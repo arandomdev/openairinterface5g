@@ -11,6 +11,7 @@ This document is used documentation and implementation notes for BICTR.
   - [Implementation](#implementation)
   - [Ensuring Output Matches Python](#ensuring-output-matches-python)
   - [OAI Integration](#oai-integration)
+    - [Assumptions](#assumptions)
 
 ## Building
 BICTR was implemented to easily integrate into OAI. As such it uses the same build system.
@@ -111,3 +112,10 @@ $$
 After the channel descriptor is initialized, the wireless channel can be generated in `random_channel.c:random_channel()`. The length of the impulse response can be reduced from the maximum to the correct length by modifying `channel_length`. This change will automatically be applied in `apply_channelmod.c:rxAddInput()`. This change should not cause a memory leak as `random_channel.c:free_channel_desc_scm()` does not depend on `channel_length`. Additionally, the `channel_offset` can be set to perform the LOS optimization.
 
 Additionally, to ensure that memory is freed, `CHANMODEL_FREE_BICTR` should be set in `channel_desc_t::free_flags`.
+
+### Assumptions
+In the experimental integration with OAI, a few assumptions were made. These need to be checked.
+* The IQ samples are modulated and sent to RFSimulator in passband.
+  * **This has been disproven.** The IQ samples are in baseband and not modulated. Work is ongoing to adapt BICTR for this use case.
+* RFSimulator applies the transmitter power to the IQ samples. BICTR then applies the pathloss to the IQ samples in the FIR filter. 
+  * I'm not sure where RFSimulator applies and uses pathloss.
